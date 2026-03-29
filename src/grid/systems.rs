@@ -7,7 +7,6 @@ use crate::states::GameState;
 use super::components::*;
 
 const GROUND_COLOR: Color = Color::srgb(0.15, 0.15, 0.12);
-const GRID_LINE_COLOR: Color = Color::srgb(0.22, 0.22, 0.18);
 const SPAWN_COLOR: Color = Color::srgb(0.2, 0.6, 0.2);
 const GOAL_COLOR: Color = Color::srgb(0.8, 0.2, 0.2);
 

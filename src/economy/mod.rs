@@ -3,7 +3,6 @@ pub mod resources;
 pub mod systems;
 
 use bevy::prelude::*;
-use crate::enemy::systems::EnemyDied;
 use crate::states::GameState;
 
 pub struct EconomyPlugin;

@@ -5,6 +5,7 @@ use crate::common::constants::*;
 use crate::economy::resources::PlayerScrap;
 use crate::grid::components::{GridCell, SpawnPoint, GoalPoint};
 use crate::grid::systems::{grid_to_world, world_to_grid};
+use crate::pathfinding::GridChanged;
 use crate::states::GameState;
 
 use super::components::*;
@@ -156,6 +157,9 @@ pub fn handle_tower_placement(
         }
         _ => {}
     }
+
+    // Trigger enemy re-pathing
+    commands.trigger(GridChanged);
 }
 
 pub fn tower_placement_preview(
@@ -165,7 +169,6 @@ pub fn tower_placement_preview(
     selected: Res<SelectedTower>,
     existing_previews: Query<Entity, With<PlacementPreview>>,
     existing_towers: Query<&GridCell, With<Tower>>,
-    grid_query: Query<&CardinalGrid>,
     spawn_cells: Query<&GridCell, With<SpawnPoint>>,
     goal_cells: Query<&GridCell, With<GoalPoint>>,
     scrap: Res<PlayerScrap>,

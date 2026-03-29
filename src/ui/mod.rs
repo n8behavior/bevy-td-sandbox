@@ -18,14 +18,15 @@ impl Plugin for UIPlugin {
                 Update,
                 game_over::handle_main_menu_input.run_if(in_state(GameState::MainMenu)),
             )
-            // Playing - init resources & HUD
+            // Playing - init resources, HUD, tower palette
             .add_systems(
                 OnEnter(GameState::Playing),
-                (init_resources, hud::setup_hud),
+                (init_resources, hud::setup_hud, tower_menu::setup_tower_palette),
             )
             .add_systems(
                 Update,
-                hud::update_hud.run_if(in_state(GameState::Playing)),
+                (hud::update_hud, tower_menu::highlight_selected_tower)
+                    .run_if(in_state(GameState::Playing)),
             )
             // Game over
             .add_systems(OnEnter(GameState::GameOver), game_over::setup_game_over)
