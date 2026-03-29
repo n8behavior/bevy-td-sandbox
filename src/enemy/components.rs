@@ -1,9 +1,7 @@
 use bevy::prelude::*;
 
 #[derive(Component)]
-pub struct Enemy {
-    pub enemy_type: EnemyType,
-}
+pub struct Enemy;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum EnemyType {

@@ -131,7 +131,7 @@ pub fn spawn_enemy(
 
     commands
         .spawn((
-            Enemy { enemy_type },
+            Enemy,
             Health {
                 current: health,
                 max: health,

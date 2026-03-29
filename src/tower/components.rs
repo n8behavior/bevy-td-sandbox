@@ -1,9 +1,7 @@
 use bevy::prelude::*;
 
 #[derive(Component)]
-pub struct Tower {
-    pub tower_type: TowerType,
-}
+pub struct Tower;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum TowerType {
@@ -69,9 +67,6 @@ pub struct TowerStats {
 pub struct AttackCooldown {
     pub timer: Timer,
 }
-
-#[derive(Component)]
-pub struct CurrentTarget(pub Entity);
 
 #[derive(Component)]
 pub struct SlowOnHit {

@@ -130,7 +130,7 @@ pub fn handle_tower_placement(
     let fire_rate = stats.fire_rate;
 
     let mut entity_cmds = commands.spawn((
-        Tower { tower_type },
+        Tower,
         stats,
         AttackCooldown {
             timer: Timer::from_seconds(1.0 / fire_rate, TimerMode::Repeating),
