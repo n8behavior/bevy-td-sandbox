@@ -1,0 +1,20 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git ls-tree:*)",
+      "WebSearch",
+      "Bash(cargo search:*)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:docs.rs)",
+      "WebFetch(domain:jtothethree.github.io)",
+      "Bash(git init:*)",
+      "Bash(cargo init:*)",
+      "Bash(cargo check:*)",
+      "Bash(cargo doc:*)",
+      "Bash(find ~/.cargo/registry/src/index.crates.io-*/bevy-0.18.1/crates -maxdepth 1 -type d)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(timeout 10 cargo run)"
+    ]
+  }
+}
