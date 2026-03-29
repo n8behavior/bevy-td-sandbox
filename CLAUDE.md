@@ -77,16 +77,16 @@ commands.spawn((
 
 Both exist with different purposes:
 
-**Events** -- Observer-based, immediate, for reactive triggers:
+**Events** -- Observer-based, immediate, for reactive triggers (NO registration needed):
 ```rust
 #[derive(Event)]
 struct EnemyDied { position: Vec2, loot_value: u32 }
 
+// Trigger (no add_event needed! observers auto-register)
+commands.trigger(EnemyDied { position, loot_value });
+
 // Register observer
 world.add_observer(|trigger: On<EnemyDied>| { /* immediate */ });
-
-// Trigger
-commands.trigger(EnemyDied { position, loot_value });
 ```
 
 **EntityEvent** -- Observer event targeted at a specific entity:
@@ -100,6 +100,8 @@ struct DamageEvent { amount: f32 }
 #[derive(Message)]
 struct GridChanged;
 
+// Must register: app.add_message::<GridChanged>();  (NOT add_event!)
+
 fn write_change(mut writer: MessageWriter<GridChanged>) {
     writer.write(GridChanged);
 }
@@ -107,6 +109,16 @@ fn write_change(mut writer: MessageWriter<GridChanged>) {
 fn read_changes(mut reader: MessageReader<GridChanged>) {
     for _change in reader.read() { /* process */ }
 }
+```
+
+### Timer API
+
+```rust
+timer.tick(time.delta());
+timer.is_finished()     // true if elapsed >= duration
+timer.just_finished()   // true only on the tick it finishes
+timer.elapsed_secs()    // elapsed time as f32
+// NO timer.finished() method -- use is_finished()
 ```
 
 ### No TilemapChunk

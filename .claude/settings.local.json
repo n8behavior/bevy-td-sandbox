@@ -14,7 +14,12 @@
       "Bash(find ~/.cargo/registry/src/index.crates.io-*/bevy-0.18.1/crates -maxdepth 1 -type d)",
       "Bash(git add:*)",
       "Bash(git commit:*)",
-      "Bash(timeout 10 cargo run)"
+      "Bash(timeout 10 cargo run)",
+      "Bash(grep -r \"pub fn finished\\\\|pub fn just_finished\\\\|fn finished\" ~/.cargo/registry/src/index.crates.io-*/bevy_time-0.18.1/src/timer.rs)",
+      "Bash(grep -r \"add_event\\\\|add_message\\\\|fn event\\\\|fn message\" ~/.cargo/registry/src/index.crates.io-*/bevy_app-0.18.1/src/app.rs)",
+      "Bash(grep -rn \"add_event\\\\|fn trigger\\\\|add_observer\" ~/.cargo/registry/src/index.crates.io-*/bevy_ecs-0.18.1/src/observer/mod.rs)",
+      "Bash(grep -rn \"fn trigger\\\\|commands.trigger\\\\|Commands.*trigger\" ~/.cargo/registry/src/index.crates.io-*/bevy_ecs-0.18.1/src/system/commands/mod.rs)",
+      "Bash(grep -n 'pub fn ' ~/.cargo/registry/src/index.crates.io-*/bevy_time-0.18.1/src/timer.rs)"
     ]
   }
 }
