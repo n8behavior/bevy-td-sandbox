@@ -1,4 +1,5 @@
 use bevy::prelude::*;
+use bevy::ecs::message::MessageWriter;
 use crate::states::GameState;
 
 pub fn setup_main_menu(mut commands: Commands) {
@@ -28,7 +29,7 @@ pub fn setup_main_menu(mut commands: Commands) {
                 },
             ));
             parent.spawn((
-                Text::new("Press SPACE to start"),
+                Text::new("Press SPACE to start  |  ESC to quit"),
                 TextColor(Color::srgb(0.6, 0.6, 0.5)),
                 TextFont {
                     font_size: 24.0,
@@ -41,9 +42,13 @@ pub fn setup_main_menu(mut commands: Commands) {
 pub fn handle_main_menu_input(
     keyboard: Res<ButtonInput<KeyCode>>,
     mut next_state: ResMut<NextState<GameState>>,
+    mut exit: MessageWriter<AppExit>,
 ) {
     if keyboard.just_pressed(KeyCode::Space) {
         next_state.set(GameState::Playing);
+    }
+    if keyboard.just_pressed(KeyCode::Escape) {
+        exit.write(AppExit::Success);
     }
 }
 
@@ -74,7 +79,7 @@ pub fn setup_game_over(mut commands: Commands) {
                 },
             ));
             parent.spawn((
-                Text::new("Press SPACE to restart"),
+                Text::new("SPACE: restart  |  ESC: quit"),
                 TextColor(Color::srgb(0.6, 0.6, 0.5)),
                 TextFont {
                     font_size: 24.0,
@@ -87,8 +92,12 @@ pub fn setup_game_over(mut commands: Commands) {
 pub fn handle_game_over_input(
     keyboard: Res<ButtonInput<KeyCode>>,
     mut next_state: ResMut<NextState<GameState>>,
+    mut exit: MessageWriter<AppExit>,
 ) {
     if keyboard.just_pressed(KeyCode::Space) {
         next_state.set(GameState::MainMenu);
+    }
+    if keyboard.just_pressed(KeyCode::Escape) {
+        exit.write(AppExit::Success);
     }
 }

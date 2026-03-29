@@ -3,6 +3,7 @@ pub mod tower_menu;
 pub mod game_over;
 
 use bevy::prelude::*;
+use bevy::ecs::message::MessageWriter;
 use crate::states::GameState;
 use crate::common::constants::*;
 use crate::economy::resources::PlayerScrap;
@@ -25,7 +26,7 @@ impl Plugin for UIPlugin {
             )
             .add_systems(
                 Update,
-                (hud::update_hud, tower_menu::highlight_selected_tower)
+                (hud::update_hud, tower_menu::highlight_selected_tower, handle_quit)
                     .run_if(in_state(GameState::Playing)),
             )
             // Game over
@@ -40,4 +41,13 @@ impl Plugin for UIPlugin {
 fn init_resources(mut commands: Commands) {
     commands.insert_resource(PlayerScrap(STARTING_SCRAP));
     commands.insert_resource(hud::PlayerLives(STARTING_LIVES));
+}
+
+fn handle_quit(
+    keyboard: Res<ButtonInput<KeyCode>>,
+    mut exit: MessageWriter<AppExit>,
+) {
+    if keyboard.just_pressed(KeyCode::KeyQ) {
+        exit.write(AppExit::Success);
+    }
 }

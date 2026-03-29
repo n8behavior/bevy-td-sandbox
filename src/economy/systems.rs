@@ -26,7 +26,6 @@ pub fn scrap_drop_lifetime(
     for (entity, mut drop, mut sprite) in &mut drops {
         drop.lifetime.tick(time.delta());
 
-        // Blink when about to expire
         let remaining = drop.lifetime.remaining_secs();
         if remaining < 3.0 {
             let alpha = if (remaining * 4.0) as i32 % 2 == 0 {
@@ -43,6 +42,7 @@ pub fn scrap_drop_lifetime(
     }
 }
 
+/// Right-click to vacuum collect ALL nearby scrap
 pub fn click_to_collect_scrap(
     mut commands: Commands,
     mouse: Res<ButtonInput<MouseButton>>,
@@ -51,7 +51,7 @@ pub fn click_to_collect_scrap(
     drops: Query<(Entity, &ScrapDrop, &Transform)>,
     mut scrap: ResMut<PlayerScrap>,
 ) {
-    if !mouse.just_pressed(MouseButton::Left) {
+    if !mouse.just_pressed(MouseButton::Right) {
         return;
     }
 
@@ -66,15 +66,14 @@ pub fn click_to_collect_scrap(
         return;
     };
 
-    // Collect radius -- generous click area
-    let collect_radius = TILE_SIZE * 1.5;
+    let collect_radius = TILE_SIZE * 2.5;
 
+    // Collect ALL nearby scrap, not just one
     for (entity, drop, tf) in &drops {
         let dist = world_pos.distance(tf.translation.truncate());
         if dist <= collect_radius {
             scrap.0 += drop.value;
             commands.entity(entity).despawn();
-            break; // Only collect one per click
         }
     }
 }
