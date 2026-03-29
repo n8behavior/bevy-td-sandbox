@@ -18,18 +18,18 @@ pub fn setup_tower_palette(mut commands: Commands) {
                 left: Val::Px(10.0),
                 flex_direction: FlexDirection::Column,
                 row_gap: Val::Px(6.0),
-                padding: UiRect::all(Val::Px(8.0)),
+                padding: UiRect::all(Val::Px(10.0)),
                 ..default()
             },
-            BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.7)),
+            BackgroundColor(Color::srgba(0.12, 0.1, 0.08, 0.85)),
             DespawnOnExit(GameState::Playing),
         ))
         .with_children(|parent| {
             parent.spawn((
                 Text::new("TOWERS (1-4)"),
-                TextColor(Color::srgb(0.8, 0.7, 0.4)),
+                TextColor(Color::srgb(0.95, 0.85, 0.5)),
                 TextFont {
-                    font_size: 14.0,
+                    font_size: 15.0,
                     ..default()
                 },
             ));
@@ -52,8 +52,8 @@ pub fn setup_tower_palette(mut commands: Commands) {
                     ))
                     .with_children(|btn| {
                         btn.spawn((
-                            Text::new(format!("{label} ({cost})  ")),
-                            TextColor(tower_type.color()),
+                            Text::new(format!("{label} ({cost})")),
+                            TextColor(tower_type.ui_color()),
                             TextFont {
                                 font_size: 14.0,
                                 ..default()
@@ -64,7 +64,7 @@ pub fn setup_tower_palette(mut commands: Commands) {
 
             parent.spawn((
                 Text::new("\nENTER: Start Wave\nESC: Deselect\nESC ESC: Quit\nR-Click: Collect Scrap"),
-                TextColor(Color::srgb(0.5, 0.5, 0.4)),
+                TextColor(Color::srgb(0.7, 0.65, 0.5)),
                 TextFont {
                     font_size: 12.0,
                     ..default()
@@ -80,7 +80,7 @@ pub fn highlight_selected_tower(
 ) {
     for (btn, mut bg) in &mut buttons {
         if selected.0 == Some(btn.0) {
-            *bg = BackgroundColor(Color::srgba(0.4, 0.4, 0.2, 0.5));
+            *bg = BackgroundColor(Color::srgba(0.5, 0.45, 0.2, 0.6));
         } else {
             *bg = BackgroundColor(Color::NONE);
         }

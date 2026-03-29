@@ -24,9 +24,19 @@ impl TowerType {
     pub fn color(&self) -> Color {
         match self {
             TowerType::ScrapGun => Color::srgb(0.7, 0.7, 0.3),
-            TowerType::TarPit => Color::srgb(0.2, 0.2, 0.2),
+            TowerType::TarPit => Color::srgb(0.3, 0.25, 0.2),
             TowerType::Explosive => Color::srgb(0.9, 0.3, 0.1),
             TowerType::Railgun => Color::srgb(0.3, 0.5, 0.9),
+        }
+    }
+
+    /// Brighter color for UI text readability
+    pub fn ui_color(&self) -> Color {
+        match self {
+            TowerType::ScrapGun => Color::srgb(0.95, 0.9, 0.4),
+            TowerType::TarPit => Color::srgb(0.7, 0.55, 0.35),
+            TowerType::Explosive => Color::srgb(1.0, 0.5, 0.2),
+            TowerType::Railgun => Color::srgb(0.5, 0.7, 1.0),
         }
     }
 
