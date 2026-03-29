@@ -109,6 +109,15 @@ pub fn handle_start_wave_input(
     }
 }
 
+pub fn check_game_over(
+    lives: Res<crate::ui::hud::PlayerLives>,
+    mut next_state: ResMut<NextState<crate::states::GameState>>,
+) {
+    if lives.0 == 0 {
+        next_state.set(crate::states::GameState::GameOver);
+    }
+}
+
 pub fn generate_waves() -> Vec<WaveConfig> {
     let mut waves = Vec::new();
 

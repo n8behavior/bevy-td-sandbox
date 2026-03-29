@@ -19,7 +19,8 @@
       "Bash(grep -r \"add_event\\\\|add_message\\\\|fn event\\\\|fn message\" ~/.cargo/registry/src/index.crates.io-*/bevy_app-0.18.1/src/app.rs)",
       "Bash(grep -rn \"add_event\\\\|fn trigger\\\\|add_observer\" ~/.cargo/registry/src/index.crates.io-*/bevy_ecs-0.18.1/src/observer/mod.rs)",
       "Bash(grep -rn \"fn trigger\\\\|commands.trigger\\\\|Commands.*trigger\" ~/.cargo/registry/src/index.crates.io-*/bevy_ecs-0.18.1/src/system/commands/mod.rs)",
-      "Bash(grep -n 'pub fn ' ~/.cargo/registry/src/index.crates.io-*/bevy_time-0.18.1/src/timer.rs)"
+      "Bash(grep -n 'pub fn ' ~/.cargo/registry/src/index.crates.io-*/bevy_time-0.18.1/src/timer.rs)",
+      "Bash(grep -rn \"pub struct Trigger\\\\|pub type Trigger\\\\|struct Trigger\" ~/.cargo/registry/src/index.crates.io-*/bevy_ecs-0.18.1/src/observer/)"
     ]
   }
 }
