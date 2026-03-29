@@ -43,11 +43,21 @@ fn init_resources(mut commands: Commands) {
     commands.insert_resource(hud::PlayerLives(STARTING_LIVES));
 }
 
+/// ESC deselects tower first, then quits if nothing was selected.
+/// Runs AFTER tower_selection so `selected` is already updated this frame.
 fn handle_quit(
     keyboard: Res<ButtonInput<KeyCode>>,
     mut exit: MessageWriter<AppExit>,
+    mut last_esc: Local<bool>,
 ) {
-    if keyboard.just_pressed(KeyCode::KeyQ) {
-        exit.write(AppExit::Success);
+    if keyboard.just_pressed(KeyCode::Escape) {
+        if *last_esc {
+            // Second ESC in a row → quit
+            exit.write(AppExit::Success);
+        }
+        *last_esc = true;
+    } else if keyboard.get_just_pressed().count() > 0 {
+        // Any other key resets the ESC counter
+        *last_esc = false;
     }
 }
