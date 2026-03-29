@@ -36,22 +36,22 @@ impl TowerType {
         match self {
             TowerType::ScrapGun => TowerStats {
                 damage: 10.0,
-                range: 3.0,
+                range: 4.0,
                 fire_rate: 1.0,
             },
             TowerType::TarPit => TowerStats {
                 damage: 2.0,
-                range: 2.5,
+                range: 3.5,
                 fire_rate: 0.5,
             },
             TowerType::Explosive => TowerStats {
                 damage: 25.0,
-                range: 3.5,
+                range: 5.0,
                 fire_rate: 0.3,
             },
             TowerType::Railgun => TowerStats {
                 damage: 50.0,
-                range: 6.0,
+                range: 8.0,
                 fire_rate: 0.2,
             },
         }

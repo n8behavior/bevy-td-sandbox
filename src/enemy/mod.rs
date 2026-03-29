@@ -18,6 +18,11 @@ impl Plugin for EnemyPlugin {
             )
                 .run_if(in_state(GameState::Playing))
                 .run_if(in_state(PlayPhase::Defending)),
+        )
+        .add_systems(
+            Update,
+            systems::update_health_bars
+                .run_if(in_state(GameState::Playing)),
         );
     }
 }

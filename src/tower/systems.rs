@@ -20,7 +20,7 @@ pub fn tower_shooting(
     for (tower_tf, stats, mut cooldown, slow, aoe) in &mut towers {
         cooldown.timer.tick(time.delta());
 
-        if !cooldown.timer.just_finished() {
+        if cooldown.timer.times_finished_this_tick() == 0 {
             continue;
         }
 
@@ -38,19 +38,21 @@ pub fn tower_shooting(
             }
         }
 
-        let Some((target_entity, _)) = best else {
+        let Some((target_entity, _dist)) = best else {
             continue;
         };
+
+        info!("Tower firing at enemy at distance {:.0}px (range: {:.0}px)", _dist, range_world);
 
         use crate::projectile::components::*;
 
         let mut proj = commands.spawn((
             Projectile {
                 damage: stats.damage,
-                speed: 300.0,
+                speed: 200.0,
                 target: target_entity,
             },
-            Sprite::from_color(Color::srgb(1.0, 1.0, 0.6), Vec2::splat(4.0)),
+            Sprite::from_color(Color::srgb(1.0, 1.0, 0.6), Vec2::splat(6.0)),
             Transform::from_translation(tower_tf.translation + Vec3::Z * 0.5),
         ));
 

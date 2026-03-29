@@ -13,6 +13,9 @@ pub struct EnemyDied {
     pub loot_value: u32,
 }
 
+#[derive(Component)]
+pub struct HealthBar;
+
 pub fn enemy_movement(
     mut query: Query<(Entity, &mut AgentPos, &NextPos, &mut Transform, &MoveSpeed)>,
     mut commands: Commands,
@@ -25,7 +28,6 @@ pub fn enemy_movement(
         let distance = direction.length();
 
         if distance < 1.0 {
-            // Arrived at next cell
             agent_pos.0 = next_pos.0;
             transform.translation = target_world;
             commands.entity(entity).remove::<NextPos>();
@@ -89,6 +91,30 @@ pub fn apply_slow_effects(
     }
 }
 
+pub fn update_health_bars(
+    enemies: Query<(&Health, &Transform, &Children), With<Enemy>>,
+    mut bars: Query<(&mut Sprite, &mut Transform), (With<HealthBar>, Without<Enemy>)>,
+) {
+    for (health, _enemy_tf, children) in &enemies {
+        for child in children.iter() {
+            if let Ok((mut sprite, mut bar_tf)) = bars.get_mut(child) {
+                let frac = (health.current / health.max).clamp(0.0, 1.0);
+                let bar_width = 16.0;
+                sprite.custom_size = Some(Vec2::new(bar_width * frac, 2.0));
+                // Color: green → yellow → red
+                sprite.color = if frac > 0.5 {
+                    Color::srgb(0.2, 0.8, 0.2)
+                } else if frac > 0.25 {
+                    Color::srgb(0.9, 0.8, 0.1)
+                } else {
+                    Color::srgb(0.9, 0.2, 0.1)
+                };
+                bar_tf.translation.x = -bar_width * (1.0 - frac) / 2.0;
+            }
+        }
+    }
+}
+
 pub fn spawn_enemy(
     commands: &mut Commands,
     enemy_type: EnemyType,
@@ -103,21 +129,27 @@ pub fn spawn_enemy(
     let health = enemy_type.base_health() * health_mult;
     let speed = enemy_type.base_speed() * speed_mult;
 
-    commands.spawn((
-        Enemy { enemy_type },
-        Health {
-            current: health,
-            max: health,
-        },
-        MoveSpeed {
-            base: speed,
-            current: speed,
-        },
-        LootValue(enemy_type.loot_value()),
-        Sprite::from_color(enemy_type.color(), Vec2::splat(size)),
-        Transform::from_translation(world_pos.extend(1.0)),
-        AgentPos(spawn_pos),
-        AgentOfGrid(grid_entity),
-        Pathfind::new(goal_pos),
-    ));
+    commands
+        .spawn((
+            Enemy { enemy_type },
+            Health {
+                current: health,
+                max: health,
+            },
+            MoveSpeed {
+                base: speed,
+                current: speed,
+            },
+            LootValue(enemy_type.loot_value()),
+            Sprite::from_color(enemy_type.color(), Vec2::splat(size)),
+            Transform::from_translation(world_pos.extend(1.0)),
+            AgentPos(spawn_pos),
+            AgentOfGrid(grid_entity),
+            Pathfind::new(goal_pos),
+        ))
+        .with_child((
+            HealthBar,
+            Sprite::from_color(Color::srgb(0.2, 0.8, 0.2), Vec2::new(16.0, 2.0)),
+            Transform::from_translation(Vec3::new(0.0, size / 2.0 + 3.0, 0.1)),
+        ));
 }
