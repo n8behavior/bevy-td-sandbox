@@ -190,9 +190,18 @@ grid.is_path_viable(start, goal) // -> bool
 
 ```bash
 cargo check          # fast compile check
+cargo clippy         # lint check (MUST pass with zero warnings before every commit)
 cargo run            # run the game
 cargo doc --open     # browse local API docs
 ```
+
+## Zero Warnings Policy
+
+**Both `cargo check` and `cargo clippy` must produce zero warnings before every commit.**
+
+- `clippy::too_many_arguments` and `clippy::type_complexity` are allowed crate-wide in `main.rs` (standard Bevy practice -- ECS systems use dependency injection)
+- All other warnings must be fixed, not suppressed
+- Remove unused code rather than keeping it "for later"
 
 ## Local Docs
 

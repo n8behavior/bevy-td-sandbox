@@ -23,7 +23,8 @@
       "Bash(grep -rn \"pub struct Trigger\\\\|pub type Trigger\\\\|struct Trigger\" ~/.cargo/registry/src/index.crates.io-*/bevy_ecs-0.18.1/src/observer/)",
       "Bash(cargo build:*)",
       "Bash(grep -rn \"pub struct AppExit\\\\|pub.*AppExit\\\\|MessageWriter.*AppExit\\\\|EventWriter\" ~/.cargo/registry/src/index.crates.io-*/bevy_app-0.18.1/src/)",
-      "Bash(grep:*)"
+      "Bash(grep:*)",
+      "Bash(cargo clippy:*)"
     ]
   }
 }

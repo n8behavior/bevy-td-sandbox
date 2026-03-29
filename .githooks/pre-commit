@@ -1,0 +1,7 @@
+#!/bin/bash
+set -e
+
+echo "Running cargo clippy..."
+cargo clippy -- -D warnings
+
+echo "All checks passed."

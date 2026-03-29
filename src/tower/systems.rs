@@ -31,18 +31,15 @@ pub fn tower_shooting(
         let mut best: Option<(Entity, f32)> = None;
         for (enemy_entity, enemy_tf) in &enemies {
             let dist = tower_pos.distance(enemy_tf.translation.truncate());
-            if dist <= range_world {
-                if best.is_none() || dist < best.unwrap().1 {
+            if dist <= range_world
+                && (best.is_none() || dist < best.unwrap().1) {
                     best = Some((enemy_entity, dist));
                 }
-            }
         }
 
-        let Some((target_entity, _dist)) = best else {
+        let Some((target_entity, _)) = best else {
             continue;
         };
-
-        info!("Tower firing at enemy at distance {:.0}px (range: {:.0}px)", _dist, range_world);
 
         use crate::projectile::components::*;
 
