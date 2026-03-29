@@ -43,6 +43,14 @@ impl EnemyType {
         }
     }
 
+    pub fn ui_color(&self) -> Color {
+        match self {
+            EnemyType::Shambler => Color::srgb(0.5, 0.9, 0.4),
+            EnemyType::Runner => Color::srgb(1.0, 0.9, 0.3),
+            EnemyType::Brute => Color::srgb(0.8, 0.4, 0.7),
+        }
+    }
+
     pub fn size(&self) -> f32 {
         match self {
             EnemyType::Shambler => 14.0,

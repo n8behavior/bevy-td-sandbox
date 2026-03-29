@@ -26,7 +26,12 @@ impl Plugin for UIPlugin {
             )
             .add_systems(
                 Update,
-                (hud::update_hud, tower_menu::highlight_selected_tower, handle_quit)
+                (
+                    hud::update_hud,
+                    tower_menu::highlight_selected_tower,
+                    tower_menu::update_wave_preview,
+                    handle_quit,
+                )
                     .run_if(in_state(GameState::Playing)),
             )
             // Game over
