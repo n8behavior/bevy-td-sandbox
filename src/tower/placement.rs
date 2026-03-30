@@ -92,7 +92,7 @@ pub fn handle_tower_placement(
     // TarPit is passable (high cost), other towers are impassable
     let is_tarpit = tower_type == TowerType::TarPit;
     let nav = if is_tarpit {
-        Nav::Passable(5)
+        Nav::Passable(2) // Slightly costly so pathfinding prefers open ground, but enemies still walk through
     } else {
         Nav::Impassable
     };
@@ -151,20 +151,20 @@ pub fn handle_tower_placement(
                 factor: 0.4,
                 duration: 0.5, // Short duration -- refreshed by aura while in range
             });
-            // Spawn gradient aura rings as children
+            // Spawn gradient aura rings as children (innermost = darkest)
             let range_px = stats.range * TILE_SIZE;
-            let rings = 4;
+            let rings = 5;
             for i in 0..rings {
                 let frac = (i + 1) as f32 / rings as f32;
                 let size = range_px * 2.0 * frac;
-                let alpha = 0.15 * (1.0 - frac);
+                let alpha = 0.35 * (1.0 - frac * 0.7); // 0.35 inner → ~0.10 outer
                 entity_cmds.with_child((
                     AuraVisual,
                     Sprite::from_color(
-                        Color::srgba(0.2, 0.15, 0.05, alpha),
+                        Color::srgba(0.15, 0.1, 0.0, alpha),
                         Vec2::splat(size),
                     ),
-                    Transform::from_translation(Vec3::new(0.0, 0.0, -0.1)),
+                    Transform::from_translation(Vec3::new(0.0, 0.0, -0.2)),
                 ));
             }
         }
