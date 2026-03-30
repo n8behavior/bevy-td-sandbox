@@ -228,9 +228,23 @@ pub fn tower_placement_preview(
         Color::srgba(0.9, 0.3, 0.3, 0.5)
     };
 
-    commands.spawn((
+    // Tower sprite preview
+    let mut preview = commands.spawn((
         Sprite::from_color(color, Vec2::splat(TILE_SIZE - 2.0)),
         Transform::from_translation(snap_pos.extend(2.0)),
         PlacementPreview,
+    ));
+
+    // Range ring preview
+    let stats = tower_type.stats();
+    let range_px = stats.range * TILE_SIZE;
+    let ring_color = match tower_type {
+        TowerType::TarPit => Color::srgba(0.15, 0.1, 0.0, 0.2),
+        TowerType::Explosive => Color::srgba(0.9, 0.3, 0.1, 0.1),
+        _ => Color::srgba(0.8, 0.8, 0.3, 0.08),
+    };
+    preview.with_child((
+        Sprite::from_color(ring_color, Vec2::splat(range_px * 2.0)),
+        Transform::from_translation(Vec3::new(0.0, 0.0, -0.1)),
     ));
 }

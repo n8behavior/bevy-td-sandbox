@@ -78,8 +78,11 @@ pub fn tarpit_aura(
         for (enemy_entity, enemy_tf) in &enemies {
             let dist = tower_pos.distance(enemy_tf.translation.truncate());
             if dist <= range_world {
+                // Slow proportional to distance: full slow at center, no slow at edge
+                let t = (dist / range_world).clamp(0.0, 1.0);
+                let factor = slow.factor + (1.0 - slow.factor) * t;
                 commands.entity(enemy_entity).insert(SlowEffect {
-                    factor: slow.factor,
+                    factor,
                     remaining: Timer::from_seconds(slow.duration, TimerMode::Once),
                 });
             }
