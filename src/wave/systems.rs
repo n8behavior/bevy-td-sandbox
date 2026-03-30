@@ -5,7 +5,8 @@ use crate::common::constants::GridConfig;
 use crate::enemy::components::{Dead, Enemy, EnemyType};
 use crate::enemy::systems::spawn_enemy;
 use crate::grid::components::{SpawnPoint, GoalPoint, GridCell};
-use crate::states::PlayPhase;
+use crate::states::{GameState, PlayPhase};
+use crate::ui::hud::PlayerLives;
 
 use super::resources::*;
 
@@ -113,11 +114,11 @@ pub fn handle_start_wave_input(
 }
 
 pub fn check_game_over(
-    lives: Res<crate::ui::hud::PlayerLives>,
-    mut next_state: ResMut<NextState<crate::states::GameState>>,
+    lives: Res<PlayerLives>,
+    mut next_state: ResMut<NextState<GameState>>,
 ) {
     if lives.0 == 0 {
-        next_state.set(crate::states::GameState::GameOver);
+        next_state.set(GameState::GameOver);
     }
 }
 

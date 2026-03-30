@@ -2,6 +2,7 @@ use bevy::prelude::*;
 
 use crate::common::constants::*;
 use crate::enemy::components::{Dead, Enemy, SlowEffect};
+use crate::projectile::components::*;
 
 use super::components::*;
 
@@ -44,8 +45,6 @@ pub fn tower_shooting(
         let Some((target_entity, _)) = best else {
             continue;
         };
-
-        use crate::projectile::components::*;
 
         let mut proj = commands.spawn((
             Projectile {

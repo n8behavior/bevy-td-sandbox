@@ -2,6 +2,7 @@ pub mod systems;
 
 use bevy::prelude::*;
 use crate::enemy::components::{Dead, Enemy};
+use crate::grid::components::{GoalPoint, GridCell};
 
 #[derive(Event)]
 pub struct GridChanged;
@@ -14,10 +15,7 @@ impl Plugin for PathfindingPlugin {
             |_trigger: On<GridChanged>,
              commands: Commands,
              enemies: Query<Entity, (With<Enemy>, Without<Dead>)>,
-             goal_query: Query<
-                 &crate::grid::components::GridCell,
-                 With<crate::grid::components::GoalPoint>,
-             >| {
+             goal_query: Query<&GridCell, With<GoalPoint>>| {
                 systems::recalculate_enemy_paths(commands, enemies, goal_query);
             },
         );
