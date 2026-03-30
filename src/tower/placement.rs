@@ -92,7 +92,7 @@ pub fn handle_tower_placement(
     // TarPit is passable (high cost), other towers are impassable
     let is_tarpit = tower_type == TowerType::TarPit;
     let nav = if is_tarpit {
-        Nav::Passable(2) // Slightly costly so pathfinding prefers open ground, but enemies still walk through
+        Nav::Passable(1) // Same cost as open ground -- enemies walk right through
     } else {
         Nav::Impassable
     };
