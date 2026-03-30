@@ -11,11 +11,17 @@ impl Plugin for EnemyPlugin {
         app.add_systems(
             FixedUpdate,
             (
-                systems::enemy_movement,
-                systems::apply_slow_effects,
-                systems::enemy_reached_goal,
-                systems::check_enemy_death,
+                // Game logic first
+                (
+                    systems::enemy_movement,
+                    systems::apply_slow_effects,
+                    systems::enemy_reached_goal,
+                    systems::check_enemy_death,
+                ),
+                // Cleanup runs after all game logic
+                systems::cleanup_dead,
             )
+                .chain()
                 .run_if(in_state(GameState::Playing))
                 .run_if(in_state(PlayPhase::Defending)),
         )

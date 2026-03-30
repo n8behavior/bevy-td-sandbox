@@ -1,7 +1,7 @@
 use bevy::prelude::*;
 
 use crate::common::constants::*;
-use crate::enemy::components::{Enemy, Health, SlowEffect};
+use crate::enemy::components::{Dead, Enemy, SlowEffect};
 
 use super::components::*;
 
@@ -15,7 +15,7 @@ pub fn tower_shooting(
         &mut AttackCooldown,
         Option<&AoEOnHit>,
     )>,
-    enemies: Query<(Entity, &Transform), With<Enemy>>,
+    enemies: Query<(Entity, &Transform), (With<Enemy>, Without<Dead>)>,
     time: Res<Time>,
 ) {
     for (tower, tower_tf, stats, mut cooldown, aoe) in &mut towers {
@@ -70,17 +70,13 @@ pub fn tower_shooting(
 pub fn tarpit_aura(
     mut commands: Commands,
     tarpits: Query<(&Transform, &TowerStats, &SlowOnHit), With<Tower>>,
-    enemies: Query<(Entity, &Transform, &Health), With<Enemy>>,
+    enemies: Query<(Entity, &Transform), (With<Enemy>, Without<Dead>)>,
 ) {
     for (tower_tf, stats, slow) in &tarpits {
         let range_world = stats.range * TILE_SIZE;
         let tower_pos = tower_tf.translation.truncate();
 
-        for (enemy_entity, enemy_tf, health) in &enemies {
-            // Skip dead enemies to avoid inserting on entities about to despawn
-            if health.current <= 0.0 {
-                continue;
-            }
+        for (enemy_entity, enemy_tf) in &enemies {
             let dist = tower_pos.distance(enemy_tf.translation.truncate());
             if dist <= range_world {
                 commands.entity(enemy_entity).insert(SlowEffect {

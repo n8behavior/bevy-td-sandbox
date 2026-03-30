@@ -7,11 +7,12 @@ use super::components::*;
 pub fn projectile_movement(
     mut commands: Commands,
     mut projectiles: Query<(Entity, &Projectile, &mut Transform)>,
-    targets: Query<&Transform, (With<Enemy>, Without<Projectile>)>,
+    targets: Query<&Transform, (With<Enemy>, Without<Dead>, Without<Projectile>)>,
     time: Res<Time>,
 ) {
     for (entity, proj, mut proj_tf) in &mut projectiles {
         let Ok(target_tf) = targets.get(proj.target) else {
+            // Target dead or gone -- despawn projectile
             commands.entity(entity).despawn();
             continue;
         };
@@ -44,9 +45,8 @@ struct PendingHit {
 pub fn projectile_hit_detection(
     mut commands: Commands,
     projectiles: Query<(Entity, &Projectile, &Transform, Option<&AoEPayload>, Option<&SlowPayload>)>,
-    mut enemies: Query<(Entity, &mut Health, &Transform), With<Enemy>>,
+    mut enemies: Query<(Entity, &mut Health, &Transform), (With<Enemy>, Without<Dead>)>,
 ) {
-    // Collect hits first to avoid borrow issues
     let mut hits: Vec<PendingHit> = Vec::new();
 
     for (proj_entity, proj, proj_tf, aoe, slow) in &projectiles {
@@ -70,16 +70,13 @@ pub fn projectile_hit_detection(
         });
     }
 
-    // Apply hits
     for hit in hits {
         commands.entity(hit.proj_entity).despawn();
 
-        // Direct damage
         if let Ok((_, mut health, _)) = enemies.get_mut(hit.target) {
             health.current -= hit.damage;
         }
 
-        // Slow effect
         if let Some((factor, duration)) = hit.slow {
             commands.entity(hit.target).insert(SlowEffect {
                 factor,
@@ -87,7 +84,6 @@ pub fn projectile_hit_detection(
             });
         }
 
-        // AoE damage
         if let Some((radius, aoe_damage)) = hit.aoe {
             let aoe_targets: Vec<Entity> = enemies
                 .iter()

@@ -82,7 +82,7 @@ pub fn spawn_enemies(
 
 pub fn check_wave_complete(
     mut wave_mgr: ResMut<WaveManager>,
-    enemies: Query<(), With<crate::enemy::components::Enemy>>,
+    enemies: Query<(), (With<crate::enemy::components::Enemy>, Without<crate::enemy::components::Dead>)>,
     mut next_phase: ResMut<NextState<PlayPhase>>,
 ) {
     let wave_idx = wave_mgr.current_wave as usize;

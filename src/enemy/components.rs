@@ -80,3 +80,9 @@ pub struct SlowEffect {
 
 #[derive(Component)]
 pub struct LootValue(pub u32);
+
+/// Marker for entities pending despawn. All systems must use `Without<Dead>`
+/// in queries to avoid operating on doomed entities. Actual despawn happens
+/// in `cleanup_dead` which runs last.
+#[derive(Component)]
+pub struct Dead;

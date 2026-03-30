@@ -18,7 +18,7 @@ pub struct EnemyDied {
 pub struct HealthBar;
 
 pub fn enemy_movement(
-    mut query: Query<(Entity, &mut AgentPos, &NextPos, &mut Transform, &MoveSpeed)>,
+    mut query: Query<(Entity, &mut AgentPos, &NextPos, &mut Transform, &MoveSpeed), Without<Dead>>,
     mut commands: Commands,
     time: Res<Time>,
     config: Res<GridConfig>,
@@ -46,9 +46,10 @@ pub fn enemy_movement(
     }
 }
 
+/// Mark enemies that reached the goal as Dead (don't despawn directly)
 pub fn enemy_reached_goal(
     mut commands: Commands,
-    enemies: Query<(Entity, &AgentPos), With<Enemy>>,
+    enemies: Query<(Entity, &AgentPos), (With<Enemy>, Without<Dead>)>,
     goals: Query<&GridCell, With<GoalPoint>>,
     mut lives: ResMut<PlayerLives>,
 ) {
@@ -57,15 +58,16 @@ pub fn enemy_reached_goal(
             let goal_uvec = UVec3::new(goal_cell.coord.x as u32, goal_cell.coord.y as u32, 0);
             if agent_pos.0 == goal_uvec {
                 lives.0 = lives.0.saturating_sub(1);
-                commands.entity(entity).despawn();
+                commands.entity(entity).insert(Dead);
             }
         }
     }
 }
 
+/// Mark enemies with zero health as Dead, trigger loot event
 pub fn check_enemy_death(
     mut commands: Commands,
-    enemies: Query<(Entity, &Health, &Transform, &LootValue), With<Enemy>>,
+    enemies: Query<(Entity, &Health, &Transform, &LootValue), (With<Enemy>, Without<Dead>)>,
 ) {
     for (entity, health, transform, loot) in &enemies {
         if health.current <= 0.0 {
@@ -73,14 +75,14 @@ pub fn check_enemy_death(
                 position: transform.translation.truncate(),
                 loot_value: loot.0,
             });
-            commands.entity(entity).despawn();
+            commands.entity(entity).insert(Dead);
         }
     }
 }
 
 pub fn apply_slow_effects(
     mut commands: Commands,
-    mut query: Query<(Entity, &mut MoveSpeed, &mut SlowEffect)>,
+    mut query: Query<(Entity, &mut MoveSpeed, &mut SlowEffect), Without<Dead>>,
     time: Res<Time>,
 ) {
     for (entity, mut speed, mut slow) in &mut query {
@@ -94,7 +96,7 @@ pub fn apply_slow_effects(
 }
 
 pub fn update_health_bars(
-    enemies: Query<(&Health, &Transform, &Children), With<Enemy>>,
+    enemies: Query<(&Health, &Transform, &Children), (With<Enemy>, Without<Dead>)>,
     mut bars: Query<(&mut Sprite, &mut Transform), (With<HealthBar>, Without<Enemy>)>,
 ) {
     for (health, _enemy_tf, children) in &enemies {
@@ -103,7 +105,6 @@ pub fn update_health_bars(
                 let frac = (health.current / health.max).clamp(0.0, 1.0);
                 let bar_width = 16.0;
                 sprite.custom_size = Some(Vec2::new(bar_width * frac, 2.0));
-                // Color: green → yellow → red
                 sprite.color = if frac > 0.5 {
                     Color::srgb(0.2, 0.8, 0.2)
                 } else if frac > 0.25 {
@@ -114,6 +115,13 @@ pub fn update_health_bars(
                 bar_tf.translation.x = -bar_width * (1.0 - frac) / 2.0;
             }
         }
+    }
+}
+
+/// Actually despawn all Dead entities. Runs last in the frame.
+pub fn cleanup_dead(mut commands: Commands, dead: Query<Entity, With<Dead>>) {
+    for entity in &dead {
+        commands.entity(entity).despawn();
     }
 }
 
