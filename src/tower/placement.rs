@@ -89,31 +89,42 @@ pub fn handle_tower_placement(
         return;
     };
 
+    // TarPit is passable (high cost), other towers are impassable
+    let is_tarpit = tower_type == TowerType::TarPit;
+    let nav = if is_tarpit {
+        Nav::Passable(5)
+    } else {
+        Nav::Impassable
+    };
+
     let old_nav = grid.nav(cell_uvec);
-    grid.set_nav(cell_uvec, Nav::Impassable);
+    grid.set_nav(cell_uvec, nav);
     grid.build();
 
-    let Ok(spawn_cell) = spawn_cells.single() else {
-        return;
-    };
-    let Ok(goal_cell) = goal_cells.single() else {
-        return;
-    };
-    let spawn_uvec = UVec3::new(spawn_cell.coord.x as u32, spawn_cell.coord.y as u32, 0);
-    let goal_uvec = UVec3::new(goal_cell.coord.x as u32, goal_cell.coord.y as u32, 0);
+    // Path validation: only needed for impassable towers
+    if !is_tarpit {
+        let Ok(spawn_cell) = spawn_cells.single() else {
+            return;
+        };
+        let Ok(goal_cell) = goal_cells.single() else {
+            return;
+        };
+        let spawn_uvec = UVec3::new(spawn_cell.coord.x as u32, spawn_cell.coord.y as u32, 0);
+        let goal_uvec = UVec3::new(goal_cell.coord.x as u32, goal_cell.coord.y as u32, 0);
 
-    let path_exists = grid
-        .pathfind(&mut PathfindArgs::new(spawn_uvec, goal_uvec).astar())
-        .is_some();
+        let path_exists = grid
+            .pathfind(&mut PathfindArgs::new(spawn_uvec, goal_uvec).astar())
+            .is_some();
 
-    if !path_exists {
-        if let Some(old) = old_nav {
-            grid.set_nav(cell_uvec, old);
-        } else {
-            grid.set_nav(cell_uvec, Nav::Passable(1));
+        if !path_exists {
+            if let Some(old) = old_nav {
+                grid.set_nav(cell_uvec, old);
+            } else {
+                grid.set_nav(cell_uvec, Nav::Passable(1));
+            }
+            grid.build();
+            return;
         }
-        grid.build();
-        return;
     }
 
     scrap.0 -= tower_type.cost();
@@ -123,8 +134,8 @@ pub fn handle_tower_placement(
     let fire_rate = stats.fire_rate;
 
     let mut entity_cmds = commands.spawn((
-        Tower,
-        stats,
+        Tower { tower_type },
+        stats.clone(),
         AttackCooldown {
             timer: Timer::from_seconds(1.0 / fire_rate, TimerMode::Repeating),
         },
@@ -138,8 +149,24 @@ pub fn handle_tower_placement(
         TowerType::TarPit => {
             entity_cmds.insert(SlowOnHit {
                 factor: 0.4,
-                duration: 2.0,
+                duration: 0.5, // Short duration -- refreshed by aura while in range
             });
+            // Spawn gradient aura rings as children
+            let range_px = stats.range * TILE_SIZE;
+            let rings = 4;
+            for i in 0..rings {
+                let frac = (i + 1) as f32 / rings as f32;
+                let size = range_px * 2.0 * frac;
+                let alpha = 0.15 * (1.0 - frac);
+                entity_cmds.with_child((
+                    AuraVisual,
+                    Sprite::from_color(
+                        Color::srgba(0.2, 0.15, 0.05, alpha),
+                        Vec2::splat(size),
+                    ),
+                    Transform::from_translation(Vec3::new(0.0, 0.0, -0.1)),
+                ));
+            }
         }
         TowerType::Explosive => {
             entity_cmds.insert(AoEOnHit {

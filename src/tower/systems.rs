@@ -1,23 +1,29 @@
 use bevy::prelude::*;
 
 use crate::common::constants::*;
-use crate::enemy::components::Enemy;
+use crate::enemy::components::{Enemy, SlowEffect};
 
 use super::components::*;
 
+/// Projectile-based towers (ScrapGun, Explosive, Railgun). TarPit excluded.
 pub fn tower_shooting(
     mut commands: Commands,
     mut towers: Query<(
+        &Tower,
         &Transform,
         &TowerStats,
         &mut AttackCooldown,
-        Option<&SlowOnHit>,
         Option<&AoEOnHit>,
-    ), With<Tower>>,
+    )>,
     enemies: Query<(Entity, &Transform), With<Enemy>>,
     time: Res<Time>,
 ) {
-    for (tower_tf, stats, mut cooldown, slow, aoe) in &mut towers {
+    for (tower, tower_tf, stats, mut cooldown, aoe) in &mut towers {
+        // TarPit uses aura, not projectiles
+        if tower.tower_type == TowerType::TarPit {
+            continue;
+        }
+
         cooldown.timer.tick(time.delta());
 
         if cooldown.timer.times_finished_this_tick() == 0 {
@@ -27,14 +33,12 @@ pub fn tower_shooting(
         let range_world = stats.range * TILE_SIZE;
         let tower_pos = tower_tf.translation.truncate();
 
-        // Find closest enemy in range
         let mut best: Option<(Entity, f32)> = None;
         for (enemy_entity, enemy_tf) in &enemies {
             let dist = tower_pos.distance(enemy_tf.translation.truncate());
-            if dist <= range_world
-                && (best.is_none() || dist < best.unwrap().1) {
-                    best = Some((enemy_entity, dist));
-                }
+            if dist <= range_world && (best.is_none() || dist < best.unwrap().1) {
+                best = Some((enemy_entity, dist));
+            }
         }
 
         let Some((target_entity, _)) = best else {
@@ -53,18 +57,33 @@ pub fn tower_shooting(
             Transform::from_translation(tower_tf.translation + Vec3::Z * 0.5),
         ));
 
-        if let Some(slow) = slow {
-            proj.insert(SlowPayload {
-                factor: slow.factor,
-                duration: slow.duration,
-            });
-        }
-
         if let Some(aoe) = aoe {
             proj.insert(AoEPayload {
                 radius: aoe.radius,
                 damage: aoe.damage,
             });
+        }
+    }
+}
+
+/// TarPit aura: continuously slow enemies within range (no projectile needed)
+pub fn tarpit_aura(
+    mut commands: Commands,
+    tarpits: Query<(&Transform, &TowerStats, &SlowOnHit), With<Tower>>,
+    mut enemies: Query<(Entity, &Transform), With<Enemy>>,
+) {
+    for (tower_tf, stats, slow) in &tarpits {
+        let range_world = stats.range * TILE_SIZE;
+        let tower_pos = tower_tf.translation.truncate();
+
+        for (enemy_entity, enemy_tf) in &mut enemies {
+            let dist = tower_pos.distance(enemy_tf.translation.truncate());
+            if dist <= range_world {
+                commands.entity(enemy_entity).insert(SlowEffect {
+                    factor: slow.factor,
+                    remaining: Timer::from_seconds(slow.duration, TimerMode::Once),
+                });
+            }
         }
     }
 }

@@ -1,7 +1,13 @@
 use bevy::prelude::*;
 
 #[derive(Component)]
-pub struct Tower;
+pub struct Tower {
+    pub tower_type: TowerType,
+}
+
+/// Marker for the visual aura ring sprites (children of a TarPit tower)
+#[derive(Component)]
+pub struct AuraVisual;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum TowerType {

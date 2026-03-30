@@ -21,7 +21,7 @@ impl Plugin for TowerPlugin {
             )
             .add_systems(
                 FixedUpdate,
-                systems::tower_shooting
+                (systems::tower_shooting, systems::tarpit_aura)
                     .run_if(in_state(GameState::Playing))
                     .run_if(in_state(PlayPhase::Defending)),
             );
