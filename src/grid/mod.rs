@@ -10,7 +10,11 @@ impl Plugin for GridPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(
             OnEnter(GameState::Playing),
-            (systems::setup_camera, systems::setup_grid),
+            (
+                systems::compute_grid_config,
+                (systems::setup_camera, systems::setup_grid),
+            )
+                .chain(),
         );
     }
 }

@@ -44,6 +44,7 @@ pub fn handle_tower_placement(
     existing_towers: Query<&GridCell, With<Tower>>,
     spawn_cells: Query<&GridCell, With<SpawnPoint>>,
     goal_cells: Query<&GridCell, With<GoalPoint>>,
+    config: Res<GridConfig>,
 ) {
     let Some(tower_type) = selected.0 else { return };
     if !mouse.just_pressed(MouseButton::Left) {
@@ -54,7 +55,6 @@ pub fn handle_tower_placement(
     let Ok((camera, cam_transform)) = cameras.single() else {
         return;
     };
-
     let Some(cursor_pos) = window.cursor_position() else {
         return;
     };
@@ -62,16 +62,14 @@ pub fn handle_tower_placement(
         return;
     };
 
-    let Some(grid_pos) = world_to_grid(world_pos) else {
+    let Some(grid_pos) = world_to_grid(world_pos, &config) else {
         return;
     };
 
-    // Check affordability
     if scrap.0 < tower_type.cost() {
         return;
     }
 
-    // Check cell not already occupied
     let is_occupied = existing_towers
         .iter()
         .any(|cell| cell.coord == grid_pos);
@@ -79,7 +77,6 @@ pub fn handle_tower_placement(
         return;
     }
 
-    // Don't place on spawn or goal
     let is_special = spawn_cells.iter().any(|c| c.coord == grid_pos)
         || goal_cells.iter().any(|c| c.coord == grid_pos);
     if is_special {
@@ -88,7 +85,6 @@ pub fn handle_tower_placement(
 
     let cell_uvec = UVec3::new(grid_pos.x as u32, grid_pos.y as u32, 0);
 
-    // Path validation: temporarily block, check if path still exists
     let Ok(mut grid) = grid_query.single_mut() else {
         return;
     };
@@ -97,7 +93,6 @@ pub fn handle_tower_placement(
     grid.set_nav(cell_uvec, Nav::Impassable);
     grid.build();
 
-    // Get spawn and goal positions
     let Ok(spawn_cell) = spawn_cells.single() else {
         return;
     };
@@ -112,7 +107,6 @@ pub fn handle_tower_placement(
         .is_some();
 
     if !path_exists {
-        // Revert
         if let Some(old) = old_nav {
             grid.set_nav(cell_uvec, old);
         } else {
@@ -122,10 +116,9 @@ pub fn handle_tower_placement(
         return;
     }
 
-    // Valid placement! Deduct cost and spawn tower
     scrap.0 -= tower_type.cost();
 
-    let world_pos = grid_to_world(cell_uvec);
+    let tower_world = grid_to_world(cell_uvec, &config);
     let stats = tower_type.stats();
     let fire_rate = stats.fire_rate;
 
@@ -137,11 +130,10 @@ pub fn handle_tower_placement(
         },
         GridCell { coord: grid_pos },
         Sprite::from_color(tower_type.color(), Vec2::splat(TILE_SIZE - 2.0)),
-        Transform::from_translation(world_pos.extend(0.5)),
+        Transform::from_translation(tower_world.extend(0.5)),
         DespawnOnExit(GameState::Playing),
     ));
 
-    // Add special components based on tower type
     match tower_type {
         TowerType::TarPit => {
             entity_cmds.insert(SlowOnHit {
@@ -158,7 +150,6 @@ pub fn handle_tower_placement(
         _ => {}
     }
 
-    // Trigger enemy re-pathing
     commands.trigger(GridChanged);
 }
 
@@ -172,8 +163,8 @@ pub fn tower_placement_preview(
     spawn_cells: Query<&GridCell, With<SpawnPoint>>,
     goal_cells: Query<&GridCell, With<GoalPoint>>,
     scrap: Res<PlayerScrap>,
+    config: Res<GridConfig>,
 ) {
-    // Despawn old preview
     for entity in &existing_previews {
         commands.entity(entity).despawn();
     }
@@ -190,14 +181,13 @@ pub fn tower_placement_preview(
     let Ok(world_pos) = camera.viewport_to_world_2d(cam_transform, cursor_pos) else {
         return;
     };
-    let Some(grid_pos) = world_to_grid(world_pos) else {
+    let Some(grid_pos) = world_to_grid(world_pos, &config) else {
         return;
     };
 
     let cell_uvec = UVec3::new(grid_pos.x as u32, grid_pos.y as u32, 0);
-    let snap_pos = grid_to_world(cell_uvec);
+    let snap_pos = grid_to_world(cell_uvec, &config);
 
-    // Determine if placement is valid
     let occupied = existing_towers.iter().any(|c| c.coord == grid_pos);
     let is_special = spawn_cells.iter().any(|c| c.coord == grid_pos)
         || goal_cells.iter().any(|c| c.coord == grid_pos);

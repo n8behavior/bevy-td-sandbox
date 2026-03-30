@@ -1,7 +1,8 @@
 use bevy::prelude::*;
 use bevy_northstar::prelude::*;
 
-use crate::grid::systems::grid_to_world;
+use crate::common::constants::GridConfig;
+use crate::grid::systems::{grid_to_world, grid_to_world_cfg};
 use crate::grid::components::{GoalPoint, GridCell};
 use crate::ui::hud::PlayerLives;
 
@@ -20,9 +21,10 @@ pub fn enemy_movement(
     mut query: Query<(Entity, &mut AgentPos, &NextPos, &mut Transform, &MoveSpeed)>,
     mut commands: Commands,
     time: Res<Time>,
+    config: Res<GridConfig>,
 ) {
     for (entity, mut agent_pos, next_pos, mut transform, speed) in &mut query {
-        let target_world = grid_to_world(next_pos.0).extend(1.0);
+        let target_world = grid_to_world(next_pos.0, &config).extend(1.0);
         let current = transform.translation;
         let direction = target_world - current;
         let distance = direction.length();
@@ -123,8 +125,9 @@ pub fn spawn_enemy(
     grid_entity: Entity,
     health_mult: f32,
     speed_mult: f32,
+    config: &GridConfig,
 ) {
-    let world_pos = grid_to_world(spawn_pos);
+    let world_pos = grid_to_world_cfg(spawn_pos, config);
     let size = enemy_type.size();
     let health = enemy_type.base_health() * health_mult;
     let speed = enemy_type.base_speed() * speed_mult;

@@ -4,6 +4,7 @@ pub mod game_over;
 
 use bevy::prelude::*;
 use bevy::ecs::message::MessageWriter;
+use bevy::window::{MonitorSelection, WindowMode};
 use crate::states::GameState;
 use crate::common::constants::*;
 use crate::economy::resources::PlayerScrap;
@@ -13,6 +14,8 @@ pub struct UIPlugin;
 impl Plugin for UIPlugin {
     fn build(&self, app: &mut App) {
         app
+            // Global (all states)
+            .add_systems(Update, toggle_fullscreen)
             // Main menu
             .add_systems(OnEnter(GameState::MainMenu), game_over::setup_main_menu)
             .add_systems(
@@ -62,7 +65,21 @@ fn handle_quit(
         }
         *last_esc = true;
     } else if keyboard.get_just_pressed().count() > 0 {
-        // Any other key resets the ESC counter
         *last_esc = false;
+    }
+}
+
+fn toggle_fullscreen(keyboard: Res<ButtonInput<KeyCode>>, mut windows: Query<&mut Window>) {
+    if keyboard.just_pressed(KeyCode::F11) {
+        let Ok(mut window) = windows.single_mut() else {
+            return;
+        };
+        window.mode = match window.mode {
+            WindowMode::BorderlessFullscreen(_) => {
+                window.resolution.set(WINDOWED_WIDTH, WINDOWED_HEIGHT);
+                WindowMode::Windowed
+            }
+            _ => WindowMode::BorderlessFullscreen(MonitorSelection::Current),
+        };
     }
 }

@@ -10,19 +10,38 @@ const GROUND_COLOR: Color = Color::srgb(0.15, 0.15, 0.12);
 const SPAWN_COLOR: Color = Color::srgb(0.2, 0.6, 0.2);
 const GOAL_COLOR: Color = Color::srgb(0.8, 0.2, 0.2);
 
-pub fn setup_camera(mut commands: Commands) {
-    commands.spawn((Camera2d, DespawnOnExit(GameState::Playing)));
+pub fn compute_grid_config(mut commands: Commands, windows: Query<&Window>) {
+    let Ok(window) = windows.single() else { return };
+    let config = GridConfig::from_window(window.width(), window.height());
+    info!(
+        "Grid: {}x{} tiles, pixel_scale={}x ({}x{})",
+        config.width,
+        config.height,
+        config.pixel_scale,
+        window.width(),
+        window.height()
+    );
+    commands.insert_resource(config);
 }
 
-pub fn setup_grid(mut commands: Commands) {
-    let settings = GridSettingsBuilder::new_2d(GRID_WIDTH, GRID_HEIGHT)
+pub fn setup_camera(mut commands: Commands, config: Res<GridConfig>) {
+    use bevy::camera::ScalingMode;
+    let mut cam = commands.spawn((Camera2d, DespawnOnExit(GameState::Playing)));
+    cam.insert(Projection::Orthographic(OrthographicProjection {
+        scaling_mode: ScalingMode::WindowSize,
+        scale: 1.0 / config.pixel_scale as f32,
+        ..OrthographicProjection::default_2d()
+    }));
+}
+
+pub fn setup_grid(mut commands: Commands, config: Res<GridConfig>) {
+    let settings = GridSettingsBuilder::new_2d(config.width, config.height)
         .chunk_size(CHUNK_SIZE)
         .build();
     let mut grid = CardinalGrid::new(&settings);
 
-    // All cells passable by default
-    for x in 0..GRID_WIDTH {
-        for y in 0..GRID_HEIGHT {
+    for x in 0..config.width {
+        for y in 0..config.height {
             grid.set_nav(UVec3::new(x, y, 0), Nav::Passable(1));
         }
     }
@@ -30,13 +49,12 @@ pub fn setup_grid(mut commands: Commands) {
 
     commands.spawn((grid, DespawnOnExit(GameState::Playing)));
 
-    // Render ground tiles
-    let tile_inner = TILE_SIZE - 1.0; // 1px gap for grid lines
-    for x in 0..GRID_WIDTH {
-        for y in 0..GRID_HEIGHT {
-            let world_pos = grid_to_world(UVec3::new(x, y, 0));
-            let is_spawn = x == 0 && y == GRID_HEIGHT / 2;
-            let is_goal = x == GRID_WIDTH - 1 && y == GRID_HEIGHT / 2;
+    let tile_inner = TILE_SIZE - 1.0;
+    for x in 0..config.width {
+        for y in 0..config.height {
+            let world_pos = grid_to_world_cfg(UVec3::new(x, y, 0), &config);
+            let is_spawn = UVec3::new(x, y, 0) == config.spawn_pos;
+            let is_goal = UVec3::new(x, y, 0) == config.goal_pos;
 
             let color = if is_spawn {
                 SPAWN_COLOR
@@ -65,21 +83,27 @@ pub fn setup_grid(mut commands: Commands) {
     }
 }
 
-pub fn grid_to_world(coord: UVec3) -> Vec2 {
-    let offset_x = (GRID_WIDTH as f32 * TILE_SIZE) / 2.0;
-    let offset_y = (GRID_HEIGHT as f32 * TILE_SIZE) / 2.0;
+/// Convert grid coord to world position, using GridConfig resource
+pub fn grid_to_world_cfg(coord: UVec3, config: &GridConfig) -> Vec2 {
+    let offset_x = (config.width as f32 * TILE_SIZE) / 2.0;
+    let offset_y = (config.height as f32 * TILE_SIZE) / 2.0;
     Vec2::new(
         coord.x as f32 * TILE_SIZE + TILE_SIZE / 2.0 - offset_x,
         coord.y as f32 * TILE_SIZE + TILE_SIZE / 2.0 - offset_y,
     )
 }
 
-pub fn world_to_grid(pos: Vec2) -> Option<IVec2> {
-    let offset_x = (GRID_WIDTH as f32 * TILE_SIZE) / 2.0;
-    let offset_y = (GRID_HEIGHT as f32 * TILE_SIZE) / 2.0;
+/// Convert grid coord to world position, using GridConfig from ECS
+pub fn grid_to_world(coord: UVec3, config: &Res<GridConfig>) -> Vec2 {
+    grid_to_world_cfg(coord, config)
+}
+
+pub fn world_to_grid(pos: Vec2, config: &GridConfig) -> Option<IVec2> {
+    let offset_x = (config.width as f32 * TILE_SIZE) / 2.0;
+    let offset_y = (config.height as f32 * TILE_SIZE) / 2.0;
     let gx = ((pos.x + offset_x) / TILE_SIZE).floor() as i32;
     let gy = ((pos.y + offset_y) / TILE_SIZE).floor() as i32;
-    if gx >= 0 && gx < GRID_WIDTH as i32 && gy >= 0 && gy < GRID_HEIGHT as i32 {
+    if gx >= 0 && gx < config.width as i32 && gy >= 0 && gy < config.height as i32 {
         Some(IVec2::new(gx, gy))
     } else {
         None

@@ -1,6 +1,7 @@
 use bevy::prelude::*;
 use bevy_northstar::prelude::*;
 
+use crate::common::constants::GridConfig;
 use crate::enemy::components::EnemyType;
 use crate::enemy::systems::spawn_enemy;
 use crate::grid::components::{SpawnPoint, GoalPoint, GridCell};
@@ -27,6 +28,7 @@ pub fn spawn_enemies(
     mut commands: Commands,
     mut wave_mgr: ResMut<WaveManager>,
     time: Res<Time>,
+    config: Res<GridConfig>,
     grid_query: Query<Entity, With<CardinalGrid>>,
     spawn_query: Query<&GridCell, With<SpawnPoint>>,
     goal_query: Query<&GridCell, With<GoalPoint>>,
@@ -69,6 +71,7 @@ pub fn spawn_enemies(
                 grid_entity,
                 we.health_multiplier,
                 we.speed_multiplier,
+                &config,
             );
             break;
         }
