@@ -2,7 +2,7 @@ use bevy::prelude::*;
 use bevy_northstar::prelude::*;
 
 use crate::common::constants::GridConfig;
-use crate::enemy::components::EnemyType;
+use crate::enemy::components::{Dead, Enemy, EnemyType};
 use crate::enemy::systems::spawn_enemy;
 use crate::grid::components::{SpawnPoint, GoalPoint, GridCell};
 use crate::states::PlayPhase;
@@ -82,7 +82,7 @@ pub fn spawn_enemies(
 
 pub fn check_wave_complete(
     mut wave_mgr: ResMut<WaveManager>,
-    enemies: Query<(), (With<crate::enemy::components::Enemy>, Without<crate::enemy::components::Dead>)>,
+    enemies: Query<(), (With<Enemy>, Without<Dead>)>,
     mut next_phase: ResMut<NextState<PlayPhase>>,
 ) {
     let wave_idx = wave_mgr.current_wave as usize;
