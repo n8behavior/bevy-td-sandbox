@@ -7,7 +7,15 @@ pub struct WaveManager {
     pub waves: Vec<WaveConfig>,
     pub spawn_timer: Timer,
     pub enemies_remaining: u32,
-    pub enemies_spawned: u32,
+    /// Pre-shuffled queue of enemies to spawn this wave.
+    pub spawn_queue: Vec<SpawnEntry>,
+}
+
+/// A single enemy to spawn (flattened from WaveEnemy × count).
+pub struct SpawnEntry {
+    pub enemy_type: EnemyType,
+    pub health_multiplier: f32,
+    pub speed_multiplier: f32,
 }
 
 pub struct WaveConfig {

@@ -22,4 +22,6 @@ pub struct ScreenShake {
     pub intensity: f32,
     pub timer: Timer,
     pub decay: f32,
+    /// Offset currently applied, so we can undo it next frame.
+    pub current_offset: Vec3,
 }

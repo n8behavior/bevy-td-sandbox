@@ -40,6 +40,6 @@ fn init_wave_manager(mut commands: Commands) {
         waves: systems::generate_waves(),
         spawn_timer: Timer::from_seconds(1.0, TimerMode::Repeating),
         enemies_remaining: 0,
-        enemies_spawned: 0,
+        spawn_queue: Vec::new(),
     });
 }

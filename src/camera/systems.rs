@@ -119,15 +119,20 @@ pub fn apply_screen_shake(
     mut camera_q: Query<&mut Transform, With<Camera2d>>,
     time: Res<Time>,
 ) {
-    if shake.intensity <= 0.0 {
-        return;
-    }
-    shake.timer.tick(time.delta());
-    shake.intensity *= shake.decay.powf(time.delta_secs());
-
     let Ok(mut transform) = camera_q.single_mut() else {
         return;
     };
+
+    // Undo last frame's offset to restore logical position.
+    transform.translation -= shake.current_offset;
+    shake.current_offset = Vec3::ZERO;
+
+    if shake.intensity <= 0.0 {
+        return;
+    }
+
+    shake.timer.tick(time.delta());
+    shake.intensity *= shake.decay.powf(time.delta_secs());
 
     if shake.timer.is_finished() {
         shake.intensity = 0.0;
@@ -141,4 +146,5 @@ pub fn apply_screen_shake(
         0.0,
     );
     transform.translation += offset;
+    shake.current_offset = offset;
 }

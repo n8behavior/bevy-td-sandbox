@@ -1,5 +1,6 @@
 use bevy::prelude::*;
 use bevy_northstar::prelude::*;
+use rand::seq::SliceRandom;
 
 use crate::common::constants::GridConfig;
 use crate::enemy::components::{Dead, Enemy, EnemyType};
@@ -12,17 +13,32 @@ use super::resources::*;
 
 pub fn start_wave(mut wave_mgr: ResMut<WaveManager>) {
     let wave_idx = wave_mgr.current_wave as usize;
-    if wave_idx < wave_mgr.waves.len() {
-        let total: u32 = wave_mgr.waves[wave_idx]
-            .enemies
-            .iter()
-            .map(|e| e.count)
-            .sum();
-        wave_mgr.enemies_remaining = total;
-        wave_mgr.enemies_spawned = 0;
-        let interval = wave_mgr.waves[wave_idx].spawn_interval;
-        wave_mgr.spawn_timer = Timer::from_seconds(interval, TimerMode::Repeating);
+    if wave_idx >= wave_mgr.waves.len() {
+        return;
     }
+
+    // Build a flat, shuffled spawn queue from the wave config.
+    let wave = &wave_mgr.waves[wave_idx];
+    let mut queue: Vec<SpawnEntry> = wave
+        .enemies
+        .iter()
+        .flat_map(|we| {
+            (0..we.count).map(move |_| SpawnEntry {
+                enemy_type: we.enemy_type,
+                health_multiplier: we.health_multiplier,
+                speed_multiplier: we.speed_multiplier,
+            })
+        })
+        .collect();
+
+    queue.shuffle(&mut rand::rng());
+
+    let total = queue.len() as u32;
+    let interval = wave.spawn_interval;
+
+    wave_mgr.spawn_queue = queue;
+    wave_mgr.enemies_remaining = total;
+    wave_mgr.spawn_timer = Timer::from_seconds(interval, TimerMode::Repeating);
 }
 
 pub fn spawn_enemies(
@@ -53,32 +69,20 @@ pub fn spawn_enemies(
         return;
     }
 
-    let wave_idx = wave_mgr.current_wave as usize;
-    if wave_idx >= wave_mgr.waves.len() {
+    let Some(entry) = wave_mgr.spawn_queue.pop() else {
         return;
-    }
+    };
 
-    // Find which enemy type to spawn next
-    let mut count = 0u32;
-    let spawned = wave_mgr.enemies_spawned;
-    let wave = &wave_mgr.waves[wave_idx];
-    for we in &wave.enemies {
-        if spawned < count + we.count {
-            spawn_enemy(
-                &mut commands,
-                we.enemy_type,
-                spawn_pos,
-                goal_pos,
-                grid_entity,
-                we.health_multiplier,
-                we.speed_multiplier,
-                &config,
-            );
-            break;
-        }
-        count += we.count;
-    }
-    wave_mgr.enemies_spawned += 1;
+    spawn_enemy(
+        &mut commands,
+        entry.enemy_type,
+        spawn_pos,
+        goal_pos,
+        grid_entity,
+        entry.health_multiplier,
+        entry.speed_multiplier,
+        &config,
+    );
 }
 
 pub fn check_wave_complete(
@@ -86,19 +90,8 @@ pub fn check_wave_complete(
     enemies: Query<(), (With<Enemy>, Without<Dead>)>,
     mut next_phase: ResMut<NextState<PlayPhase>>,
 ) {
-    let wave_idx = wave_mgr.current_wave as usize;
-    if wave_idx >= wave_mgr.waves.len() {
-        return;
-    }
-
-    let total: u32 = wave_mgr.waves[wave_idx]
-        .enemies
-        .iter()
-        .map(|e| e.count)
-        .sum();
-
-    // All spawned and all dead
-    if wave_mgr.enemies_spawned >= total && enemies.is_empty() {
+    // All spawned and all dead.
+    if wave_mgr.spawn_queue.is_empty() && enemies.is_empty() {
         wave_mgr.current_wave += 1;
         next_phase.set(PlayPhase::Building);
     }
