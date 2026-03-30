@@ -3,6 +3,7 @@ use bevy_northstar::prelude::*;
 
 use crate::common::constants::*;
 use crate::economy::resources::PlayerScrap;
+use crate::enemy::components::SpawnAnimation;
 use crate::grid::components::{GridCell, SpawnPoint, GoalPoint};
 use crate::grid::systems::{grid_to_world, world_to_grid};
 use crate::pathfinding::GridChanged;
@@ -131,17 +132,18 @@ pub fn handle_tower_placement(
 
     let tower_world = grid_to_world(cell_uvec, &config);
     let stats = tower_type.stats();
-    let fire_rate = stats.fire_rate;
 
     let mut entity_cmds = commands.spawn((
         Tower { tower_type },
         stats.clone(),
-        AttackCooldown {
-            timer: Timer::from_seconds(1.0 / fire_rate, TimerMode::Repeating),
-        },
+        TurretState::new(tower_type),
         GridCell { coord: grid_pos },
         Sprite::from_color(tower_type.color(), Vec2::splat(TILE_SIZE - 2.0)),
-        Transform::from_translation(tower_world.extend(0.5)),
+        Transform::from_translation(tower_world.extend(0.5))
+            .with_scale(Vec3::ZERO),
+        SpawnAnimation {
+            timer: Timer::from_seconds(0.2, TimerMode::Once),
+        },
         DespawnOnExit(GameState::Playing),
     ));
 
@@ -157,11 +159,11 @@ pub fn handle_tower_placement(
             for i in 0..rings {
                 let frac = (i + 1) as f32 / rings as f32;
                 let size = range_px * 2.0 * frac;
-                let alpha = 0.35 * (1.0 - frac * 0.7); // 0.35 inner → ~0.10 outer
+                let alpha = 0.45 * (1.0 - frac * 0.6); // 0.45 inner → ~0.18 outer
                 entity_cmds.with_child((
                     AuraVisual,
                     Sprite::from_color(
-                        Color::srgba(0.15, 0.1, 0.0, alpha),
+                        Color::srgba(0.3, 0.1, 0.35, alpha),
                         Vec2::splat(size),
                     ),
                     Transform::from_translation(Vec3::new(0.0, 0.0, -0.2)),
@@ -170,8 +172,8 @@ pub fn handle_tower_placement(
         }
         TowerType::Explosive => {
             entity_cmds.insert(AoEOnHit {
-                radius: 2.5 * TILE_SIZE,
-                damage: 15.0,
+                radius: 3.5 * TILE_SIZE,
+                damage: 25.0,
             });
         }
         _ => {}
@@ -239,7 +241,7 @@ pub fn tower_placement_preview(
     let stats = tower_type.stats();
     let range_px = stats.range * TILE_SIZE;
     let ring_color = match tower_type {
-        TowerType::TarPit => Color::srgba(0.15, 0.1, 0.0, 0.2),
+        TowerType::TarPit => Color::srgba(0.3, 0.1, 0.35, 0.25),
         TowerType::Explosive => Color::srgba(0.9, 0.3, 0.1, 0.1),
         _ => Color::srgba(0.8, 0.8, 0.3, 0.08),
     };

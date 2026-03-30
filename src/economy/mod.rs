@@ -12,7 +12,11 @@ impl Plugin for EconomyPlugin {
         app.add_observer(systems::on_enemy_died)
             .add_systems(
                 Update,
-                (systems::scrap_drop_lifetime, systems::click_to_collect_scrap)
+                (
+                    systems::scrap_drop_lifetime,
+                    systems::scrap_idle_rotation,
+                    systems::click_to_collect_scrap,
+                )
                     .run_if(in_state(GameState::Playing)),
             );
     }

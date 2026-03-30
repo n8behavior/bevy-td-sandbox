@@ -38,3 +38,13 @@
     auto-collects scrap within a radius. Tiers increase the radius. Frees the
     player from right-click duty so they can focus on tower placement during
     intense waves.
+
+11. **Smart Targeting** -- Let the player cycle targeting modes per tower (e.g.
+    lowest HP, closest, furthest along path, highest HP). Currently all towers
+    default to lowest HP. Could be a click-to-toggle on placed towers, or an
+    upgrade unlock that adds new modes.
+
+12. **Full CI / CD Pipeline** -- GitHub Actions workflow that builds and tests on
+    Linux, Windows, and macOS. On tagged releases, cross-compile release binaries
+    for all three platforms and publish to itch.io automatically via
+    butler.

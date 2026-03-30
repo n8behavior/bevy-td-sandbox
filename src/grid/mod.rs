@@ -15,6 +15,10 @@ impl Plugin for GridPlugin {
                 (systems::setup_camera, systems::setup_grid),
             )
                 .chain(),
+        )
+        .add_systems(
+            Update,
+            systems::animate_special_cell_glow.run_if(in_state(GameState::Playing)),
         );
     }
 }

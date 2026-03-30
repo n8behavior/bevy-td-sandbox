@@ -27,7 +27,13 @@ impl Plugin for EnemyPlugin {
         )
         .add_systems(
             Update,
-            systems::update_health_bars
+            (
+                systems::update_health_bars,
+                systems::animate_spawn,
+                systems::animate_death,
+                systems::animate_damage_flash,
+                systems::animate_aoe_burst,
+            )
                 .run_if(in_state(GameState::Playing)),
         );
     }

@@ -4,6 +4,7 @@ use bevy::prelude::*;
 use bevy::window::{MonitorSelection, WindowMode};
 use bevy_northstar::prelude::*;
 
+mod camera;
 mod common;
 mod economy;
 mod enemy;
@@ -15,6 +16,7 @@ mod tower;
 mod ui;
 mod wave;
 
+use camera::CameraPlugin;
 use economy::EconomyPlugin;
 use enemy::EnemyPlugin;
 use grid::GridPlugin;
@@ -43,6 +45,7 @@ fn main() {
         .init_state::<GameState>()
         .add_sub_state::<states::PlayPhase>()
         .add_plugins((
+            CameraPlugin,
             GridPlugin,
             PathfindingPlugin,
             TowerPlugin,

@@ -70,6 +70,28 @@ impl TowerType {
             },
         }
     }
+
+    /// Seconds between shots. Ticks continuously (even while idle).
+    pub fn cooldown_secs(&self) -> f32 {
+        match self {
+            TowerType::ScrapGun => 1.0,
+            TowerType::Explosive => 3.33,
+            TowerType::Railgun => 5.0,
+            TowerType::TarPit => 0.0,
+        }
+    }
+
+    /// Max angular error (radians) to be considered "aimed".
+    pub fn aim_tolerance(&self) -> f32 {
+        match self {
+            TowerType::Railgun => 0.05,
+            _ => 0.15,
+        }
+    }
+
+    pub fn uses_turret(&self) -> bool {
+        *self != TowerType::TarPit
+    }
 }
 
 #[derive(Component, Clone)]
@@ -77,11 +99,6 @@ pub struct TowerStats {
     pub damage: f32,
     pub range: f32,
     pub fire_rate: f32,
-}
-
-#[derive(Component)]
-pub struct AttackCooldown {
-    pub timer: Timer,
 }
 
 #[derive(Component)]
@@ -94,4 +111,45 @@ pub struct SlowOnHit {
 pub struct AoEOnHit {
     pub radius: f32,
     pub damage: f32,
+}
+
+/// Turret firing state machine. Ticks cooldown in all phases, fires when
+/// aimed + cooldown ready.
+#[derive(Component)]
+pub struct TurretState {
+    pub phase: TurretPhase,
+    pub cooldown: Timer,
+}
+
+impl TurretState {
+    pub fn new(tower_type: TowerType) -> Self {
+        let secs = tower_type.cooldown_secs();
+        let mut cooldown = Timer::from_seconds(secs, TimerMode::Once);
+        // Start fully charged so first shot fires on aim lock.
+        cooldown.tick(cooldown.duration());
+        Self {
+            phase: TurretPhase::Idle,
+            cooldown,
+        }
+    }
+
+    /// Extract target entity from any phase that has one.
+    pub fn target(&self) -> Option<Entity> {
+        match self.phase {
+            TurretPhase::Acquiring { target } | TurretPhase::Tracking { target } => Some(target),
+            TurretPhase::Idle => None,
+        }
+    }
+}
+
+#[derive(Default)]
+pub enum TurretPhase {
+    #[default]
+    Idle,
+    Acquiring {
+        target: Entity,
+    },
+    Tracking {
+        target: Entity,
+    },
 }

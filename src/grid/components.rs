@@ -10,3 +10,7 @@ pub struct SpawnPoint;
 
 #[derive(Component)]
 pub struct GoalPoint;
+
+/// Marker for the pulsing glow child on spawn/goal cells.
+#[derive(Component)]
+pub struct SpecialCellGlow;

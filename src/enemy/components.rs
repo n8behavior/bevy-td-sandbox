@@ -86,3 +86,38 @@ pub struct LootValue(pub u32);
 /// in `cleanup_dead` which runs last.
 #[derive(Component)]
 pub struct Dead;
+
+/// Scale-up animation on spawn (enemies & towers).
+#[derive(Component)]
+pub struct SpawnAnimation {
+    pub timer: Timer,
+}
+
+/// Marker for entities playing a death animation. Game logic should exclude
+/// these via `Without<Dying>` so they aren't targeted or moved.
+#[derive(Component)]
+pub struct Dying;
+
+/// Shrink + fade death animation. Inserts `Dead` when complete.
+#[derive(Component)]
+pub struct DeathAnimation {
+    pub timer: Timer,
+}
+
+/// Small random offset within a cell so enemies don't all walk the exact same pixel path.
+#[derive(Component)]
+pub struct WanderOffset(pub Vec2);
+
+/// Brief white flash on damage.
+#[derive(Component)]
+pub struct DamageFlash {
+    pub timer: Timer,
+    pub original_color: Color,
+}
+
+/// Expanding/fading AoE burst visual.
+#[derive(Component)]
+pub struct AoEBurst {
+    pub timer: Timer,
+    pub max_radius: f32,
+}
