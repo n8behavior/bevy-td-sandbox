@@ -109,11 +109,14 @@ pub fn handle_start_wave_input(
 }
 
 /// Game over only when truly bankrupt: pile empty, no scrap on ground,
-/// and no fleeing enemies carrying recoverable scrap.
+/// no fleeing enemies carrying recoverable scrap, and no living enemies
+/// that could still be killed for loot.
 pub fn check_game_over(
     pile_scrap: Res<PileScrap>,
     drops: Query<(), With<ScrapDrop>>,
+    enemies: Query<(), (With<Enemy>, Without<Dead>)>,
     stolen: Query<&StolenScrap, (With<Enemy>, Without<Dead>)>,
+    wave_mgr: Res<WaveManager>,
     mut next_state: ResMut<NextState<GameState>>,
 ) {
     if pile_scrap.amount > 0 {
@@ -123,6 +126,10 @@ pub fn check_game_over(
         return;
     }
     if stolen.iter().any(|s| s.0 > 0) {
+        return;
+    }
+    // Enemies alive or queued to spawn can still be killed for loot.
+    if !enemies.is_empty() || !wave_mgr.spawn_queue.is_empty() {
         return;
     }
     next_state.set(GameState::GameOver);
