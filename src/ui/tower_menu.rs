@@ -1,21 +1,20 @@
 use bevy::prelude::*;
-use crate::tower::components::TowerType;
+use crate::tower::components::TowerRegistry;
 use crate::tower::placement::SelectedTower;
 use crate::states::{GameState, PlayPhase};
 use crate::wave::resources::WaveManager;
-
 
 const LABEL_COLOR: Color = Color::srgb(0.95, 0.85, 0.5);
 const HINT_COLOR: Color = Color::srgb(0.7, 0.65, 0.5);
 const STAT_COLOR: Color = Color::srgb(0.6, 0.6, 0.55);
 
 #[derive(Component)]
-pub struct TowerButton(pub TowerType);
+pub struct TowerButton(pub usize);
 
 #[derive(Component)]
 pub struct WavePreviewPanel;
 
-pub fn setup_tower_palette(mut commands: Commands) {
+pub fn setup_tower_palette(mut commands: Commands, registry: Res<TowerRegistry>) {
     commands
         .spawn((
             Node {
@@ -32,25 +31,16 @@ pub fn setup_tower_palette(mut commands: Commands) {
         ))
         .with_children(|parent| {
             parent.spawn((
-                Text::new("TOWERS (1-4)"),
+                Text::new(format!("TOWERS (1-{})", registry.blueprints.len())),
                 TextColor(LABEL_COLOR),
                 TextFont { font_size: 15.0, ..default() },
             ));
 
-            let towers = [
-                TowerType::ScrapGun,
-                TowerType::TarPit,
-                TowerType::Explosive,
-                TowerType::Railgun,
-            ];
-
-            for (i, tower_type) in towers.iter().enumerate() {
-                let stats = tower_type.stats();
-                let cost = tower_type.cost();
-                let special = match tower_type {
-                    TowerType::TarPit => "  SLOW",
-                    TowerType::Explosive => "  AOE",
-                    _ => "",
+            for (i, blueprint) in registry.blueprints.iter().enumerate() {
+                let special = if blueprint.special_label.is_empty() {
+                    String::new()
+                } else {
+                    format!("  {}", blueprint.special_label)
                 };
 
                 parent
@@ -60,21 +50,13 @@ pub fn setup_tower_palette(mut commands: Commands) {
                             flex_direction: FlexDirection::Column,
                             ..default()
                         },
-                        TowerButton(*tower_type),
+                        TowerButton(i),
                     ))
                     .with_children(|btn| {
                         btn.spawn((
-                            Text::new(format!("{}: {:?}  {}$", i + 1, tower_type, cost)),
-                            TextColor(tower_type.ui_color()),
+                            Text::new(format!("{}: {}  {}${special}", i + 1, blueprint.name, blueprint.cost)),
+                            TextColor(blueprint.ui_color),
                             TextFont { font_size: 14.0, ..default() },
-                        ));
-                        btn.spawn((
-                            Text::new(format!(
-                                "  DMG:{:.0}  RNG:{:.0}  SPD:{:.1}{special}",
-                                stats.damage, stats.range, stats.fire_rate,
-                            )),
-                            TextColor(STAT_COLOR),
-                            TextFont { font_size: 11.0, ..default() },
                         ));
                     });
             }
@@ -110,7 +92,7 @@ pub fn highlight_selected_tower(
     mut buttons: Query<(&TowerButton, &mut BackgroundColor)>,
 ) {
     for (btn, mut bg) in &mut buttons {
-        if selected.0 == Some(btn.0) {
+        if selected.index == Some(btn.0) {
             *bg = BackgroundColor(Color::srgba(0.5, 0.45, 0.2, 0.6));
         } else {
             *bg = BackgroundColor(Color::NONE);

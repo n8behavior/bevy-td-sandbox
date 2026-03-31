@@ -1,105 +1,44 @@
 use bevy::prelude::*;
 
+use crate::common::constants::TILE_SIZE;
+
+// ---------------------------------------------------------------------------
+// Base tower marker
+// ---------------------------------------------------------------------------
+
+/// Base marker for all towers.
 #[derive(Component)]
-pub struct Tower {
-    pub tower_type: TowerType,
-}
+pub struct Tower;
 
-/// Marker for the visual aura ring sprites (children of a TarPit tower)
+// ---------------------------------------------------------------------------
+// Placement state
+// ---------------------------------------------------------------------------
+
+/// Tower is being positioned by the player — not yet committed to the grid.
 #[derive(Component)]
-pub struct AuraVisual;
+pub struct Placing;
 
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum TowerType {
-    ScrapGun,
-    TarPit,
-    Explosive,
-    Railgun,
-}
+/// Whether the tower's current placement position is valid.
+#[derive(Component)]
+pub struct PlacementValid(pub bool);
 
-impl TowerType {
-    pub fn cost(&self) -> u32 {
-        match self {
-            TowerType::ScrapGun => 50,
-            TowerType::TarPit => 75,
-            TowerType::Explosive => 125,
-            TowerType::Railgun => 150,
-        }
-    }
+// ---------------------------------------------------------------------------
+// Behavioral components (shared across tower types)
+// ---------------------------------------------------------------------------
 
-    pub fn color(&self) -> Color {
-        match self {
-            TowerType::ScrapGun => Color::srgb(0.7, 0.7, 0.3),
-            TowerType::TarPit => Color::srgb(0.3, 0.25, 0.2),
-            TowerType::Explosive => Color::srgb(0.9, 0.3, 0.1),
-            TowerType::Railgun => Color::srgb(0.3, 0.5, 0.9),
-        }
-    }
-
-    /// Brighter color for UI text readability
-    pub fn ui_color(&self) -> Color {
-        match self {
-            TowerType::ScrapGun => Color::srgb(0.95, 0.9, 0.4),
-            TowerType::TarPit => Color::srgb(0.7, 0.55, 0.35),
-            TowerType::Explosive => Color::srgb(1.0, 0.5, 0.2),
-            TowerType::Railgun => Color::srgb(0.5, 0.7, 1.0),
-        }
-    }
-
-    pub fn stats(&self) -> TowerStats {
-        match self {
-            TowerType::ScrapGun => TowerStats {
-                damage: 10.0,
-                range: 4.0,
-                fire_rate: 1.0,
-            },
-            TowerType::TarPit => TowerStats {
-                damage: 2.0,
-                range: 3.5,
-                fire_rate: 0.5,
-            },
-            TowerType::Explosive => TowerStats {
-                damage: 25.0,
-                range: 5.0,
-                fire_rate: 0.3,
-            },
-            TowerType::Railgun => TowerStats {
-                damage: 50.0,
-                range: 8.0,
-                fire_rate: 0.2,
-            },
-        }
-    }
-
-    /// Seconds between shots. Ticks continuously (even while idle).
-    pub fn cooldown_secs(&self) -> f32 {
-        match self {
-            TowerType::ScrapGun => 1.0,
-            TowerType::Explosive => 3.33,
-            TowerType::Railgun => 5.0,
-            TowerType::TarPit => 0.0,
-        }
-    }
-
-    /// Max angular error (radians) to be considered "aimed".
-    pub fn aim_tolerance(&self) -> f32 {
-        match self {
-            TowerType::Railgun => 0.05,
-            _ => 0.15,
-        }
-    }
-
-    pub fn uses_turret(&self) -> bool {
-        *self != TowerType::TarPit
-    }
-}
+/// Entities with this block navigation and require path validation on placement.
+#[derive(Component)]
+pub struct BlocksNav;
 
 #[derive(Component, Clone)]
 pub struct TowerStats {
     pub damage: f32,
     pub range: f32,
-    pub fire_rate: f32,
 }
+
+/// Aim tolerance in radians. Only on turret towers.
+#[derive(Component)]
+pub struct AimTolerance(pub f32);
 
 #[derive(Component)]
 pub struct SlowOnHit {
@@ -113,8 +52,29 @@ pub struct AoEOnHit {
     pub damage: f32,
 }
 
+/// Marker for the visual aura ring sprites (children of an aura tower).
+#[derive(Component)]
+pub struct AuraVisual;
+
+/// Projectile visual configuration. Towers with this fire projectiles.
+#[derive(Component, Clone)]
+pub struct ProjectileVisuals {
+    pub speed: f32,
+    pub color: Color,
+    pub size: Vec2,
+    pub trail_color: Color,
+    pub trail_interval: f32,
+    pub particle_size: f32,
+    pub particle_lifetime: f32,
+}
+
+
+// ---------------------------------------------------------------------------
+// Turret state machine
+// ---------------------------------------------------------------------------
+
 /// Turret firing state machine. Ticks cooldown in all phases, fires when
-/// aimed + cooldown ready.
+/// aimed + cooldown ready. Only present on projectile-firing towers.
 #[derive(Component)]
 pub struct TurretState {
     pub phase: TurretPhase,
@@ -122,8 +82,7 @@ pub struct TurretState {
 }
 
 impl TurretState {
-    pub fn new(tower_type: TowerType) -> Self {
-        let secs = tower_type.cooldown_secs();
+    pub fn with_cooldown(secs: f32) -> Self {
         let mut cooldown = Timer::from_seconds(secs, TimerMode::Once);
         // Start fully charged so first shot fires on aim lock.
         cooldown.tick(cooldown.duration());
@@ -152,4 +111,61 @@ pub enum TurretPhase {
     Tracking {
         target: Entity,
     },
+}
+
+// ---------------------------------------------------------------------------
+// Tower registry
+// ---------------------------------------------------------------------------
+
+/// A blueprint describing how to spawn a tower type. Tower-type plugins
+/// register one of these during startup.
+pub struct TowerBlueprint {
+    pub name: &'static str,
+    pub cost: u32,
+    pub color: Color,
+    pub ui_color: Color,
+    pub key: KeyCode,
+    pub special_label: &'static str,
+    /// Called on the EntityCommands of a freshly spawned tower entity to insert
+    /// all type-specific components (marker, stats, visuals, etc.).
+    pub spawn_fn: fn(&mut EntityCommands),
+}
+
+/// Registry of all available tower types. Tower-type plugins push blueprints
+/// here during startup.
+#[derive(Resource, Default)]
+pub struct TowerRegistry {
+    pub blueprints: Vec<TowerBlueprint>,
+}
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+/// Spawn the range ring child and aura ring children (if any) for a tower.
+pub fn spawn_range_ring(cmds: &mut EntityCommands, range: f32, color: Color) {
+    let range_px = range * TILE_SIZE;
+    cmds.with_child((
+        Sprite::from_color(color, Vec2::splat(range_px * 2.0)),
+        Transform::from_translation(Vec3::new(0.0, 0.0, -0.1)),
+    ));
+}
+
+/// Spawn gradient aura rings as children (for aura-type towers).
+pub fn spawn_aura_rings(cmds: &mut EntityCommands, range: f32) {
+    let range_px = range * TILE_SIZE;
+    let rings = 5;
+    for i in 0..rings {
+        let frac = (i + 1) as f32 / rings as f32;
+        let size = range_px * 2.0 * frac;
+        let alpha = 0.45 * (1.0 - frac * 0.6);
+        cmds.with_child((
+            AuraVisual,
+            Sprite::from_color(
+                Color::srgba(0.3, 0.1, 0.35, alpha),
+                Vec2::splat(size),
+            ),
+            Transform::from_translation(Vec3::new(0.0, 0.0, -0.2)),
+        ));
+    }
 }
