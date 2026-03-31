@@ -14,6 +14,7 @@ impl Plugin for EnemyPlugin {
                 // Game logic first
                 (
                     systems::enemy_movement,
+                    systems::search_wander_movement,
                     systems::apply_slow_effects,
                     systems::enemy_reached_pile,
                     systems::enemy_escaped,

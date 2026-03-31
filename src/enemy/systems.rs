@@ -2,7 +2,7 @@ use bevy::prelude::*;
 use bevy_northstar::prelude::*;
 use rand::Rng;
 
-use crate::common::constants::GridConfig;
+use crate::common::constants::{GridConfig, TILE_SIZE};
 use crate::grid::systems::{grid_to_world, grid_to_world_cfg};
 use crate::pile::resources::{EdgeCells, PileScrap, PileState};
 use crate::pile::systems::nearest_edge_cell;
@@ -61,18 +61,32 @@ pub fn enemy_movement(
 }
 
 /// Approaching enemies that reach a pile cell steal scrap and start fleeing.
+/// If the pile is empty, enemies wander on the pile searching for scrap.
 pub fn enemy_reached_pile(
     mut commands: Commands,
-    enemies: Query<(Entity, &AgentPos, &LootValue, &EnemyPhase), (With<Enemy>, Without<Dead>, Without<Dying>)>,
+    enemies: Query<(Entity, &AgentPos, &LootValue, &EnemyPhase, &Transform, Option<&SearchWander>), (With<Enemy>, Without<Dead>, Without<Dying>)>,
     pile_state: Res<PileState>,
     mut pile_scrap: ResMut<PileScrap>,
     edge_cells: Res<EdgeCells>,
 ) {
-    for (entity, agent_pos, loot, phase) in &enemies {
+    let mut rng = rand::rng();
+    for (entity, agent_pos, loot, phase, transform, search) in &enemies {
         if *phase != EnemyPhase::Approaching {
             continue;
         }
         if !pile_state.cells.contains(&agent_pos.0) {
+            continue;
+        }
+
+        // Nothing to steal — start wandering if not already.
+        if pile_scrap.amount == 0 {
+            if search.is_none() {
+                let pos = transform.translation.truncate();
+                commands.entity(entity).insert(SearchWander {
+                    target: random_wander_target(&mut rng, pos),
+                    timer: Timer::from_seconds(rng.random_range(1.0..2.5), TimerMode::Once),
+                });
+            }
             continue;
         }
 
@@ -86,7 +100,53 @@ pub fn enemy_reached_pile(
             StolenScrap(steal_amount),
             Pathfind::new(flee_target),
         ));
+        commands.entity(entity).remove::<SearchWander>();
+
+        // Visual decal: small gold square on the enemy to indicate carried scrap.
+        commands.entity(entity).with_child((
+            ScrapCarrierDecal,
+            Sprite::from_color(
+                Color::srgb(1.0, 0.85, 0.1),
+                Vec2::splat(6.0),
+            ),
+            Transform::from_translation(Vec3::new(0.0, -5.0, 0.1)),
+        ));
     }
+}
+
+/// Wander movement for enemies searching an empty pile.
+pub fn search_wander_movement(
+    mut query: Query<(&mut Transform, &MoveSpeed, &mut SearchWander), (With<Enemy>, Without<Dead>, Without<Dying>)>,
+    time: Res<Time>,
+) {
+    let mut rng = rand::rng();
+    for (mut transform, speed, mut search) in &mut query {
+        search.timer.tick(time.delta());
+
+        let pos = transform.translation.truncate();
+        let dir = search.target - pos;
+        let dist = dir.length();
+
+        // Drift toward wander target at half speed.
+        if dist > 1.0 {
+            let step = dir.normalize() * speed.current * 0.4 * time.delta_secs();
+            transform.translation += step.extend(0.0);
+        }
+
+        // Pick a new wander target when timer expires or close enough.
+        if search.timer.is_finished() || dist < 2.0 {
+            search.target = random_wander_target(&mut rng, pos);
+            search.timer = Timer::from_seconds(rng.random_range(1.0..2.5), TimerMode::Once);
+        }
+    }
+}
+
+fn random_wander_target(rng: &mut impl Rng, center: Vec2) -> Vec2 {
+    let radius = TILE_SIZE * 1.5;
+    Vec2::new(
+        center.x + rng.random_range(-radius..radius),
+        center.y + rng.random_range(-radius..radius),
+    )
 }
 
 /// Fleeing enemies that reach the map edge escape with stolen scrap.

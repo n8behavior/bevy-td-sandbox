@@ -133,3 +133,14 @@ pub enum EnemyPhase {
 /// Scrap stolen from the pile that the enemy is carrying.
 #[derive(Component)]
 pub struct StolenScrap(pub u32);
+
+/// Marker for the visual decal on enemies carrying stolen scrap.
+#[derive(Component)]
+pub struct ScrapCarrierDecal;
+
+/// Idle wander state for enemies searching the pile.
+#[derive(Component)]
+pub struct SearchWander {
+    pub target: Vec2,
+    pub timer: Timer,
+}
