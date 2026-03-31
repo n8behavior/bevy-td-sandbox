@@ -10,6 +10,7 @@ mod economy;
 mod enemy;
 mod grid;
 mod pathfinding;
+mod pile;
 mod projectile;
 mod states;
 mod tower;
@@ -21,6 +22,7 @@ use economy::EconomyPlugin;
 use enemy::EnemyPlugin;
 use grid::GridPlugin;
 use pathfinding::PathfindingPlugin;
+use pile::PilePlugin;
 use projectile::ProjectilePlugin;
 use states::GameState;
 use tower::TowerPlugin;
@@ -47,6 +49,7 @@ fn main() {
         .add_plugins((
             CameraPlugin,
             GridPlugin,
+            PilePlugin,
             PathfindingPlugin,
             TowerPlugin,
             EnemyPlugin,

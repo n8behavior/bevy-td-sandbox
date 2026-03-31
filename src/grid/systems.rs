@@ -8,14 +8,8 @@ use crate::states::GameState;
 
 use super::components::*;
 
-const GROUND_COLOR: Color = Color::srgb(0.18, 0.2, 0.13);
-const SPAWN_COLOR: Color = Color::srgb(0.2, 0.6, 0.2);
-const GOAL_COLOR: Color = Color::srgb(0.8, 0.2, 0.2);
-
 /// Per-cell color jitter range (+/- applied to each RGB channel).
 const COLOR_JITTER: f32 = 0.03;
-/// Size of the glow sprite relative to tile size.
-const GLOW_SCALE: f32 = 2.5;
 
 pub fn compute_grid_config(mut commands: Commands, windows: Query<&Window>) {
     let Ok(window) = windows.single() else { return };
@@ -81,19 +75,9 @@ pub fn setup_grid(mut commands: Commands, config: Res<GridConfig>) {
     for x in 0..config.width {
         for y in 0..config.height {
             let world_pos = grid_to_world_cfg(UVec3::new(x, y, 0), &config);
-            let is_spawn = UVec3::new(x, y, 0) == config.spawn_pos;
-            let is_goal = UVec3::new(x, y, 0) == config.goal_pos;
+            let is_edge = x == 0 || x == config.width - 1 || y == 0 || y == config.height - 1;
 
-            let base_color = if is_spawn {
-                SPAWN_COLOR
-            } else if is_goal {
-                GOAL_COLOR
-            } else {
-                GROUND_COLOR
-            };
-
-            // Per-cell color jitter for organic feel.
-            let color = jitter_color(&mut rng, base_color);
+            let color = jitter_color(&mut rng, GROUND_COLOR);
 
             let mut entity = commands.spawn((
                 Sprite::from_color(color, Vec2::splat(TILE_SIZE)),
@@ -104,23 +88,8 @@ pub fn setup_grid(mut commands: Commands, config: Res<GridConfig>) {
                 DespawnOnExit(GameState::Playing),
             ));
 
-            if is_spawn {
-                entity.insert(SpawnPoint);
-            }
-            if is_goal {
-                entity.insert(GoalPoint);
-            }
-
-            // Pulsing glow behind spawn/goal cells.
-            if is_spawn || is_goal {
-                entity.with_child((
-                    SpecialCellGlow,
-                    Sprite::from_color(
-                        base_color.with_alpha(0.25),
-                        Vec2::splat(TILE_SIZE * GLOW_SCALE),
-                    ),
-                    Transform::from_translation(Vec3::new(0.0, 0.0, -0.1)),
-                ));
+            if is_edge {
+                entity.insert(EdgeCell);
             }
         }
     }
@@ -150,19 +119,6 @@ pub fn grid_to_world_cfg(coord: UVec3, config: &GridConfig) -> Vec2 {
 /// Convert grid coord to world position, using GridConfig from ECS
 pub fn grid_to_world(coord: UVec3, config: &Res<GridConfig>) -> Vec2 {
     grid_to_world_cfg(coord, config)
-}
-
-/// Pulse the alpha of spawn/goal glow sprites.
-pub fn animate_special_cell_glow(
-    mut glows: Query<&mut Sprite, With<SpecialCellGlow>>,
-    time: Res<Time>,
-) {
-    let t = time.elapsed_secs();
-    // Oscillate alpha between 0.10 and 0.30.
-    let alpha = 0.20 + 0.10 * (t * 2.5).sin();
-    for mut sprite in &mut glows {
-        sprite.color = sprite.color.with_alpha(alpha);
-    }
 }
 
 pub fn world_to_grid(pos: Vec2, config: &GridConfig) -> Option<IVec2> {

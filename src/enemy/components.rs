@@ -121,3 +121,15 @@ pub struct AoEBurst {
     pub timer: Timer,
     pub max_radius: f32,
 }
+
+/// Tracks whether an enemy is approaching the pile or fleeing with stolen scrap.
+#[derive(Component, Default, PartialEq, Eq, Debug)]
+pub enum EnemyPhase {
+    #[default]
+    Approaching,
+    Fleeing,
+}
+
+/// Scrap stolen from the pile that the enemy is carrying.
+#[derive(Component)]
+pub struct StolenScrap(pub u32);

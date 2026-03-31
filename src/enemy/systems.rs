@@ -4,8 +4,8 @@ use rand::Rng;
 
 use crate::common::constants::GridConfig;
 use crate::grid::systems::{grid_to_world, grid_to_world_cfg};
-use crate::grid::components::{GoalPoint, GridCell};
-use crate::ui::hud::PlayerLives;
+use crate::pile::resources::{EdgeCells, PileScrap, PileState};
+use crate::pile::systems::nearest_edge_cell;
 
 use super::components::*;
 
@@ -13,6 +13,8 @@ use super::components::*;
 pub struct EnemyDied {
     pub position: Vec2,
     pub loot_value: u32,
+    /// Additional scrap the enemy had stolen from the pile.
+    pub stolen_scrap: u32,
 }
 
 #[derive(Component)]
@@ -58,40 +60,72 @@ pub fn enemy_movement(
     }
 }
 
-
-/// Mark enemies that reached the goal as Dying (starts death animation).
-pub fn enemy_reached_goal(
+/// Approaching enemies that reach a pile cell steal scrap and start fleeing.
+pub fn enemy_reached_pile(
     mut commands: Commands,
-    enemies: Query<(Entity, &AgentPos), (With<Enemy>, Without<Dead>, Without<Dying>)>,
-    goals: Query<&GridCell, With<GoalPoint>>,
-    mut lives: ResMut<PlayerLives>,
+    enemies: Query<(Entity, &AgentPos, &LootValue, &EnemyPhase), (With<Enemy>, Without<Dead>, Without<Dying>)>,
+    pile_state: Res<PileState>,
+    mut pile_scrap: ResMut<PileScrap>,
+    edge_cells: Res<EdgeCells>,
 ) {
-    for (entity, agent_pos) in &enemies {
-        for goal_cell in &goals {
-            let goal_uvec = UVec3::new(goal_cell.coord.x as u32, goal_cell.coord.y as u32, 0);
-            if agent_pos.0 == goal_uvec {
-                lives.0 = lives.0.saturating_sub(1);
-                commands.entity(entity).insert((
-                    Dying,
-                    DeathAnimation {
-                        timer: Timer::from_seconds(0.3, TimerMode::Once),
-                    },
-                ));
-            }
+    for (entity, agent_pos, loot, phase) in &enemies {
+        if *phase != EnemyPhase::Approaching {
+            continue;
         }
+        if !pile_state.cells.contains(&agent_pos.0) {
+            continue;
+        }
+
+        let steal_amount = loot.0.min(pile_scrap.amount);
+        pile_scrap.amount = pile_scrap.amount.saturating_sub(steal_amount);
+
+        let flee_target = nearest_edge_cell(agent_pos.0, &edge_cells.0);
+
+        commands.entity(entity).insert((
+            EnemyPhase::Fleeing,
+            StolenScrap(steal_amount),
+            Pathfind::new(flee_target),
+        ));
+    }
+}
+
+/// Fleeing enemies that reach the map edge escape with stolen scrap.
+pub fn enemy_escaped(
+    mut commands: Commands,
+    enemies: Query<(Entity, &AgentPos, &EnemyPhase), (With<Enemy>, Without<Dead>, Without<Dying>)>,
+    config: Res<GridConfig>,
+) {
+    for (entity, agent_pos, phase) in &enemies {
+        if *phase != EnemyPhase::Fleeing {
+            continue;
+        }
+        let p = agent_pos.0;
+        let is_edge = p.x == 0 || p.x == config.width - 1 || p.y == 0 || p.y == config.height - 1;
+        if !is_edge {
+            continue;
+        }
+        // Stolen scrap is permanently lost — already subtracted from pile.
+        commands.entity(entity).insert((
+            Dying,
+            DeathAnimation {
+                timer: Timer::from_seconds(0.3, TimerMode::Once),
+            },
+        ));
     }
 }
 
 /// Mark enemies with zero health as Dying, trigger loot event.
 pub fn check_enemy_death(
     mut commands: Commands,
-    enemies: Query<(Entity, &Health, &Transform, &LootValue), (With<Enemy>, Without<Dead>, Without<Dying>)>,
+    enemies: Query<(Entity, &Health, &Transform, &LootValue, Option<&StolenScrap>), (With<Enemy>, Without<Dead>, Without<Dying>)>,
 ) {
-    for (entity, health, transform, loot) in &enemies {
+    for (entity, health, transform, loot, stolen) in &enemies {
         if health.current <= 0.0 {
+            let stolen_amount = stolen.map_or(0, |s| s.0);
             commands.trigger(EnemyDied {
                 position: transform.translation.truncate(),
                 loot_value: loot.0,
+                stolen_scrap: stolen_amount,
             });
             commands.entity(entity).insert((
                 Dying,
@@ -241,6 +275,7 @@ pub fn spawn_enemy(
     commands
         .spawn((
             Enemy,
+            EnemyPhase::Approaching,
             Health {
                 current: health,
                 max: health,

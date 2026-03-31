@@ -7,7 +7,6 @@ use bevy::ecs::message::MessageWriter;
 use bevy::window::{MonitorSelection, WindowMode};
 use crate::states::GameState;
 use crate::common::constants::*;
-use crate::economy::resources::PlayerScrap;
 
 pub struct UIPlugin;
 
@@ -22,10 +21,10 @@ impl Plugin for UIPlugin {
                 Update,
                 game_over::handle_main_menu_input.run_if(in_state(GameState::MainMenu)),
             )
-            // Playing - init resources, HUD, tower palette
+            // Playing - HUD, tower palette
             .add_systems(
                 OnEnter(GameState::Playing),
-                (init_resources, hud::setup_hud, tower_menu::setup_tower_palette),
+                (hud::setup_hud, tower_menu::setup_tower_palette),
             )
             .add_systems(
                 Update,
@@ -44,11 +43,6 @@ impl Plugin for UIPlugin {
                 game_over::handle_game_over_input.run_if(in_state(GameState::GameOver)),
             );
     }
-}
-
-fn init_resources(mut commands: Commands) {
-    commands.insert_resource(PlayerScrap(STARTING_SCRAP));
-    commands.insert_resource(hud::PlayerLives(STARTING_LIVES));
 }
 
 /// ESC deselects tower first, then quits if nothing was selected.

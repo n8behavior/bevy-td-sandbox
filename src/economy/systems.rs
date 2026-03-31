@@ -4,16 +4,22 @@ use rand::Rng;
 use crate::common::constants::*;
 use crate::enemy::components::SpawnAnimation;
 use crate::enemy::systems::EnemyDied;
+use crate::pile::resources::PileScrap;
 
 use super::components::ScrapDrop;
-use super::resources::PlayerScrap;
 
 const SCRAP_COLOR: Color = Color::srgb(1.0, 0.85, 0.1);
 
 pub fn on_enemy_died(trigger: On<EnemyDied>, mut commands: Commands) {
     let event = &*trigger;
     let mut rng = rand::rng();
-    // Random offset from death position.
+
+    // Drop normal loot.
+    let total_value = event.loot_value + event.stolen_scrap;
+    if total_value == 0 {
+        return;
+    }
+
     let offset = Vec2::new(
         rng.random_range(-6.0..6.0),
         rng.random_range(-6.0..6.0),
@@ -23,7 +29,7 @@ pub fn on_enemy_died(trigger: On<EnemyDied>, mut commands: Commands) {
     commands
         .spawn((
             ScrapDrop {
-                value: event.loot_value,
+                value: total_value,
                 lifetime: Timer::from_seconds(SCRAP_DROP_LIFETIME, TimerMode::Once),
             },
             Sprite::from_color(SCRAP_COLOR, Vec2::splat(8.0)),
@@ -81,7 +87,7 @@ pub fn click_to_collect_scrap(
     windows: Query<&Window>,
     cameras: Query<(&Camera, &GlobalTransform)>,
     drops: Query<(Entity, &ScrapDrop, &Transform)>,
-    mut scrap: ResMut<PlayerScrap>,
+    mut pile_scrap: ResMut<PileScrap>,
 ) {
     if !mouse.just_pressed(MouseButton::Right) {
         return;
@@ -104,7 +110,7 @@ pub fn click_to_collect_scrap(
     for (entity, drop, tf) in &drops {
         let dist = world_pos.distance(tf.translation.truncate());
         if dist <= collect_radius {
-            scrap.0 += drop.value;
+            pile_scrap.amount += drop.value;
             commands.entity(entity).despawn();
         }
     }

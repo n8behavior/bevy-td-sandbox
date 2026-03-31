@@ -1,4 +1,2 @@
-use bevy::prelude::*;
-
-#[derive(Resource)]
-pub struct PlayerScrap(pub u32);
+// Economy resources are now provided by the pile module (PileScrap).
+// This file is kept for the module structure.

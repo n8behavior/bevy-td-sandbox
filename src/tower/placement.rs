@@ -2,11 +2,10 @@ use bevy::prelude::*;
 use bevy_northstar::prelude::*;
 
 use crate::common::constants::*;
-use crate::economy::resources::PlayerScrap;
-use crate::enemy::components::SpawnAnimation;
-use crate::grid::components::{GridCell, SpawnPoint, GoalPoint};
+use crate::grid::components::GridCell;
 use crate::grid::systems::{grid_to_world, world_to_grid};
 use crate::pathfinding::GridChanged;
+use crate::pile::resources::{PileScrap, PileState};
 use crate::states::GameState;
 
 use super::components::*;
@@ -40,11 +39,10 @@ pub fn handle_tower_placement(
     windows: Query<&Window>,
     cameras: Query<(&Camera, &GlobalTransform)>,
     selected: Res<SelectedTower>,
-    mut scrap: ResMut<PlayerScrap>,
+    mut pile_scrap: ResMut<PileScrap>,
     mut grid_query: Query<&mut CardinalGrid>,
     existing_towers: Query<&GridCell, With<Tower>>,
-    spawn_cells: Query<&GridCell, With<SpawnPoint>>,
-    goal_cells: Query<&GridCell, With<GoalPoint>>,
+    pile_state: Res<PileState>,
     config: Res<GridConfig>,
 ) {
     let Some(tower_type) = selected.0 else { return };
@@ -67,7 +65,7 @@ pub fn handle_tower_placement(
         return;
     };
 
-    if scrap.0 < tower_type.cost() {
+    if pile_scrap.amount < tower_type.cost() {
         return;
     }
 
@@ -78,13 +76,11 @@ pub fn handle_tower_placement(
         return;
     }
 
-    let is_special = spawn_cells.iter().any(|c| c.coord == grid_pos)
-        || goal_cells.iter().any(|c| c.coord == grid_pos);
-    if is_special {
+    // Cannot build on pile cells.
+    let cell_uvec = UVec3::new(grid_pos.x as u32, grid_pos.y as u32, 0);
+    if pile_state.cells.contains(&cell_uvec) {
         return;
     }
-
-    let cell_uvec = UVec3::new(grid_pos.x as u32, grid_pos.y as u32, 0);
 
     let Ok(mut grid) = grid_query.single_mut() else {
         return;
@@ -102,22 +98,22 @@ pub fn handle_tower_placement(
     grid.set_nav(cell_uvec, nav);
     grid.build();
 
-    // Path validation: only needed for impassable towers
+    // Path validation: ensure enemies from edges can still reach the pile.
     if !is_tarpit {
-        let Ok(spawn_cell) = spawn_cells.single() else {
-            return;
-        };
-        let Ok(goal_cell) = goal_cells.single() else {
-            return;
-        };
-        let spawn_uvec = UVec3::new(spawn_cell.coord.x as u32, spawn_cell.coord.y as u32, 0);
-        let goal_uvec = UVec3::new(goal_cell.coord.x as u32, goal_cell.coord.y as u32, 0);
+        let center = pile_state.center;
+        let edge_midpoints = [
+            UVec3::new(0, config.height / 2, 0),
+            UVec3::new(config.width - 1, config.height / 2, 0),
+            UVec3::new(config.width / 2, 0, 0),
+            UVec3::new(config.width / 2, config.height - 1, 0),
+        ];
 
-        let path_exists = grid
-            .pathfind(&mut PathfindArgs::new(spawn_uvec, goal_uvec).astar())
-            .is_some();
+        let any_path_exists = edge_midpoints.iter().any(|edge| {
+            grid.pathfind(&mut PathfindArgs::new(*edge, center).astar())
+                .is_some()
+        });
 
-        if !path_exists {
+        if !any_path_exists {
             if let Some(old) = old_nav {
                 grid.set_nav(cell_uvec, old);
             } else {
@@ -128,7 +124,7 @@ pub fn handle_tower_placement(
         }
     }
 
-    scrap.0 -= tower_type.cost();
+    pile_scrap.amount -= tower_type.cost();
 
     let tower_world = grid_to_world(cell_uvec, &config);
     let stats = tower_type.stats();
@@ -141,7 +137,7 @@ pub fn handle_tower_placement(
         Sprite::from_color(tower_type.color(), Vec2::splat(TILE_SIZE - 2.0)),
         Transform::from_translation(tower_world.extend(0.5))
             .with_scale(Vec3::ZERO),
-        SpawnAnimation {
+        crate::enemy::components::SpawnAnimation {
             timer: Timer::from_seconds(0.2, TimerMode::Once),
         },
         DespawnOnExit(GameState::Playing),
@@ -189,9 +185,8 @@ pub fn tower_placement_preview(
     selected: Res<SelectedTower>,
     existing_previews: Query<Entity, With<PlacementPreview>>,
     existing_towers: Query<&GridCell, With<Tower>>,
-    spawn_cells: Query<&GridCell, With<SpawnPoint>>,
-    goal_cells: Query<&GridCell, With<GoalPoint>>,
-    scrap: Res<PlayerScrap>,
+    pile_state: Res<PileState>,
+    pile_scrap: Res<PileScrap>,
     config: Res<GridConfig>,
 ) {
     for entity in &existing_previews {
@@ -218,11 +213,10 @@ pub fn tower_placement_preview(
     let snap_pos = grid_to_world(cell_uvec, &config);
 
     let occupied = existing_towers.iter().any(|c| c.coord == grid_pos);
-    let is_special = spawn_cells.iter().any(|c| c.coord == grid_pos)
-        || goal_cells.iter().any(|c| c.coord == grid_pos);
-    let can_afford = scrap.0 >= tower_type.cost();
+    let is_pile = pile_state.cells.contains(&cell_uvec);
+    let can_afford = pile_scrap.amount >= tower_type.cost();
 
-    let valid = !occupied && !is_special && can_afford;
+    let valid = !occupied && !is_pile && can_afford;
 
     let color = if valid {
         Color::srgba(0.3, 0.9, 0.3, 0.5)

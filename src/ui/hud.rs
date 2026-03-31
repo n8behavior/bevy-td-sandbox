@@ -1,17 +1,11 @@
 use bevy::prelude::*;
 use crate::states::{GameState, PlayPhase};
-use crate::economy::resources::PlayerScrap;
+use crate::pile::resources::PileScrap;
 use crate::wave::resources::WaveManager;
 use crate::common::constants::*;
 
-#[derive(Resource)]
-pub struct PlayerLives(pub u32);
-
 #[derive(Component)]
 pub struct ScrapText;
-
-#[derive(Component)]
-pub struct LivesText;
 
 #[derive(Component)]
 pub struct WaveText;
@@ -35,7 +29,7 @@ pub fn setup_hud(mut commands: Commands) {
         ))
         .with_children(|parent| {
             parent.spawn((
-                Text::new(format!("Scrap: {}", STARTING_SCRAP)),
+                Text::new(format!("Pile: {}", STARTING_SCRAP)),
                 TextColor(Color::srgb(0.9, 0.8, 0.2)),
                 TextFont { font_size: 18.0, ..default() },
                 ScrapText,
@@ -52,30 +46,19 @@ pub fn setup_hud(mut commands: Commands) {
                 TextFont { font_size: 18.0, ..default() },
                 WaveText,
             ));
-            parent.spawn((
-                Text::new(format!("Lives: {}", STARTING_LIVES)),
-                TextColor(Color::srgb(0.9, 0.3, 0.3)),
-                TextFont { font_size: 18.0, ..default() },
-                LivesText,
-            ));
         });
 }
 
 pub fn update_hud(
-    scrap: Res<PlayerScrap>,
-    lives: Res<PlayerLives>,
+    pile_scrap: Res<PileScrap>,
     wave_mgr: Option<Res<WaveManager>>,
     phase: Option<Res<State<PlayPhase>>>,
-    mut scrap_query: Query<&mut Text, (With<ScrapText>, Without<LivesText>, Without<WaveText>, Without<PhaseText>)>,
-    mut lives_query: Query<&mut Text, (With<LivesText>, Without<ScrapText>, Without<WaveText>, Without<PhaseText>)>,
-    mut wave_query: Query<&mut Text, (With<WaveText>, Without<ScrapText>, Without<LivesText>, Without<PhaseText>)>,
-    mut phase_query: Query<(&mut Text, &mut TextColor), (With<PhaseText>, Without<ScrapText>, Without<LivesText>, Without<WaveText>)>,
+    mut scrap_query: Query<&mut Text, (With<ScrapText>, Without<WaveText>, Without<PhaseText>)>,
+    mut wave_query: Query<&mut Text, (With<WaveText>, Without<ScrapText>, Without<PhaseText>)>,
+    mut phase_query: Query<(&mut Text, &mut TextColor), (With<PhaseText>, Without<ScrapText>, Without<WaveText>)>,
 ) {
     for mut text in &mut scrap_query {
-        **text = format!("Scrap: {}", scrap.0);
-    }
-    for mut text in &mut lives_query {
-        **text = format!("Lives: {}", lives.0);
+        **text = format!("Pile: {}", pile_scrap.amount);
     }
     if let Some(wave_mgr) = wave_mgr {
         for mut text in &mut wave_query {

@@ -1,8 +1,8 @@
 pub mod systems;
 
 use bevy::prelude::*;
-use crate::enemy::components::{Dead, Enemy};
-use crate::grid::components::{GoalPoint, GridCell};
+use crate::enemy::components::{Dead, Enemy, EnemyPhase};
+use crate::pile::resources::{EdgeCells, PileState};
 
 #[derive(Event)]
 pub struct GridChanged;
@@ -14,10 +14,13 @@ impl Plugin for PathfindingPlugin {
         app.add_observer(
             |_trigger: On<GridChanged>,
              commands: Commands,
-             enemies: Query<Entity, (With<Enemy>, Without<Dead>)>,
-             goal_query: Query<&GridCell, With<GoalPoint>>| {
-                systems::recalculate_enemy_paths(commands, enemies, goal_query);
+             enemies: Query<(Entity, &AgentPos, &EnemyPhase), (With<Enemy>, Without<Dead>)>,
+             pile_state: Res<PileState>,
+             edge_cells: Res<EdgeCells>| {
+                systems::recalculate_enemy_paths(commands, enemies, pile_state, edge_cells);
             },
         );
     }
 }
+
+use bevy_northstar::prelude::AgentPos;

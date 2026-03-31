@@ -1,0 +1,56 @@
+pub mod components;
+pub mod resources;
+pub mod systems;
+
+use bevy::prelude::*;
+
+use crate::common::constants::*;
+use crate::states::GameState;
+
+use resources::{EdgeCells, PileScrap, PileState};
+
+pub struct PilePlugin;
+
+impl Plugin for PilePlugin {
+    fn build(&self, app: &mut App) {
+        app.add_systems(
+            OnEnter(GameState::Playing),
+            init_pile.after(crate::grid::systems::setup_grid),
+        )
+        .add_systems(
+            Update,
+            (systems::update_pile_state, systems::update_pile_visuals)
+                .chain()
+                .run_if(in_state(GameState::Playing)),
+        );
+    }
+}
+
+fn init_pile(mut commands: Commands, config: Res<GridConfig>) {
+    let center = config.center();
+    let radius = systems::pile_radius(STARTING_SCRAP);
+
+    let cells = systems::compute_pile_cells(center, radius, config.width, config.height);
+
+    commands.insert_resource(PileScrap {
+        amount: STARTING_SCRAP,
+    });
+    commands.insert_resource(PileState {
+        cells,
+        center,
+        radius_tiles: radius,
+        last_radius_int: radius as u32,
+    });
+
+    // Compute edge cells once.
+    let mut edges = Vec::new();
+    for x in 0..config.width {
+        edges.push(UVec3::new(x, 0, 0));
+        edges.push(UVec3::new(x, config.height - 1, 0));
+    }
+    for y in 1..config.height - 1 {
+        edges.push(UVec3::new(0, y, 0));
+        edges.push(UVec3::new(config.width - 1, y, 0));
+    }
+    commands.insert_resource(EdgeCells(edges));
+}

@@ -1,13 +1,14 @@
 use bevy::prelude::*;
 use bevy_northstar::prelude::*;
+use rand::prelude::IndexedRandom;
 use rand::seq::SliceRandom;
 
 use crate::common::constants::GridConfig;
 use crate::enemy::components::{Dead, Enemy, EnemyType};
 use crate::enemy::systems::spawn_enemy;
-use crate::grid::components::{SpawnPoint, GoalPoint, GridCell};
+use crate::pile::resources::{EdgeCells, PileScrap, PileState};
+use crate::pile::systems::nearest_pile_cell;
 use crate::states::{GameState, PlayPhase};
-use crate::ui::hud::PlayerLives;
 
 use super::resources::*;
 
@@ -47,21 +48,16 @@ pub fn spawn_enemies(
     time: Res<Time>,
     config: Res<GridConfig>,
     grid_query: Query<Entity, With<CardinalGrid>>,
-    spawn_query: Query<&GridCell, With<SpawnPoint>>,
-    goal_query: Query<&GridCell, With<GoalPoint>>,
+    edge_cells: Res<EdgeCells>,
+    pile_state: Res<PileState>,
 ) {
     let Ok(grid_entity) = grid_query.single() else {
         return;
     };
-    let Ok(spawn_cell) = spawn_query.single() else {
-        return;
-    };
-    let Ok(goal_cell) = goal_query.single() else {
-        return;
-    };
 
-    let spawn_pos = UVec3::new(spawn_cell.coord.x as u32, spawn_cell.coord.y as u32, 0);
-    let goal_pos = UVec3::new(goal_cell.coord.x as u32, goal_cell.coord.y as u32, 0);
+    if edge_cells.0.is_empty() || pile_state.cells.is_empty() {
+        return;
+    }
 
     wave_mgr.spawn_timer.tick(time.delta());
 
@@ -72,6 +68,11 @@ pub fn spawn_enemies(
     let Some(entry) = wave_mgr.spawn_queue.pop() else {
         return;
     };
+
+    // Pick a random edge cell for this enemy's spawn.
+    let mut rng = rand::rng();
+    let spawn_pos = *edge_cells.0.choose(&mut rng).unwrap();
+    let goal_pos = nearest_pile_cell(spawn_pos, &pile_state);
 
     spawn_enemy(
         &mut commands,
@@ -107,10 +108,10 @@ pub fn handle_start_wave_input(
 }
 
 pub fn check_game_over(
-    lives: Res<PlayerLives>,
+    pile_scrap: Res<PileScrap>,
     mut next_state: ResMut<NextState<GameState>>,
 ) {
-    if lives.0 == 0 {
+    if pile_scrap.amount == 0 {
         next_state.set(GameState::GameOver);
     }
 }

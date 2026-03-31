@@ -15,7 +15,8 @@ impl Plugin for EnemyPlugin {
                 (
                     systems::enemy_movement,
                     systems::apply_slow_effects,
-                    systems::enemy_reached_goal,
+                    systems::enemy_reached_pile,
+                    systems::enemy_escaped,
                     systems::check_enemy_death,
                 ),
                 // Cleanup runs after all game logic
