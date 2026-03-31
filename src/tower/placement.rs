@@ -55,12 +55,13 @@ pub fn handle_tower_selection(
         commands.entity(entity).despawn();
     }
 
-    // Spawn new placing tower entity.
+    // Spawn new placing tower entity (hidden until cursor positions it).
     let blueprint = &registry.blueprints[idx];
     let mut entity_cmds = commands.spawn((
         Tower,
         Placing,
         PlacementValid(false),
+        Visibility::Hidden,
         Sprite::from_color(blueprint.color.with_alpha(0.5), Vec2::splat(TILE_SIZE - 2.0)),
         Transform::from_translation(Vec3::new(0.0, 0.0, 2.0)),
     ));
@@ -73,7 +74,7 @@ pub fn handle_tower_selection(
 /// Move the placing tower to the cursor and compute placement validity.
 pub fn update_placing_tower(
     mut placing: Query<
-        (Entity, &mut Transform, &mut PlacementValid, Option<&BlocksNav>),
+        (Entity, &mut Transform, &mut PlacementValid, &mut Visibility, Option<&BlocksNav>),
         With<Placing>,
     >,
     windows: Query<&Window>,
@@ -86,7 +87,7 @@ pub fn update_placing_tower(
     registry: Res<TowerRegistry>,
     config: Res<GridConfig>,
 ) {
-    let Ok((_, mut transform, mut valid, blocks_nav)) = placing.single_mut() else {
+    let Ok((_, mut transform, mut valid, mut vis, blocks_nav)) = placing.single_mut() else {
         return;
     };
 
@@ -109,6 +110,7 @@ pub fn update_placing_tower(
     let cell_uvec = UVec3::new(grid_pos.x as u32, grid_pos.y as u32, 0);
     let snap_pos = grid_to_world(cell_uvec, &config);
     transform.translation = snap_pos.extend(2.0);
+    *vis = Visibility::Inherited;
 
     // Look up cost from registry.
     let cost = selected
@@ -189,9 +191,10 @@ pub fn confirm_tower_placement(
     mut commands: Commands,
     mouse: Res<ButtonInput<MouseButton>>,
     mut placing: Query<
-        (Entity, &Transform, &PlacementValid, Option<&BlocksNav>),
+        (Entity, &Transform, &PlacementValid, Option<&BlocksNav>, &Children),
         With<Placing>,
     >,
+    range_rings: Query<Entity, With<RangeRing>>,
     mut grid_query: Query<&mut CardinalGrid>,
     mut pile_scrap: ResMut<PileScrap>,
     mut selected: ResMut<SelectedTower>,
@@ -202,7 +205,7 @@ pub fn confirm_tower_placement(
         return;
     }
 
-    let Ok((entity, transform, valid, blocks_nav)) = placing.single_mut() else {
+    let Ok((entity, transform, valid, blocks_nav, children)) = placing.single_mut() else {
         return;
     };
 
@@ -237,6 +240,12 @@ pub fn confirm_tower_placement(
     let snap_pos = grid_to_world(cell_uvec, &config);
     commands.entity(entity).remove::<Placing>();
     commands.entity(entity).remove::<PlacementValid>();
+    // Despawn range ring children.
+    for child in children.iter() {
+        if range_rings.contains(child) {
+            commands.entity(child).despawn();
+        }
+    }
     commands.entity(entity).insert((
         GridCell { coord: grid_pos },
         Sprite::from_color(blueprint.color, Vec2::splat(TILE_SIZE - 2.0)),
@@ -249,11 +258,12 @@ pub fn confirm_tower_placement(
 
     commands.trigger(GridChanged);
 
-    // Spawn a new placing tower for continued placement.
+    // Spawn a new placing tower for continued placement (hidden until cursor positions it).
     let mut new_cmds = commands.spawn((
         Tower,
         Placing,
         PlacementValid(false),
+        Visibility::Hidden,
         Sprite::from_color(blueprint.color.with_alpha(0.5), Vec2::splat(TILE_SIZE - 2.0)),
         Transform::from_translation(Vec3::new(0.0, 0.0, 2.0)),
     ));

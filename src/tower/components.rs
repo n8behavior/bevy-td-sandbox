@@ -56,6 +56,10 @@ pub struct AoEOnHit {
 #[derive(Component)]
 pub struct AuraVisual;
 
+/// Marker for the range ring preview child (despawned on placement).
+#[derive(Component)]
+pub struct RangeRing;
+
 /// Projectile visual configuration. Towers with this fire projectiles.
 #[derive(Component, Clone)]
 pub struct ProjectileVisuals {
@@ -142,10 +146,11 @@ pub struct TowerRegistry {
 // Helpers
 // ---------------------------------------------------------------------------
 
-/// Spawn the range ring child and aura ring children (if any) for a tower.
+/// Spawn a range ring preview as a child (despawned on placement).
 pub fn spawn_range_ring(cmds: &mut EntityCommands, range: f32, color: Color) {
     let range_px = range * TILE_SIZE;
     cmds.with_child((
+        RangeRing,
         Sprite::from_color(color, Vec2::splat(range_px * 2.0)),
         Transform::from_translation(Vec3::new(0.0, 0.0, -0.1)),
     ));
