@@ -4,7 +4,8 @@ use rand::prelude::IndexedRandom;
 use rand::seq::SliceRandom;
 
 use crate::common::constants::GridConfig;
-use crate::enemy::components::{Dead, Enemy, EnemyType};
+use crate::economy::components::ScrapDrop;
+use crate::enemy::components::{Dead, Enemy, EnemyType, StolenScrap};
 use crate::enemy::systems::spawn_enemy;
 use crate::pile::resources::{EdgeCells, PileScrap, PileState};
 use crate::pile::systems::nearest_pile_cell;
@@ -107,13 +108,24 @@ pub fn handle_start_wave_input(
     }
 }
 
+/// Game over only when truly bankrupt: pile empty, no scrap on ground,
+/// and no fleeing enemies carrying recoverable scrap.
 pub fn check_game_over(
     pile_scrap: Res<PileScrap>,
+    drops: Query<(), With<ScrapDrop>>,
+    stolen: Query<&StolenScrap, (With<Enemy>, Without<Dead>)>,
     mut next_state: ResMut<NextState<GameState>>,
 ) {
-    if pile_scrap.amount == 0 {
-        next_state.set(GameState::GameOver);
+    if pile_scrap.amount > 0 {
+        return;
     }
+    if !drops.is_empty() {
+        return;
+    }
+    if stolen.iter().any(|s| s.0 > 0) {
+        return;
+    }
+    next_state.set(GameState::GameOver);
 }
 
 pub fn generate_waves() -> Vec<WaveConfig> {
