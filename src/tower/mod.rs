@@ -66,6 +66,23 @@ fn spawn_aura_rings(
     }
 }
 
+/// Sort tower blueprints by key so the menu order matches key assignments,
+/// regardless of which Startup `register` system ran first.
+fn sort_blueprints(mut registry: ResMut<TowerRegistry>) {
+    registry.blueprints.sort_by_key(|b| match b.key {
+        KeyCode::Digit1 => 1,
+        KeyCode::Digit2 => 2,
+        KeyCode::Digit3 => 3,
+        KeyCode::Digit4 => 4,
+        KeyCode::Digit5 => 5,
+        KeyCode::Digit6 => 6,
+        KeyCode::Digit7 => 7,
+        KeyCode::Digit8 => 8,
+        KeyCode::Digit9 => 9,
+        _ => 99,
+    });
+}
+
 pub struct TowerPlugin;
 
 impl Plugin for TowerPlugin {
@@ -78,6 +95,7 @@ impl Plugin for TowerPlugin {
                 types::ExplosivePlugin,
                 types::RailgunPlugin,
             ))
+            .add_systems(PostStartup, sort_blueprints)
             .add_systems(
                 Update,
                 (
