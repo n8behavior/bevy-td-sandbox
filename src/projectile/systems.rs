@@ -106,6 +106,9 @@ pub fn projectile_hit_detection(
             let burst_mat = circle_mats.add(CircleMaterial {
                 color: Color::srgba(1.0, 0.5, 0.1, 0.4),
                 softness: 0.15,
+                fill_fade: 0.0,
+                ripple_speed: 0.0,
+                time: 0.0,
             });
             commands.spawn((
                 AoEBurst {

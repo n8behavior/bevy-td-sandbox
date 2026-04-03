@@ -25,6 +25,9 @@ fn spawn_range_rings(
         let mat = materials.add(CircleMaterial {
             color: config.color,
             softness: 0.05,
+            fill_fade: 0.0,
+            ripple_speed: 0.0,
+            time: 0.0,
         });
         commands.entity(entity).with_child((
             RangeRing,
@@ -44,24 +47,22 @@ fn spawn_aura_rings(
     circle_mesh: Res<CircleMesh>,
     mut materials: ResMut<Assets<CircleMaterial>>,
 ) {
-    let rings = 5;
     for (entity, config) in &query {
-        for i in 0..rings {
-            let frac = (i + 1) as f32 / rings as f32;
-            let diameter = config.range * 2.0 * frac;
-            let alpha = 0.45 * (1.0 - frac * 0.6);
-            let mat = materials.add(CircleMaterial {
-                color: Color::srgba(0.3, 0.1, 0.35, alpha),
-                softness: 0.08,
-            });
-            commands.entity(entity).with_child((
-                AuraVisual,
-                Mesh2d(circle_mesh.0.clone()),
-                MeshMaterial2d(mat),
-                Transform::from_translation(Vec3::new(0.0, 0.0, -0.2))
-                    .with_scale(Vec3::splat(diameter)),
-            ));
-        }
+        let diameter = config.range * 2.0;
+        let mat = materials.add(CircleMaterial {
+            color: Color::srgba(0.4, 0.15, 0.45, 0.55),
+            softness: 0.05,
+            fill_fade: 1.0,
+            ripple_speed: 0.4,
+            time: 0.0,
+        });
+        commands.entity(entity).with_child((
+            AuraVisual,
+            Mesh2d(circle_mesh.0.clone()),
+            MeshMaterial2d(mat),
+            Transform::from_translation(Vec3::new(0.0, 0.0, -0.2))
+                .with_scale(Vec3::splat(diameter)),
+        ));
     }
 }
 
