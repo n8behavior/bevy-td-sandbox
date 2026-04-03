@@ -1,6 +1,8 @@
 use bevy::prelude::*;
 
-use crate::common::constants::TILE_SIZE;
+/// Pre-generated circle texture for range ring rendering.
+#[derive(Resource)]
+pub struct CircleImage(pub Handle<Image>);
 
 // ---------------------------------------------------------------------------
 // Base tower marker
@@ -33,6 +35,7 @@ pub struct BlocksNav;
 #[derive(Component, Clone)]
 pub struct TowerStats {
     pub damage: f32,
+    /// Effective range in world units.
     pub range: f32,
 }
 
@@ -132,7 +135,7 @@ pub struct TowerBlueprint {
     pub special_label: &'static str,
     /// Called on the EntityCommands of a freshly spawned tower entity to insert
     /// all type-specific components (marker, stats, visuals, etc.).
-    pub spawn_fn: fn(&mut EntityCommands),
+    pub spawn_fn: fn(&mut EntityCommands, &CircleImage),
 }
 
 /// Registry of all available tower types. Tower-type plugins push blueprints
@@ -146,30 +149,35 @@ pub struct TowerRegistry {
 // Helpers
 // ---------------------------------------------------------------------------
 
-/// Spawn a range ring preview as a child (despawned on placement).
-pub fn spawn_range_ring(cmds: &mut EntityCommands, range: f32, color: Color) {
-    let range_px = range * TILE_SIZE;
+/// Spawn a circular range ring preview as a child (despawned on placement).
+pub fn spawn_range_ring(cmds: &mut EntityCommands, range: f32, color: Color, circle: &CircleImage) {
     cmds.with_child((
         RangeRing,
-        Sprite::from_color(color, Vec2::splat(range_px * 2.0)),
+        Sprite {
+            image: circle.0.clone(),
+            color,
+            custom_size: Some(Vec2::splat(range * 2.0)),
+            ..default()
+        },
         Transform::from_translation(Vec3::new(0.0, 0.0, -0.1)),
     ));
 }
 
-/// Spawn gradient aura rings as children (for aura-type towers).
-pub fn spawn_aura_rings(cmds: &mut EntityCommands, range: f32) {
-    let range_px = range * TILE_SIZE;
+/// Spawn gradient circular aura rings as children (for aura-type towers).
+pub fn spawn_aura_rings(cmds: &mut EntityCommands, range: f32, circle: &CircleImage) {
     let rings = 5;
     for i in 0..rings {
         let frac = (i + 1) as f32 / rings as f32;
-        let size = range_px * 2.0 * frac;
+        let size = range * 2.0 * frac;
         let alpha = 0.45 * (1.0 - frac * 0.6);
         cmds.with_child((
             AuraVisual,
-            Sprite::from_color(
-                Color::srgba(0.3, 0.1, 0.35, alpha),
-                Vec2::splat(size),
-            ),
+            Sprite {
+                image: circle.0.clone(),
+                color: Color::srgba(0.3, 0.1, 0.35, alpha),
+                custom_size: Some(Vec2::splat(size)),
+                ..default()
+            },
             Transform::from_translation(Vec3::new(0.0, 0.0, -0.2)),
         ));
     }

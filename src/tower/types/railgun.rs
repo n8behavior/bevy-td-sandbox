@@ -21,9 +21,9 @@ fn register(mut registry: ResMut<TowerRegistry>) {
         ui_color: Color::srgb(0.5, 0.7, 1.0),
         key: KeyCode::Digit4,
         special_label: "",
-        spawn_fn: |cmds| {
-            let stats = TowerStats { damage: 50.0, range: 8.0 };
-            spawn_range_ring(cmds, stats.range, Color::srgba(0.8, 0.8, 0.3, 0.08));
+        spawn_fn: |cmds, circle| {
+            let stats = TowerStats { damage: 50.0, range: 160.0 };
+            spawn_range_ring(cmds, stats.range, Color::srgba(0.6, 0.6, 0.0, 0.15), circle);
             cmds.insert((
                 Railgun,
                 BlocksNav,

@@ -1,6 +1,5 @@
 use bevy::prelude::*;
 
-use crate::common::constants::TILE_SIZE;
 use crate::tower::components::*;
 
 #[derive(Component)]
@@ -22,9 +21,9 @@ fn register(mut registry: ResMut<TowerRegistry>) {
         ui_color: Color::srgb(1.0, 0.5, 0.2),
         key: KeyCode::Digit3,
         special_label: "AOE",
-        spawn_fn: |cmds| {
-            let stats = TowerStats { damage: 25.0, range: 5.0 };
-            spawn_range_ring(cmds, stats.range, Color::srgba(0.9, 0.3, 0.1, 0.1));
+        spawn_fn: |cmds, circle| {
+            let stats = TowerStats { damage: 25.0, range: 100.0 };
+            spawn_range_ring(cmds, stats.range, Color::srgba(0.9, 0.2, 0.0, 0.15), circle);
             cmds.insert((
                 Explosive,
                 BlocksNav,
@@ -42,7 +41,7 @@ fn register(mut registry: ResMut<TowerRegistry>) {
                     particle_lifetime: 0.2,
                 },
                 AoEOnHit {
-                    radius: 3.5 * TILE_SIZE,
+                    radius: 70.0,
                     damage: 25.0,
                 },
             ));

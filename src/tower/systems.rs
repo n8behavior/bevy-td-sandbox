@@ -1,6 +1,5 @@
 use bevy::prelude::*;
 
-use crate::common::constants::*;
 use crate::enemy::components::{Dead, Dying, Enemy, Health, SlowEffect};
 use crate::projectile::components::{AoEPayload, Projectile, TrailEmitter};
 
@@ -102,13 +101,13 @@ pub fn turret_state_machine(
     time: Res<Time>,
 ) {
     for (tower_tf, stats, mut state, aim_tol, visuals, aoe) in &mut towers {
-        let range_world = stats.range * TILE_SIZE;
+        let range = stats.range;
         let tower_pos = tower_tf.translation.truncate();
 
         // Cooldown ticks in all phases.
         state.cooldown.tick(time.delta());
 
-        let best = find_best_target(&enemies, tower_pos, range_world);
+        let best = find_best_target(&enemies, tower_pos, range);
 
         match state.phase {
             TurretPhase::Idle => {
@@ -118,7 +117,7 @@ pub fn turret_state_machine(
             }
 
             TurretPhase::Acquiring { target } => {
-                if !target_valid(target, &enemies, tower_pos, range_world) {
+                if !target_valid(target, &enemies, tower_pos, range) {
                     // Target lost — retarget or idle.
                     state.phase = match best {
                         Some(new) => TurretPhase::Acquiring { target: new },
@@ -132,7 +131,7 @@ pub fn turret_state_machine(
             }
 
             TurretPhase::Tracking { target } => {
-                if !target_valid(target, &enemies, tower_pos, range_world) {
+                if !target_valid(target, &enemies, tower_pos, range) {
                     state.phase = match best {
                         Some(new) => TurretPhase::Acquiring { target: new },
                         None => TurretPhase::Idle,
@@ -170,14 +169,14 @@ pub fn slow_aura(
     enemies: Query<(Entity, &Transform), (With<Enemy>, Without<Dead>, Without<Dying>)>,
 ) {
     for (tower_tf, stats, slow) in aura_towers.iter() {
-        let range_world = stats.range * TILE_SIZE;
+        let range = stats.range;
         let tower_pos = tower_tf.translation.truncate();
 
         for (enemy_entity, enemy_tf) in &enemies {
             let dist = tower_pos.distance(enemy_tf.translation.truncate());
-            if dist <= range_world {
+            if dist <= range {
                 // Slow proportional to distance: full slow at center, no slow at edge
-                let t = (dist / range_world).clamp(0.0, 1.0);
+                let t = (dist / range).clamp(0.0, 1.0);
                 let factor = slow.factor + (1.0 - slow.factor) * t;
                 commands.entity(enemy_entity).insert(SlowEffect {
                     factor,

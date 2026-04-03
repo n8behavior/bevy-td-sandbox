@@ -21,10 +21,10 @@ fn register(mut registry: ResMut<TowerRegistry>) {
         ui_color: Color::srgb(0.7, 0.55, 0.35),
         key: KeyCode::Digit2,
         special_label: "SLOW",
-        spawn_fn: |cmds| {
-            let stats = TowerStats { damage: 2.0, range: 3.5 };
-            spawn_range_ring(cmds, stats.range, Color::srgba(0.3, 0.1, 0.35, 0.25));
-            spawn_aura_rings(cmds, stats.range);
+        spawn_fn: |cmds, circle| {
+            let stats = TowerStats { damage: 2.0, range: 70.0 };
+            spawn_range_ring(cmds, stats.range, Color::srgba(0.3, 0.1, 0.35, 0.25), circle);
+            spawn_aura_rings(cmds, stats.range, circle);
             cmds.insert((
                 TarPit,
                 // No BlocksNav — enemies walk through

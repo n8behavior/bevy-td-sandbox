@@ -16,6 +16,6 @@ pub fn recalculate_enemy_paths(
             EnemyPhase::Approaching => nearest_pile_cell(agent_pos.0, &pile_state),
             EnemyPhase::Fleeing => nearest_edge_cell(agent_pos.0, &edge_cells.0),
         };
-        commands.entity(entity).insert(Pathfind::new(goal));
+        commands.entity(entity).insert(Pathfind::new(goal).mode(PathfindMode::Waypoints));
     }
 }

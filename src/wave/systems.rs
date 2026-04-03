@@ -48,7 +48,7 @@ pub fn spawn_enemies(
     mut wave_mgr: ResMut<WaveManager>,
     time: Res<Time>,
     config: Res<GridConfig>,
-    grid_query: Query<Entity, With<CardinalGrid>>,
+    grid_query: Query<Entity, With<OrdinalGrid>>,
     edge_cells: Res<EdgeCells>,
     pile_state: Res<PileState>,
 ) {

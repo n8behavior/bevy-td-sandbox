@@ -104,7 +104,7 @@ pub fn click_to_collect_scrap(
         return;
     };
 
-    let collect_radius = TILE_SIZE * 2.5;
+    let collect_radius = 50.0;
 
     // Collect ALL nearby scrap, not just one
     for (entity, drop, tf) in &drops {

@@ -4,7 +4,7 @@ pub const TILE_SIZE: f32 = 20.0;
 pub const MIN_GRID_HEIGHT: u32 = 30;
 pub const CHUNK_SIZE: u32 = 8;
 
-pub const STARTING_SCRAP: u32 = 10_000;
+pub const STARTING_SCRAP: u32 = 2000;
 
 pub const SCRAP_DROP_LIFETIME: f32 = 10.0;
 
@@ -15,8 +15,23 @@ pub const SCRAP_PER_TILE: f32 = 2000.0;
 pub const WINDOWED_WIDTH: f32 = 1280.0;
 pub const WINDOWED_HEIGHT: f32 = 720.0;
 
-/// Base ground color used for non-pile cells.
-pub const GROUND_COLOR: Color = Color::srgb(0.18, 0.2, 0.13);
+/// Cell fill — warm sepia paper.
+pub const PAPER_COLOR: Color = Color::srgb(0.82, 0.76, 0.66);
+
+/// Fine grid line color (shows through gaps between cells).
+pub const GRID_LINE_COLOR: Color = Color::srgb(0.68, 0.62, 0.52);
+
+/// Major grid line color, drawn every MAJOR_GRID_INTERVAL cells.
+pub const MAJOR_LINE_COLOR: Color = Color::srgb(0.55, 0.48, 0.38);
+
+/// Major grid line interval in cells.
+pub const MAJOR_GRID_INTERVAL: u32 = 5;
+
+/// Gap between cells (fine grid line width in world units).
+pub const GRID_LINE_WIDTH: f32 = 1.0;
+
+/// Major grid line thickness in world units.
+pub const MAJOR_LINE_WIDTH: f32 = 1.5;
 
 /// Junk pile cell color.
 pub const PILE_COLOR: Color = Color::srgb(0.7, 0.55, 0.2);

@@ -1,15 +1,11 @@
 use bevy::prelude::*;
 use bevy_northstar::prelude::*;
-use rand::Rng;
 
 use crate::camera::components::CameraController;
 use crate::common::constants::*;
 use crate::states::GameState;
 
 use super::components::*;
-
-/// Per-cell color jitter range (+/- applied to each RGB channel).
-const COLOR_JITTER: f32 = 0.03;
 
 pub fn compute_grid_config(mut commands: Commands, windows: Query<&Window>) {
     let Ok(window) = windows.single() else { return };
@@ -50,7 +46,7 @@ pub fn setup_grid(mut commands: Commands, config: Res<GridConfig>) {
     let settings = GridSettingsBuilder::new_2d(config.width, config.height)
         .chunk_size(CHUNK_SIZE)
         .build();
-    let mut grid = CardinalGrid::new(&settings);
+    let mut grid = OrdinalGrid::new(&settings);
 
     for x in 0..config.width {
         for y in 0..config.height {
@@ -61,26 +57,24 @@ pub fn setup_grid(mut commands: Commands, config: Res<GridConfig>) {
 
     commands.spawn((grid, DespawnOnExit(GameState::Playing)));
 
-    // Solid ground plane behind all cells to eliminate black gaps.
+    // Ground plane — fine grid line color fills gaps between cells.
     let grid_w = config.width as f32 * TILE_SIZE;
     let grid_h = config.height as f32 * TILE_SIZE;
     commands.spawn((
-        Sprite::from_color(GROUND_COLOR, Vec2::new(grid_w, grid_h)),
+        Sprite::from_color(GRID_LINE_COLOR, Vec2::new(grid_w, grid_h)),
         Transform::from_translation(Vec3::new(0.0, 0.0, -1.0)),
         DespawnOnExit(GameState::Playing),
     ));
 
-    let mut rng = rand::rng();
-
+    // Cell sprites — slightly smaller than TILE_SIZE to reveal fine grid lines.
+    let cell_size = TILE_SIZE - GRID_LINE_WIDTH;
     for x in 0..config.width {
         for y in 0..config.height {
             let world_pos = grid_to_world_cfg(UVec3::new(x, y, 0), &config);
             let is_edge = x == 0 || x == config.width - 1 || y == 0 || y == config.height - 1;
 
-            let color = jitter_color(&mut rng, GROUND_COLOR);
-
             let mut entity = commands.spawn((
-                Sprite::from_color(color, Vec2::splat(TILE_SIZE)),
+                Sprite::from_color(PAPER_COLOR, Vec2::splat(cell_size)),
                 Transform::from_translation(world_pos.extend(0.0)),
                 GridCell {
                     coord: IVec2::new(x as i32, y as i32),
@@ -93,17 +87,28 @@ pub fn setup_grid(mut commands: Commands, config: Res<GridConfig>) {
             }
         }
     }
-}
 
-/// Apply small random RGB perturbation to a color.
-fn jitter_color(rng: &mut impl Rng, color: Color) -> Color {
-    let Srgba { red, green, blue, alpha } = Srgba::from(color);
-    Color::srgba(
-        (red + rng.random_range(-COLOR_JITTER..COLOR_JITTER)).clamp(0.0, 1.0),
-        (green + rng.random_range(-COLOR_JITTER..COLOR_JITTER)).clamp(0.0, 1.0),
-        (blue + rng.random_range(-COLOR_JITTER..COLOR_JITTER)).clamp(0.0, 1.0),
-        alpha,
-    )
+    // Major grid lines — darker lines every MAJOR_GRID_INTERVAL cells.
+    let half_w = grid_w / 2.0;
+    let half_h = grid_h / 2.0;
+
+    for c in (0..=config.width).step_by(MAJOR_GRID_INTERVAL as usize) {
+        let x = c as f32 * TILE_SIZE - half_w;
+        commands.spawn((
+            Sprite::from_color(MAJOR_LINE_COLOR, Vec2::new(MAJOR_LINE_WIDTH, grid_h)),
+            Transform::from_translation(Vec3::new(x, 0.0, 0.1)),
+            DespawnOnExit(GameState::Playing),
+        ));
+    }
+
+    for r in (0..=config.height).step_by(MAJOR_GRID_INTERVAL as usize) {
+        let y = r as f32 * TILE_SIZE - half_h;
+        commands.spawn((
+            Sprite::from_color(MAJOR_LINE_COLOR, Vec2::new(grid_w, MAJOR_LINE_WIDTH)),
+            Transform::from_translation(Vec3::new(0.0, y, 0.1)),
+            DespawnOnExit(GameState::Playing),
+        ));
+    }
 }
 
 /// Convert grid coord to world position, using GridConfig resource

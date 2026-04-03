@@ -4,10 +4,13 @@ use rand::Rng;
 
 use crate::common::constants::{GridConfig, TILE_SIZE};
 use crate::grid::systems::{grid_to_world, grid_to_world_cfg};
-use crate::pile::resources::{EdgeCells, PileScrap, PileState};
+use crate::pile::resources::{EdgeCells, PileScrap};
 use crate::pile::systems::nearest_edge_cell;
 
 use super::components::*;
+
+/// Radians per second enemies rotate toward their travel direction.
+const ENEMY_ROTATION_SPEED: f32 = 6.0;
 
 #[derive(Event)]
 pub struct EnemyDied {
@@ -18,7 +21,9 @@ pub struct EnemyDied {
 }
 
 #[derive(Component)]
-pub struct HealthBar;
+pub struct HealthBar {
+    pub y_offset: f32,
+}
 
 pub fn enemy_movement(
     mut query: Query<(Entity, &mut AgentPos, &NextPos, &mut Transform, &MoveSpeed, Option<&mut WanderOffset>), (Without<Dead>, Without<Dying>)>,
@@ -34,14 +39,29 @@ pub fn enemy_movement(
         let direction = target_world - current;
         let distance = direction.length();
 
+        // Rotate toward direction of travel.
+        if distance > 1.0 {
+            let dir2 = direction.truncate();
+            let goal = Quat::from_rotation_z(dir2.y.atan2(dir2.x));
+            let dot = transform.rotation.dot(goal);
+            let goal = if dot < 0.0 { -goal } else { goal };
+            let angle_remaining = transform.rotation.angle_between(goal);
+            let max_step = ENEMY_ROTATION_SPEED * time.delta_secs();
+            let t = if angle_remaining > 0.0 {
+                (max_step / angle_remaining).min(1.0)
+            } else {
+                1.0
+            };
+            transform.rotation = transform.rotation.slerp(goal, t);
+        }
+
         if distance < 1.0 {
             agent_pos.0 = next_pos.0;
             transform.translation = target_world;
             commands.entity(entity).remove::<NextPos>();
-            // Re-roll wander offset for next cell.
             commands.entity(entity).insert(WanderOffset(Vec2::new(
-                rng.random_range(-3.0..3.0),
-                rng.random_range(-3.0..3.0),
+                rng.random_range(-7.0..7.0),
+                rng.random_range(-7.0..7.0),
             )));
         } else {
             let step = direction.normalize() * speed.current * time.delta_secs();
@@ -50,8 +70,8 @@ pub fn enemy_movement(
                 transform.translation = target_world;
                 commands.entity(entity).remove::<NextPos>();
                 commands.entity(entity).insert(WanderOffset(Vec2::new(
-                    rng.random_range(-3.0..3.0),
-                    rng.random_range(-3.0..3.0),
+                    rng.random_range(-7.0..7.0),
+                    rng.random_range(-7.0..7.0),
                 )));
             } else {
                 transform.translation += step;
@@ -64,17 +84,23 @@ pub fn enemy_movement(
 /// If the pile is empty, enemies wander on the pile searching for scrap.
 pub fn enemy_reached_pile(
     mut commands: Commands,
-    enemies: Query<(Entity, &AgentPos, &LootValue, &EnemyPhase, &Transform, Option<&SearchWander>), (With<Enemy>, Without<Dead>, Without<Dying>)>,
-    pile_state: Res<PileState>,
+    enemies: Query<(
+        Entity, &AgentPos, &LootValue, &EnemyPhase, &Transform,
+        Option<&SearchWander>, Option<&NextPos>, Option<&Pathfind>, Option<&Path>,
+    ), (With<Enemy>, Without<Dead>, Without<Dying>)>,
     mut pile_scrap: ResMut<PileScrap>,
     edge_cells: Res<EdgeCells>,
 ) {
     let mut rng = rand::rng();
-    for (entity, agent_pos, loot, phase, transform, search) in &enemies {
+    for (entity, agent_pos, loot, phase, transform, search, next_pos, pathfind_req, path) in &enemies {
         if *phase != EnemyPhase::Approaching {
             continue;
         }
-        if !pile_state.cells.contains(&agent_pos.0) {
+        // Enemy is still navigating toward the pile.
+        let path_active = next_pos.is_some()
+            || pathfind_req.is_some()
+            || path.is_some_and(|p| !p.path().is_empty());
+        if path_active {
             continue;
         }
 
@@ -98,7 +124,7 @@ pub fn enemy_reached_pile(
         commands.entity(entity).insert((
             EnemyPhase::Fleeing,
             StolenScrap(steal_amount),
-            Pathfind::new(flee_target),
+            Pathfind::new(flee_target).mode(PathfindMode::Waypoints),
         ));
         commands.entity(entity).remove::<SearchWander>();
 
@@ -129,6 +155,18 @@ pub fn search_wander_movement(
 
         // Drift toward wander target at half speed.
         if dist > 1.0 {
+            let goal = Quat::from_rotation_z(dir.y.atan2(dir.x));
+            let dot = transform.rotation.dot(goal);
+            let goal = if dot < 0.0 { -goal } else { goal };
+            let angle_remaining = transform.rotation.angle_between(goal);
+            let max_step = ENEMY_ROTATION_SPEED * time.delta_secs();
+            let t = if angle_remaining > 0.0 {
+                (max_step / angle_remaining).min(1.0)
+            } else {
+                1.0
+            };
+            transform.rotation = transform.rotation.slerp(goal, t);
+
             let step = dir.normalize() * speed.current * 0.4 * time.delta_secs();
             transform.translation += step.extend(0.0);
         }
@@ -142,7 +180,7 @@ pub fn search_wander_movement(
 }
 
 fn random_wander_target(rng: &mut impl Rng, center: Vec2) -> Vec2 {
-    let radius = TILE_SIZE * 1.5;
+    let radius = 30.0;
     Vec2::new(
         center.x + rng.random_range(-radius..radius),
         center.y + rng.random_range(-radius..radius),
@@ -152,15 +190,21 @@ fn random_wander_target(rng: &mut impl Rng, center: Vec2) -> Vec2 {
 /// Fleeing enemies that reach the map edge escape with stolen scrap.
 pub fn enemy_escaped(
     mut commands: Commands,
-    enemies: Query<(Entity, &AgentPos, &EnemyPhase), (With<Enemy>, Without<Dead>, Without<Dying>)>,
+    enemies: Query<(Entity, &EnemyPhase, &Transform), (With<Enemy>, Without<Dead>, Without<Dying>)>,
     config: Res<GridConfig>,
 ) {
-    for (entity, agent_pos, phase) in &enemies {
+    for (entity, phase, transform) in &enemies {
         if *phase != EnemyPhase::Fleeing {
             continue;
         }
-        let p = agent_pos.0;
-        let is_edge = p.x == 0 || p.x == config.width - 1 || p.y == 0 || p.y == config.height - 1;
+        let pos = transform.translation.truncate();
+        let half_w = config.width as f32 * TILE_SIZE / 2.0;
+        let half_h = config.height as f32 * TILE_SIZE / 2.0;
+        let margin = TILE_SIZE;
+        let is_edge = pos.x <= -half_w + margin
+            || pos.x >= half_w - margin
+            || pos.y <= -half_h + margin
+            || pos.y >= half_h - margin;
         if !is_edge {
             continue;
         }
@@ -214,11 +258,11 @@ pub fn apply_slow_effects(
 
 pub fn update_health_bars(
     enemies: Query<(&Health, &Transform, &Children), (With<Enemy>, Without<Dead>)>,
-    mut bars: Query<(&mut Sprite, &mut Transform), (With<HealthBar>, Without<Enemy>)>,
+    mut bars: Query<(&HealthBar, &mut Sprite, &mut Transform), Without<Enemy>>,
 ) {
-    for (health, _enemy_tf, children) in &enemies {
+    for (health, enemy_tf, children) in &enemies {
         for child in children.iter() {
-            if let Ok((mut sprite, mut bar_tf)) = bars.get_mut(child) {
+            if let Ok((bar, mut sprite, mut bar_tf)) = bars.get_mut(child) {
                 let frac = (health.current / health.max).clamp(0.0, 1.0);
                 let bar_width = 16.0;
                 sprite.custom_size = Some(Vec2::new(bar_width * frac, 2.0));
@@ -229,7 +273,16 @@ pub fn update_health_bars(
                 } else {
                     Color::srgb(0.9, 0.2, 0.1)
                 };
-                bar_tf.translation.x = -bar_width * (1.0 - frac) / 2.0;
+                // Counter-rotate position and orientation so the bar stays
+                // centered above the enemy regardless of its rotation.
+                let inv = enemy_tf.rotation.inverse();
+                let desired_offset = Vec3::new(
+                    -bar_width * (1.0 - frac) / 2.0,
+                    bar.y_offset,
+                    0.1,
+                );
+                bar_tf.translation = inv * desired_offset;
+                bar_tf.rotation = inv;
             }
         }
     }
@@ -352,15 +405,15 @@ pub fn spawn_enemy(
                 timer: Timer::from_seconds(0.25, TimerMode::Once),
             },
             WanderOffset(Vec2::new(
-                rng.random_range(-3.0..3.0),
-                rng.random_range(-3.0..3.0),
+                rng.random_range(-7.0..7.0),
+                rng.random_range(-7.0..7.0),
             )),
             AgentPos(spawn_pos),
             AgentOfGrid(grid_entity),
-            Pathfind::new(goal_pos),
+            Pathfind::new(goal_pos).mode(PathfindMode::Waypoints),
         ))
         .with_child((
-            HealthBar,
+            HealthBar { y_offset: size / 2.0 + 3.0 },
             Sprite::from_color(Color::srgb(0.2, 0.8, 0.2), Vec2::new(16.0, 2.0)),
             Transform::from_translation(Vec3::new(0.0, size / 2.0 + 3.0, 0.1)),
         ));

@@ -85,7 +85,7 @@ pub fn update_pile_visuals(
             sprite.color = PILE_COLOR;
         } else if !should_be_pile && has_pile.is_some() {
             commands.entity(entity).remove::<PileCell>();
-            sprite.color = GROUND_COLOR;
+            sprite.color = PAPER_COLOR;
         }
     }
 }

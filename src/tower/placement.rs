@@ -24,6 +24,7 @@ pub fn handle_tower_selection(
     keyboard: Res<ButtonInput<KeyCode>>,
     mut selected: ResMut<SelectedTower>,
     registry: Res<TowerRegistry>,
+    circle: Res<CircleImage>,
 ) {
     // Check for Escape — deselect.
     if keyboard.just_pressed(KeyCode::Escape) {
@@ -65,7 +66,7 @@ pub fn handle_tower_selection(
         Sprite::from_color(blueprint.color.with_alpha(0.5), Vec2::splat(TILE_SIZE - 2.0)),
         Transform::from_translation(Vec3::new(0.0, 0.0, 2.0)),
     ));
-    (blueprint.spawn_fn)(&mut entity_cmds);
+    (blueprint.spawn_fn)(&mut entity_cmds, &circle);
 
     selected.index = Some(idx);
     selected.entity = Some(entity_cmds.id());
@@ -80,7 +81,7 @@ pub fn update_placing_tower(
     windows: Query<&Window>,
     cameras: Query<(&Camera, &GlobalTransform)>,
     existing_towers: Query<&GridCell, (With<Tower>, Without<Placing>)>,
-    mut grid_query: Query<&mut CardinalGrid>,
+    mut grid_query: Query<&mut OrdinalGrid>,
     pile_state: Res<PileState>,
     pile_scrap: Res<PileScrap>,
     selected: Res<SelectedTower>,
@@ -195,11 +196,12 @@ pub fn confirm_tower_placement(
         With<Placing>,
     >,
     range_rings: Query<Entity, With<RangeRing>>,
-    mut grid_query: Query<&mut CardinalGrid>,
+    mut grid_query: Query<&mut OrdinalGrid>,
     mut pile_scrap: ResMut<PileScrap>,
     mut selected: ResMut<SelectedTower>,
     registry: Res<TowerRegistry>,
     config: Res<GridConfig>,
+    circle: Res<CircleImage>,
 ) {
     if !mouse.just_pressed(MouseButton::Left) {
         return;
@@ -267,7 +269,7 @@ pub fn confirm_tower_placement(
         Sprite::from_color(blueprint.color.with_alpha(0.5), Vec2::splat(TILE_SIZE - 2.0)),
         Transform::from_translation(Vec3::new(0.0, 0.0, 2.0)),
     ));
-    (blueprint.spawn_fn)(&mut new_cmds);
+    (blueprint.spawn_fn)(&mut new_cmds, &circle);
     selected.entity = Some(new_cmds.id());
 }
 

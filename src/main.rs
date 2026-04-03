@@ -43,7 +43,7 @@ fn main() {
                 })
                 .set(ImagePlugin::default_nearest()),
         )
-        .add_plugins(NorthstarPlugin::<CardinalNeighborhood>::default())
+        .add_plugins(NorthstarPlugin::<OrdinalNeighborhood>::default())
         .init_state::<GameState>()
         .add_sub_state::<states::PlayPhase>()
         .add_plugins((
