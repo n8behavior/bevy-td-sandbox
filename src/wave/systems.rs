@@ -90,10 +90,11 @@ pub fn spawn_enemies(
 pub fn check_wave_complete(
     mut wave_mgr: ResMut<WaveManager>,
     enemies: Query<(), (With<Enemy>, Without<Dead>)>,
+    drops: Query<(), With<ScrapDrop>>,
     mut next_phase: ResMut<NextState<PlayPhase>>,
 ) {
-    // All spawned and all dead.
-    if wave_mgr.spawn_queue.is_empty() && enemies.is_empty() {
+    // Wave isn't over until all enemies dead AND all ground scrap settled.
+    if wave_mgr.spawn_queue.is_empty() && enemies.is_empty() && drops.is_empty() {
         wave_mgr.current_wave += 1;
         next_phase.set(PlayPhase::Building);
     }

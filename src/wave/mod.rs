@@ -23,12 +23,14 @@ impl Plugin for WavePlugin {
             .add_systems(
                 Update,
                 (
-                    systems::check_wave_complete
+                    (
+                        systems::check_game_over,
+                        systems::check_wave_complete,
+                    )
+                        .chain()
                         .run_if(in_state(PlayPhase::Defending)),
                     systems::handle_start_wave_input
                         .run_if(in_state(PlayPhase::Building)),
-                    systems::check_game_over
-                        .run_if(in_state(PlayPhase::Defending)),
                 )
                     .run_if(in_state(GameState::Playing)),
             );
