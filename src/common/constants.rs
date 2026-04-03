@@ -57,8 +57,10 @@ impl GridConfig {
     pub fn from_window(screen_w: f32, screen_h: f32) -> Self {
         let pixel_scale = ((screen_h / (MIN_GRID_HEIGHT as f32 * TILE_SIZE)).floor() as u32).max(1);
         let tile_px = TILE_SIZE * pixel_scale as f32;
-        let width = (screen_w / tile_px).floor() as u32;
-        let height = (screen_h / tile_px).floor() as u32;
+        // Round down to chunk_size so every cell belongs to a full chunk
+        // (bevy_northstar truncates: cells beyond y_chunks*chunk_size are unreachable).
+        let width = (screen_w / tile_px).floor() as u32 / CHUNK_SIZE * CHUNK_SIZE;
+        let height = (screen_h / tile_px).floor() as u32 / CHUNK_SIZE * CHUNK_SIZE;
 
         Self {
             width,

@@ -146,15 +146,9 @@ pub fn update_placing_tower(
             UVec3::new(config.width / 2, config.height - 1, 0),
         ];
 
-        let mut failed_edge = None;
         let all_paths_exist = edge_midpoints.iter().all(|edge| {
-            let ok = grid
-                .pathfind(&mut PathfindArgs::new(*edge, center).astar())
-                .is_some();
-            if !ok && failed_edge.is_none() {
-                failed_edge = Some(*edge);
-            }
-            ok
+            grid.pathfind(&mut PathfindArgs::new(*edge, center).astar())
+                .is_some()
         });
 
         // Revert tentative change.
@@ -166,19 +160,6 @@ pub fn update_placing_tower(
         grid.build();
 
         if !all_paths_exist {
-            // Also check without the tentative tower to distinguish
-            // "tower blocks a critical path" from "path was already broken".
-            let baseline_ok = edge_midpoints.iter().all(|edge| {
-                grid.pathfind(&mut PathfindArgs::new(*edge, center).astar())
-                    .is_some()
-            });
-            if !baseline_ok {
-                warn!(
-                    "Path validation: baseline pathfinding ALREADY broken \
-                     (no tower placed). grid={}x{} center={:?} failed_edge={:?}",
-                    config.width, config.height, center, failed_edge,
-                );
-            }
             is_valid = false;
         }
     }
