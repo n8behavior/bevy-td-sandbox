@@ -21,10 +21,10 @@ fn register(mut registry: ResMut<TowerRegistry>) {
         ui_color: Color::srgb(0.95, 0.9, 0.4),
         key: KeyCode::Digit1,
         special_label: "",
-        spawn_fn: |cmds, circle| {
+        spawn_fn: |cmds| {
             let stats = TowerStats { damage: 10.0, range: 80.0 };
-            spawn_range_ring(cmds, stats.range, Color::srgba(0.6, 0.6, 0.0, 0.15), circle);
             cmds.insert((
+                RangeRingConfig { range: stats.range, color: Color::srgba(0.6, 0.6, 0.0, 0.15) },
                 ScrapGun,
                 BlocksNav,
                 stats,

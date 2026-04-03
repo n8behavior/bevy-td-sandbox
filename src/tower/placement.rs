@@ -9,6 +9,8 @@ use crate::pathfinding::GridChanged;
 use crate::pile::resources::{PileScrap, PileState};
 use crate::states::GameState;
 
+use crate::obstacle::components::Obstacle;
+
 use super::components::*;
 
 /// Tracks the currently selected tower blueprint index and placing entity.
@@ -24,7 +26,6 @@ pub fn handle_tower_selection(
     keyboard: Res<ButtonInput<KeyCode>>,
     mut selected: ResMut<SelectedTower>,
     registry: Res<TowerRegistry>,
-    circle: Res<CircleImage>,
 ) {
     // Check for Escape — deselect.
     if keyboard.just_pressed(KeyCode::Escape) {
@@ -66,7 +67,7 @@ pub fn handle_tower_selection(
         Sprite::from_color(blueprint.color.with_alpha(0.5), Vec2::splat(TILE_SIZE - 2.0)),
         Transform::from_translation(Vec3::new(0.0, 0.0, 2.0)),
     ));
-    (blueprint.spawn_fn)(&mut entity_cmds, &circle);
+    (blueprint.spawn_fn)(&mut entity_cmds);
 
     selected.index = Some(idx);
     selected.entity = Some(entity_cmds.id());
@@ -81,6 +82,7 @@ pub fn update_placing_tower(
     windows: Query<&Window>,
     cameras: Query<(&Camera, &GlobalTransform)>,
     existing_towers: Query<&GridCell, (With<Tower>, Without<Placing>)>,
+    obstacles: Query<&GridCell, With<Obstacle>>,
     mut grid_query: Query<&mut OrdinalGrid>,
     pile_state: Res<PileState>,
     pile_scrap: Res<PileScrap>,
@@ -121,10 +123,11 @@ pub fn update_placing_tower(
         .unwrap_or(u32::MAX);
 
     let occupied = existing_towers.iter().any(|c| c.coord == grid_pos);
+    let is_obstacle = obstacles.iter().any(|c| c.coord == grid_pos);
     let is_pile = pile_state.cells.contains(&cell_uvec);
     let can_afford = pile_scrap.amount >= cost;
 
-    let mut is_valid = !occupied && !is_pile && can_afford;
+    let mut is_valid = !occupied && !is_obstacle && !is_pile && can_afford;
 
     // Path validation for BlocksNav towers.
     if is_valid
@@ -201,7 +204,6 @@ pub fn confirm_tower_placement(
     mut selected: ResMut<SelectedTower>,
     registry: Res<TowerRegistry>,
     config: Res<GridConfig>,
-    circle: Res<CircleImage>,
 ) {
     if !mouse.just_pressed(MouseButton::Left) {
         return;
@@ -269,7 +271,7 @@ pub fn confirm_tower_placement(
         Sprite::from_color(blueprint.color.with_alpha(0.5), Vec2::splat(TILE_SIZE - 2.0)),
         Transform::from_translation(Vec3::new(0.0, 0.0, 2.0)),
     ));
-    (blueprint.spawn_fn)(&mut new_cmds, &circle);
+    (blueprint.spawn_fn)(&mut new_cmds);
     selected.entity = Some(new_cmds.id());
 }
 

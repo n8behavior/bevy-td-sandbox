@@ -9,9 +9,11 @@ mod common;
 mod economy;
 mod enemy;
 mod grid;
+mod obstacle;
 mod pathfinding;
 mod pile;
 mod projectile;
+mod shader;
 mod states;
 mod tower;
 mod ui;
@@ -21,7 +23,9 @@ use camera::CameraPlugin;
 use economy::EconomyPlugin;
 use enemy::EnemyPlugin;
 use grid::GridPlugin;
+use obstacle::ObstaclePlugin;
 use pathfinding::PathfindingPlugin;
+use shader::ShaderPlugin;
 use pile::PilePlugin;
 use projectile::ProjectilePlugin;
 use states::GameState;
@@ -47,9 +51,11 @@ fn main() {
         .init_state::<GameState>()
         .add_sub_state::<states::PlayPhase>()
         .add_plugins((
+            ShaderPlugin,
             CameraPlugin,
             GridPlugin,
             PilePlugin,
+            ObstaclePlugin,
             PathfindingPlugin,
             TowerPlugin,
             EnemyPlugin,

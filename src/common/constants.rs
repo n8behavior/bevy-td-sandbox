@@ -36,6 +36,16 @@ pub const MAJOR_LINE_WIDTH: f32 = 1.5;
 /// Junk pile cell color.
 pub const PILE_COLOR: Color = Color::srgb(0.7, 0.55, 0.2);
 
+/// Obstacle (rubble/ruin) base color.
+pub const OBSTACLE_COLOR: Color = Color::srgb(0.42, 0.38, 0.32);
+
+/// Fraction of eligible cells covered by obstacles.
+pub const OBSTACLE_COVERAGE: f32 = 0.08;
+
+/// Cluster size range for obstacle generation.
+pub const OBSTACLE_MIN_CLUSTER: u32 = 5;
+pub const OBSTACLE_MAX_CLUSTER: u32 = 25;
+
 #[derive(Resource)]
 pub struct GridConfig {
     pub width: u32,

@@ -26,7 +26,7 @@ impl Plugin for PilePlugin {
     }
 }
 
-fn init_pile(mut commands: Commands, config: Res<GridConfig>) {
+pub fn init_pile(mut commands: Commands, config: Res<GridConfig>) {
     let center = config.center();
     let radius = systems::pile_radius(STARTING_SCRAP);
 

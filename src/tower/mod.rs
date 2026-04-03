@@ -4,50 +4,72 @@ pub mod systems;
 pub mod types;
 
 use bevy::prelude::*;
-use bevy::asset::RenderAssetUsages;
-use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
+use bevy::sprite_render::MeshMaterial2d;
+use crate::shader::{CircleMaterial, CircleMesh};
 use crate::states::{GameState, PlayPhase};
 
-use components::{CircleImage, TowerRegistry};
+use components::{
+    AuraRingConfig, AuraVisual, RangeRing, RangeRingConfig, TowerRegistry,
+};
 
-fn create_circle_image(mut commands: Commands, mut images: ResMut<Assets<Image>>) {
-    let size: u32 = 128;
-    let center = size as f32 / 2.0;
-    let radius = center - 0.5;
-    let mut data = vec![0u8; (size * size * 4) as usize];
+/// Reactive system: when a tower entity gets a `RangeRingConfig`, spawn the
+/// shader-driven range ring as a child.
+fn spawn_range_rings(
+    mut commands: Commands,
+    query: Query<(Entity, &RangeRingConfig), Added<RangeRingConfig>>,
+    circle_mesh: Res<CircleMesh>,
+    mut materials: ResMut<Assets<CircleMaterial>>,
+) {
+    for (entity, config) in &query {
+        let diameter = config.range * 2.0;
+        let mat = materials.add(CircleMaterial {
+            color: config.color,
+            softness: 0.05,
+        });
+        commands.entity(entity).with_child((
+            RangeRing,
+            Mesh2d(circle_mesh.0.clone()),
+            MeshMaterial2d(mat),
+            Transform::from_translation(Vec3::new(0.0, 0.0, -0.1))
+                .with_scale(Vec3::splat(diameter)),
+        ));
+    }
+}
 
-    for y in 0..size {
-        for x in 0..size {
-            let dx = x as f32 + 0.5 - center;
-            let dy = y as f32 + 0.5 - center;
-            let dist = (dx * dx + dy * dy).sqrt();
-            let idx = ((y * size + x) * 4) as usize;
-            // Soft edge: smooth over ~1.5px at boundary.
-            let alpha = ((radius - dist) / 1.5).clamp(0.0, 1.0);
-            let a = (alpha * 255.0) as u8;
-            data[idx] = 255;
-            data[idx + 1] = 255;
-            data[idx + 2] = 255;
-            data[idx + 3] = a;
+/// Reactive system: when a tower entity gets an `AuraRingConfig`, spawn
+/// gradient aura ring children.
+fn spawn_aura_rings(
+    mut commands: Commands,
+    query: Query<(Entity, &AuraRingConfig), Added<AuraRingConfig>>,
+    circle_mesh: Res<CircleMesh>,
+    mut materials: ResMut<Assets<CircleMaterial>>,
+) {
+    let rings = 5;
+    for (entity, config) in &query {
+        for i in 0..rings {
+            let frac = (i + 1) as f32 / rings as f32;
+            let diameter = config.range * 2.0 * frac;
+            let alpha = 0.45 * (1.0 - frac * 0.6);
+            let mat = materials.add(CircleMaterial {
+                color: Color::srgba(0.3, 0.1, 0.35, alpha),
+                softness: 0.08,
+            });
+            commands.entity(entity).with_child((
+                AuraVisual,
+                Mesh2d(circle_mesh.0.clone()),
+                MeshMaterial2d(mat),
+                Transform::from_translation(Vec3::new(0.0, 0.0, -0.2))
+                    .with_scale(Vec3::splat(diameter)),
+            ));
         }
     }
-
-    let image = Image::new(
-        Extent3d { width: size, height: size, depth_or_array_layers: 1 },
-        TextureDimension::D2,
-        data,
-        TextureFormat::Rgba8UnormSrgb,
-        RenderAssetUsages::RENDER_WORLD,
-    );
-    commands.insert_resource(CircleImage(images.add(image)));
 }
 
 pub struct TowerPlugin;
 
 impl Plugin for TowerPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Startup, create_circle_image)
-            .init_resource::<placement::SelectedTower>()
+        app.init_resource::<placement::SelectedTower>()
             .init_resource::<TowerRegistry>()
             .add_plugins((
                 types::ScrapGunPlugin,
@@ -64,6 +86,11 @@ impl Plugin for TowerPlugin {
                     placement::confirm_tower_placement,
                 )
                     .chain()
+                    .run_if(in_state(GameState::Playing)),
+            )
+            .add_systems(
+                Update,
+                (spawn_range_rings, spawn_aura_rings)
                     .run_if(in_state(GameState::Playing)),
             )
             .add_systems(

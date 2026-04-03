@@ -2,10 +2,13 @@ use bevy::prelude::*;
 use bevy_northstar::prelude::*;
 use rand::Rng;
 
+use bevy::sprite_render::MeshMaterial2d;
+
 use crate::common::constants::{GridConfig, TILE_SIZE};
 use crate::grid::systems::{grid_to_world, grid_to_world_cfg};
 use crate::pile::resources::{EdgeCells, PileScrap};
 use crate::pile::systems::nearest_edge_cell;
+use crate::shader::CircleMaterial;
 
 use super::components::*;
 
@@ -350,19 +353,21 @@ pub fn animate_damage_flash(
     }
 }
 
-/// Expand and fade AoE burst visuals.
+/// Expand and fade AoE burst visuals (shader-driven circles).
 pub fn animate_aoe_burst(
     mut commands: Commands,
-    mut query: Query<(Entity, &mut AoEBurst, &mut Sprite, &mut Transform)>,
+    mut query: Query<(Entity, &mut AoEBurst, &MeshMaterial2d<CircleMaterial>, &mut Transform)>,
+    mut materials: ResMut<Assets<CircleMaterial>>,
     time: Res<Time>,
 ) {
-    for (entity, mut burst, mut sprite, mut tf) in &mut query {
+    for (entity, mut burst, mat_handle, mut tf) in &mut query {
         burst.timer.tick(time.delta());
         let t = burst.timer.fraction();
         let size = burst.max_radius * t;
-        sprite.custom_size = Some(Vec2::splat(size));
-        sprite.color = sprite.color.with_alpha(0.4 * (1.0 - t));
-        tf.scale = Vec3::ONE; // size is driven by custom_size, not scale
+        tf.scale = Vec3::splat(size);
+        if let Some(mat) = materials.get_mut(mat_handle.id()) {
+            mat.color = mat.color.with_alpha(0.4 * (1.0 - t));
+        }
         if burst.timer.is_finished() {
             commands.entity(entity).despawn();
         }

@@ -1,7 +1,10 @@
 use bevy::prelude::*;
 
+use bevy::sprite_render::MeshMaterial2d;
+
 use crate::camera::components::ScreenShake;
 use crate::enemy::components::*;
+use crate::shader::{CircleMaterial, CircleMesh};
 
 use super::components::*;
 
@@ -48,6 +51,8 @@ pub fn projectile_hit_detection(
     projectiles: Query<(Entity, &Projectile, &Transform, Option<&AoEPayload>, Option<&SlowPayload>)>,
     mut enemies: Query<(Entity, &mut Health, &Transform, &Sprite), (With<Enemy>, Without<Dead>)>,
     mut shake: ResMut<ScreenShake>,
+    circle_mesh: Res<CircleMesh>,
+    mut circle_mats: ResMut<Assets<CircleMaterial>>,
 ) {
     let mut hits: Vec<PendingHit> = Vec::new();
 
@@ -97,17 +102,20 @@ pub fn projectile_hit_detection(
             shake.timer = Timer::from_seconds(0.25, TimerMode::Once);
             shake.decay = 0.05;
 
-            // Visual burst.
+            // Visual burst (circular shader).
+            let burst_mat = circle_mats.add(CircleMaterial {
+                color: Color::srgba(1.0, 0.5, 0.1, 0.4),
+                softness: 0.15,
+            });
             commands.spawn((
                 AoEBurst {
                     timer: Timer::from_seconds(0.3, TimerMode::Once),
                     max_radius: radius * 2.0,
                 },
-                Sprite::from_color(
-                    Color::srgba(1.0, 0.5, 0.1, 0.4),
-                    Vec2::splat(4.0),
-                ),
-                Transform::from_translation(hit.hit_pos),
+                Mesh2d(circle_mesh.0.clone()),
+                MeshMaterial2d(burst_mat),
+                Transform::from_translation(hit.hit_pos)
+                    .with_scale(Vec3::splat(4.0)),
             ));
 
             let aoe_targets: Vec<(Entity, f32)> = enemies

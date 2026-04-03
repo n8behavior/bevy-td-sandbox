@@ -1,9 +1,5 @@
 use bevy::prelude::*;
 
-/// Pre-generated circle texture for range ring rendering.
-#[derive(Resource)]
-pub struct CircleImage(pub Handle<Image>);
-
 // ---------------------------------------------------------------------------
 // Base tower marker
 // ---------------------------------------------------------------------------
@@ -135,7 +131,7 @@ pub struct TowerBlueprint {
     pub special_label: &'static str,
     /// Called on the EntityCommands of a freshly spawned tower entity to insert
     /// all type-specific components (marker, stats, visuals, etc.).
-    pub spawn_fn: fn(&mut EntityCommands, &CircleImage),
+    pub spawn_fn: fn(&mut EntityCommands),
 }
 
 /// Registry of all available tower types. Tower-type plugins push blueprints
@@ -146,39 +142,19 @@ pub struct TowerRegistry {
 }
 
 // ---------------------------------------------------------------------------
-// Helpers
+// Range ring config (reactive system spawns the actual shader mesh)
 // ---------------------------------------------------------------------------
 
-/// Spawn a circular range ring preview as a child (despawned on placement).
-pub fn spawn_range_ring(cmds: &mut EntityCommands, range: f32, color: Color, circle: &CircleImage) {
-    cmds.with_child((
-        RangeRing,
-        Sprite {
-            image: circle.0.clone(),
-            color,
-            custom_size: Some(Vec2::splat(range * 2.0)),
-            ..default()
-        },
-        Transform::from_translation(Vec3::new(0.0, 0.0, -0.1)),
-    ));
+/// Insert on a tower entity to request a range ring child.
+/// A reactive system converts this into a `Mesh2d` + `CircleMaterial`.
+#[derive(Component)]
+pub struct RangeRingConfig {
+    pub range: f32,
+    pub color: Color,
 }
 
-/// Spawn gradient circular aura rings as children (for aura-type towers).
-pub fn spawn_aura_rings(cmds: &mut EntityCommands, range: f32, circle: &CircleImage) {
-    let rings = 5;
-    for i in 0..rings {
-        let frac = (i + 1) as f32 / rings as f32;
-        let size = range * 2.0 * frac;
-        let alpha = 0.45 * (1.0 - frac * 0.6);
-        cmds.with_child((
-            AuraVisual,
-            Sprite {
-                image: circle.0.clone(),
-                color: Color::srgba(0.3, 0.1, 0.35, alpha),
-                custom_size: Some(Vec2::splat(size)),
-                ..default()
-            },
-            Transform::from_translation(Vec3::new(0.0, 0.0, -0.2)),
-        ));
-    }
+/// Insert on a tower entity to request gradient aura ring children.
+#[derive(Component)]
+pub struct AuraRingConfig {
+    pub range: f32,
 }

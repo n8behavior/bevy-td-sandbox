@@ -27,8 +27,7 @@ impl Plugin for WavePlugin {
                         .run_if(in_state(PlayPhase::Defending)),
                     systems::handle_start_wave_input
                         .run_if(in_state(PlayPhase::Building)),
-                    systems::check_game_over
-                        .run_if(in_state(PlayPhase::Defending)),
+                    systems::check_game_over,
                 )
                     .run_if(in_state(GameState::Playing)),
             );
