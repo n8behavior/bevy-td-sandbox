@@ -236,11 +236,11 @@ pub fn rotate_towers_to_target(
 // Scrap Magnet systems
 // ---------------------------------------------------------------------------
 
-/// Pull scrap drops toward the nearest scrap magnet in range; auto-collect on contact.
-/// Matches both magnet towers and the pile (which has ScrapMagnet but not Tower).
+/// Pull scrap drops toward the nearest scrap collector in range; auto-collect on contact.
+/// Matches the pile, magnet tower, and mechanical towers with ScrapCollector.
 pub fn scrap_magnet_collect(
-    magnets: Query<(&Transform, &TowerStats), (With<ScrapMagnet>, Without<Placing>, Without<ScrapDrop>)>,
-    mut drops: Query<(Entity, &ScrapDrop, &mut Transform), Without<ScrapMagnet>>,
+    collectors: Query<(&Transform, &ScrapCollector), (Without<Placing>, Without<ScrapDrop>)>,
+    mut drops: Query<(Entity, &ScrapDrop, &mut Transform), Without<ScrapCollector>>,
     mut pile_scrap: ResMut<PileScrap>,
     mut commands: Commands,
     time: Res<Time>,
@@ -248,22 +248,22 @@ pub fn scrap_magnet_collect(
     for (entity, drop, mut drop_tf) in &mut drops {
         let drop_pos = drop_tf.translation.truncate();
 
-        // Find nearest magnet in range.
+        // Find nearest collector in range.
         let mut best: Option<(Vec2, f32, f32)> = None;
-        for (mag_tf, stats) in &magnets {
-            let mag_pos = mag_tf.translation.truncate();
-            let dist = mag_pos.distance(drop_pos);
-            if dist <= stats.range && best.is_none_or(|(_, d, _)| dist < d) {
-                best = Some((mag_pos, dist, stats.range));
+        for (col_tf, collector) in &collectors {
+            let col_pos = col_tf.translation.truncate();
+            let dist = col_pos.distance(drop_pos);
+            if dist <= collector.range && best.is_none_or(|(_, d, _)| dist < d) {
+                best = Some((col_pos, dist, collector.range));
             }
         }
 
-        if let Some((mag_pos, dist, range)) = best {
+        if let Some((col_pos, dist, range)) = best {
             if dist < MAGNET_COLLECT_RADIUS {
                 pile_scrap.amount += drop.value;
                 commands.entity(entity).despawn();
             } else {
-                let direction = (mag_pos - drop_pos).normalize();
+                let direction = (col_pos - drop_pos).normalize();
                 let strength = 1.0 - (dist / range);
                 let pull = direction * SCRAP_PULL_SPEED * strength * time.delta_secs();
                 drop_tf.translation += pull.extend(0.0);
@@ -272,20 +272,21 @@ pub fn scrap_magnet_collect(
     }
 }
 
-/// Pull enemies toward magnet towers, making them struggle against the field.
+/// Pull enemies toward dedicated Magnet towers, making them struggle against the field.
+/// Only the Magnet tower type (ScrapMagnet marker) pulls enemies, not all collectors.
 pub fn magnetic_pull_enemies(
-    magnets: Query<(&Transform, &TowerStats), (With<ScrapMagnet>, With<Tower>, Without<Placing>)>,
+    magnets: Query<(&Transform, &ScrapCollector), (With<ScrapMagnet>, With<Tower>, Without<Placing>)>,
     mut enemies: Query<&mut Transform, (With<Enemy>, Without<Dead>, Without<Dying>, Without<Tower>)>,
     time: Res<Time>,
 ) {
     for mut enemy_tf in &mut enemies {
         let enemy_pos = enemy_tf.translation.truncate();
-        for (mag_tf, stats) in &magnets {
+        for (mag_tf, collector) in &magnets {
             let mag_pos = mag_tf.translation.truncate();
             let dist = mag_pos.distance(enemy_pos);
-            if dist <= stats.range && dist > 2.0 {
+            if dist <= collector.range && dist > 2.0 {
                 let direction = (mag_pos - enemy_pos).normalize();
-                let strength = 1.0 - (dist / stats.range);
+                let strength = 1.0 - (dist / collector.range);
                 let pull = direction * ENEMY_PULL_SPEED * strength * time.delta_secs();
                 enemy_tf.translation += pull.extend(0.0);
             }

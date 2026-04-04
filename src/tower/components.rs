@@ -159,3 +159,10 @@ pub struct AuraRingConfig {
     pub range: f32,
     pub color: Color,
 }
+
+/// Pulls nearby scrap drops toward this entity and auto-collects on contact.
+/// Present on the pile, the dedicated Magnet tower, and mechanical towers.
+#[derive(Component)]
+pub struct ScrapCollector {
+    pub range: f32,
+}

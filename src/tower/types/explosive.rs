@@ -1,5 +1,6 @@
 use bevy::prelude::*;
 
+use crate::common::constants::MAGNET_AURA_COLOR;
 use crate::tower::components::*;
 
 #[derive(Component)]
@@ -23,8 +24,11 @@ fn register(mut registry: ResMut<TowerRegistry>) {
         special_label: "AOE",
         spawn_fn: |cmds| {
             let stats = TowerStats { damage: 25.0, range: 100.0 };
+            let collect_range = 30.0;
             cmds.insert((
                 RangeRingConfig { range: stats.range, color: Color::srgba(0.9, 0.2, 0.0, 0.15) },
+                AuraRingConfig { range: collect_range, color: MAGNET_AURA_COLOR },
+                ScrapCollector { range: collect_range },
                 Explosive,
                 BlocksNav,
                 stats,

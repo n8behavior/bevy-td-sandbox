@@ -6,8 +6,7 @@ use bevy::prelude::*;
 
 use crate::common::constants::*;
 use crate::states::GameState;
-use crate::tower::components::{AuraRingConfig, TowerStats};
-use crate::tower::types::scrap_magnet::ScrapMagnet;
+use crate::tower::components::{AuraRingConfig, ScrapCollector};
 
 use resources::{EdgeCells, PileScrap, PileState};
 
@@ -56,13 +55,13 @@ pub fn init_pile(mut commands: Commands, config: Res<GridConfig>) {
     }
     commands.insert_resource(EdgeCells(edges));
 
-    // Pile center entity: acts as a scrap magnet with aura visual.
-    let pile_range = 80.0;
+    // Pile center entity: acts as a scrap collector with aura visual.
+    // Range is 50% longer than the dedicated Magnet tower (90 * 1.5 = 135).
+    let pile_range = 135.0;
     let world_pos = crate::grid::systems::grid_to_world_cfg(center, &config);
     commands.spawn((
-        ScrapMagnet,
-        TowerStats { damage: 0.0, range: pile_range },
-        AuraRingConfig { range: pile_range, color: Color::srgba(0.7, 0.55, 0.2, 0.4) },
+        ScrapCollector { range: pile_range },
+        AuraRingConfig { range: pile_range, color: MAGNET_AURA_COLOR },
         Transform::from_translation(world_pos.extend(0.25)),
         Visibility::Inherited,
         DespawnOnExit(GameState::Playing),
