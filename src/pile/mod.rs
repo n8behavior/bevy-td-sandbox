@@ -63,7 +63,8 @@ pub fn init_pile(mut commands: Commands, config: Res<GridConfig>) {
         ScrapMagnet,
         TowerStats { damage: 0.0, range: pile_range },
         AuraRingConfig { range: pile_range, color: Color::srgba(0.7, 0.55, 0.2, 0.4) },
-        Transform::from_translation(world_pos.extend(-0.1)),
+        Transform::from_translation(world_pos.extend(0.25)),
+        Visibility::Inherited,
         DespawnOnExit(GameState::Playing),
     ));
 }
