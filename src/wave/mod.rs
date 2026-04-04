@@ -1,18 +1,14 @@
 pub mod resources;
 pub mod systems;
 
-use bevy::prelude::*;
 use crate::states::{GameState, PlayPhase};
+use bevy::prelude::*;
 
 pub struct WavePlugin;
 
 impl Plugin for WavePlugin {
     fn build(&self, app: &mut App) {
-        app
-            .add_systems(
-                OnEnter(GameState::Playing),
-                init_wave_manager,
-            )
+        app.add_systems(OnEnter(GameState::Playing), init_wave_manager)
             .add_systems(OnEnter(PlayPhase::Defending), systems::start_wave)
             .add_systems(
                 FixedUpdate,
@@ -23,14 +19,10 @@ impl Plugin for WavePlugin {
             .add_systems(
                 Update,
                 (
-                    (
-                        systems::check_game_over,
-                        systems::check_wave_complete,
-                    )
+                    (systems::check_game_over, systems::check_wave_complete)
                         .chain()
                         .run_if(in_state(PlayPhase::Defending)),
-                    systems::handle_start_wave_input
-                        .run_if(in_state(PlayPhase::Building)),
+                    systems::handle_start_wave_input.run_if(in_state(PlayPhase::Building)),
                 )
                     .run_if(in_state(GameState::Playing)),
             );

@@ -1,15 +1,15 @@
+pub mod game_over;
 pub mod hud;
 pub mod tower_menu;
-pub mod game_over;
 
-use bevy::prelude::*;
-#[cfg(not(target_arch = "wasm32"))]
-use bevy::ecs::message::MessageWriter;
-#[cfg(not(target_arch = "wasm32"))]
-use bevy::window::{MonitorSelection, WindowMode};
-use crate::states::GameState;
 #[cfg(not(target_arch = "wasm32"))]
 use crate::common::constants::*;
+use crate::states::GameState;
+#[cfg(not(target_arch = "wasm32"))]
+use bevy::ecs::message::MessageWriter;
+use bevy::prelude::*;
+#[cfg(not(target_arch = "wasm32"))]
+use bevy::window::{MonitorSelection, WindowMode};
 
 pub struct UIPlugin;
 

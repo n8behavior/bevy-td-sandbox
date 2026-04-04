@@ -61,7 +61,10 @@ pub fn init_pile(mut commands: Commands, config: Res<GridConfig>) {
     let world_pos = crate::grid::systems::grid_to_world_cfg(center, &config);
     commands.spawn((
         ScrapCollector { range: pile_range },
-        AuraRingConfig { range: pile_range, color: MAGNET_AURA_COLOR },
+        AuraRingConfig {
+            range: pile_range,
+            color: MAGNET_AURA_COLOR,
+        },
         Transform::from_translation(world_pos.extend(0.25)),
         Visibility::Inherited,
         DespawnOnExit(GameState::Playing),

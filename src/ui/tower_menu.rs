@@ -1,8 +1,8 @@
-use bevy::prelude::*;
+use crate::states::{GameState, PlayPhase};
 use crate::tower::components::TowerRegistry;
 use crate::tower::placement::SelectedTower;
-use crate::states::{GameState, PlayPhase};
 use crate::wave::resources::WaveManager;
+use bevy::prelude::*;
 
 const LABEL_COLOR: Color = Color::srgb(0.95, 0.85, 0.5);
 const HINT_COLOR: Color = Color::srgb(0.7, 0.65, 0.5);
@@ -33,7 +33,10 @@ pub fn setup_tower_palette(mut commands: Commands, registry: Res<TowerRegistry>)
             parent.spawn((
                 Text::new(format!("TOWERS (1-{})", registry.blueprints.len())),
                 TextColor(LABEL_COLOR),
-                TextFont { font_size: 15.0, ..default() },
+                TextFont {
+                    font_size: 15.0,
+                    ..default()
+                },
             ));
 
             for (i, blueprint) in registry.blueprints.iter().enumerate() {
@@ -46,7 +49,12 @@ pub fn setup_tower_palette(mut commands: Commands, registry: Res<TowerRegistry>)
                 parent
                     .spawn((
                         Node {
-                            padding: UiRect::new(Val::Px(4.0), Val::Px(4.0), Val::Px(2.0), Val::Px(2.0)),
+                            padding: UiRect::new(
+                                Val::Px(4.0),
+                                Val::Px(4.0),
+                                Val::Px(2.0),
+                                Val::Px(2.0),
+                            ),
                             flex_direction: FlexDirection::Column,
                             ..default()
                         },
@@ -54,9 +62,17 @@ pub fn setup_tower_palette(mut commands: Commands, registry: Res<TowerRegistry>)
                     ))
                     .with_children(|btn| {
                         btn.spawn((
-                            Text::new(format!("{}: {}  {}${special}", i + 1, blueprint.name, blueprint.cost)),
+                            Text::new(format!(
+                                "{}: {}  {}${special}",
+                                i + 1,
+                                blueprint.name,
+                                blueprint.cost
+                            )),
                             TextColor(blueprint.ui_color),
-                            TextFont { font_size: 14.0, ..default() },
+                            TextFont {
+                                font_size: 14.0,
+                                ..default()
+                            },
                         ));
                     });
             }
@@ -64,27 +80,29 @@ pub fn setup_tower_palette(mut commands: Commands, registry: Res<TowerRegistry>)
             parent.spawn((
                 Text::new("\nENTER: Start Wave\nESC: Deselect\nESC ESC: Quit"),
                 TextColor(HINT_COLOR),
-                TextFont { font_size: 12.0, ..default() },
+                TextFont {
+                    font_size: 12.0,
+                    ..default()
+                },
             ));
         });
 
     // Wave preview panel (right side, shown during Building phase)
-    commands
-        .spawn((
-            Node {
-                position_type: PositionType::Absolute,
-                bottom: Val::Px(10.0),
-                right: Val::Px(10.0),
-                flex_direction: FlexDirection::Column,
-                row_gap: Val::Px(4.0),
-                padding: UiRect::all(Val::Px(10.0)),
-                ..default()
-            },
-            BackgroundColor(Color::srgba(0.12, 0.1, 0.08, 0.85)),
-            Visibility::Hidden,
-            WavePreviewPanel,
-            DespawnOnExit(GameState::Playing),
-        ));
+    commands.spawn((
+        Node {
+            position_type: PositionType::Absolute,
+            bottom: Val::Px(10.0),
+            right: Val::Px(10.0),
+            flex_direction: FlexDirection::Column,
+            row_gap: Val::Px(4.0),
+            padding: UiRect::all(Val::Px(10.0)),
+            ..default()
+        },
+        BackgroundColor(Color::srgba(0.12, 0.1, 0.08, 0.85)),
+        Visibility::Hidden,
+        WavePreviewPanel,
+        DespawnOnExit(GameState::Playing),
+    ));
 }
 
 pub fn highlight_selected_tower(
@@ -132,7 +150,10 @@ pub fn update_wave_preview(
             parent.spawn((
                 Text::new("ALL WAVES COMPLETE!"),
                 TextColor(LABEL_COLOR),
-                TextFont { font_size: 15.0, ..default() },
+                TextFont {
+                    font_size: 15.0,
+                    ..default()
+                },
             ));
         });
         return;
@@ -142,9 +163,16 @@ pub fn update_wave_preview(
 
     commands.entity(panel_entity).with_children(|parent| {
         parent.spawn((
-            Text::new(format!("== NEXT WAVE ({}/{}) ==", wave_idx + 1, wave_mgr.waves.len())),
+            Text::new(format!(
+                "== NEXT WAVE ({}/{}) ==",
+                wave_idx + 1,
+                wave_mgr.waves.len()
+            )),
             TextColor(LABEL_COLOR),
-            TextFont { font_size: 15.0, ..default() },
+            TextFont {
+                font_size: 15.0,
+                ..default()
+            },
         ));
 
         for we in &wave.enemies {
@@ -158,20 +186,29 @@ pub fn update_wave_preview(
                     we.count, we.enemy_type, base_hp, base_spd,
                 )),
                 TextColor(color),
-                TextFont { font_size: 13.0, ..default() },
+                TextFont {
+                    font_size: 13.0,
+                    ..default()
+                },
             ));
         }
 
         parent.spawn((
             Text::new(format!("\nSpawn interval: {:.1}s", wave.spawn_interval)),
             TextColor(STAT_COLOR),
-            TextFont { font_size: 11.0, ..default() },
+            TextFont {
+                font_size: 11.0,
+                ..default()
+            },
         ));
 
         parent.spawn((
             Text::new("[ENTER to start]"),
             TextColor(HINT_COLOR),
-            TextFont { font_size: 12.0, ..default() },
+            TextFont {
+                font_size: 12.0,
+                ..default()
+            },
         ));
     });
 }

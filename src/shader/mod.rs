@@ -64,10 +64,7 @@ fn setup_circle_mesh(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>) {
 }
 
 /// Advance `time` on all circle materials that have a non-zero ripple speed.
-fn tick_circle_materials(
-    mut materials: ResMut<Assets<CircleMaterial>>,
-    time: Res<Time>,
-) {
+fn tick_circle_materials(mut materials: ResMut<Assets<CircleMaterial>>, time: Res<Time>) {
     for (_, mat) in materials.iter_mut() {
         if mat.ripple_speed > 0.0 {
             mat.time += time.delta_secs();

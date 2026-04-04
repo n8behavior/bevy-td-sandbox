@@ -48,7 +48,13 @@ struct PendingHit {
 
 pub fn projectile_hit_detection(
     mut commands: Commands,
-    projectiles: Query<(Entity, &Projectile, &Transform, Option<&AoEPayload>, Option<&SlowPayload>)>,
+    projectiles: Query<(
+        Entity,
+        &Projectile,
+        &Transform,
+        Option<&AoEPayload>,
+        Option<&SlowPayload>,
+    )>,
     mut enemies: Query<(Entity, &mut Health, &Transform, &Sprite), (With<Enemy>, Without<Dead>)>,
     mut shake: ResMut<ScreenShake>,
     circle_mesh: Res<CircleMesh>,
@@ -117,8 +123,7 @@ pub fn projectile_hit_detection(
                 },
                 Mesh2d(circle_mesh.0.clone()),
                 MeshMaterial2d(burst_mat),
-                Transform::from_translation(hit.hit_pos)
-                    .with_scale(Vec3::splat(4.0)),
+                Transform::from_translation(hit.hit_pos).with_scale(Vec3::splat(4.0)),
             ));
 
             let aoe_targets: Vec<(Entity, f32)> = enemies

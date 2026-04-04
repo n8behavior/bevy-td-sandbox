@@ -1,10 +1,10 @@
-use bevy::prelude::*;
-use crate::states::{GameState, PlayPhase};
+use crate::common::constants::*;
 use crate::economy::components::ScrapDrop;
 use crate::enemy::components::{Dead, Enemy, StolenScrap};
 use crate::pile::resources::PileScrap;
+use crate::states::{GameState, PlayPhase};
 use crate::wave::resources::WaveManager;
-use crate::common::constants::*;
+use bevy::prelude::*;
 
 #[derive(Component)]
 pub struct ScrapText;
@@ -39,31 +39,46 @@ pub fn setup_hud(mut commands: Commands) {
             parent.spawn((
                 Text::new(format!("Pile: {}", STARTING_SCRAP)),
                 TextColor(Color::srgb(0.9, 0.8, 0.2)),
-                TextFont { font_size: 18.0, ..default() },
+                TextFont {
+                    font_size: 18.0,
+                    ..default()
+                },
                 ScrapText,
             ));
             parent.spawn((
                 Text::new("Ground: 0"),
                 TextColor(Color::srgb(0.7, 0.6, 0.2)),
-                TextFont { font_size: 18.0, ..default() },
+                TextFont {
+                    font_size: 18.0,
+                    ..default()
+                },
                 GroundScrapText,
             ));
             parent.spawn((
                 Text::new("Stolen: 0"),
                 TextColor(Color::srgb(0.9, 0.3, 0.3)),
-                TextFont { font_size: 18.0, ..default() },
+                TextFont {
+                    font_size: 18.0,
+                    ..default()
+                },
                 StolenScrapText,
             ));
             parent.spawn((
                 Text::new("BUILDING"),
                 TextColor(Color::srgb(0.3, 0.9, 0.3)),
-                TextFont { font_size: 18.0, ..default() },
+                TextFont {
+                    font_size: 18.0,
+                    ..default()
+                },
                 PhaseText,
             ));
             parent.spawn((
                 Text::new("Wave: 1 / 20"),
                 TextColor(Color::WHITE),
-                TextFont { font_size: 18.0, ..default() },
+                TextFont {
+                    font_size: 18.0,
+                    ..default()
+                },
                 WaveText,
             ));
         });
@@ -75,11 +90,56 @@ pub fn update_hud(
     phase: Option<Res<State<PlayPhase>>>,
     drops: Query<&ScrapDrop>,
     stolen: Query<&StolenScrap, (With<Enemy>, Without<Dead>)>,
-    mut scrap_query: Query<&mut Text, (With<ScrapText>, Without<WaveText>, Without<PhaseText>, Without<GroundScrapText>, Without<StolenScrapText>)>,
-    mut ground_query: Query<&mut Text, (With<GroundScrapText>, Without<ScrapText>, Without<WaveText>, Without<PhaseText>, Without<StolenScrapText>)>,
-    mut stolen_query: Query<&mut Text, (With<StolenScrapText>, Without<ScrapText>, Without<WaveText>, Without<PhaseText>, Without<GroundScrapText>)>,
-    mut wave_query: Query<&mut Text, (With<WaveText>, Without<ScrapText>, Without<PhaseText>, Without<GroundScrapText>, Without<StolenScrapText>)>,
-    mut phase_query: Query<(&mut Text, &mut TextColor), (With<PhaseText>, Without<ScrapText>, Without<WaveText>, Without<GroundScrapText>, Without<StolenScrapText>)>,
+    mut scrap_query: Query<
+        &mut Text,
+        (
+            With<ScrapText>,
+            Without<WaveText>,
+            Without<PhaseText>,
+            Without<GroundScrapText>,
+            Without<StolenScrapText>,
+        ),
+    >,
+    mut ground_query: Query<
+        &mut Text,
+        (
+            With<GroundScrapText>,
+            Without<ScrapText>,
+            Without<WaveText>,
+            Without<PhaseText>,
+            Without<StolenScrapText>,
+        ),
+    >,
+    mut stolen_query: Query<
+        &mut Text,
+        (
+            With<StolenScrapText>,
+            Without<ScrapText>,
+            Without<WaveText>,
+            Without<PhaseText>,
+            Without<GroundScrapText>,
+        ),
+    >,
+    mut wave_query: Query<
+        &mut Text,
+        (
+            With<WaveText>,
+            Without<ScrapText>,
+            Without<PhaseText>,
+            Without<GroundScrapText>,
+            Without<StolenScrapText>,
+        ),
+    >,
+    mut phase_query: Query<
+        (&mut Text, &mut TextColor),
+        (
+            With<PhaseText>,
+            Without<ScrapText>,
+            Without<WaveText>,
+            Without<GroundScrapText>,
+            Without<StolenScrapText>,
+        ),
+    >,
 ) {
     for mut text in &mut scrap_query {
         **text = format!("Pile: {}", pile_scrap.amount);
@@ -97,7 +157,11 @@ pub fn update_hud(
 
     if let Some(wave_mgr) = wave_mgr {
         for mut text in &mut wave_query {
-            **text = format!("Wave: {} / {}", wave_mgr.current_wave + 1, wave_mgr.waves.len());
+            **text = format!(
+                "Wave: {} / {}",
+                wave_mgr.current_wave + 1,
+                wave_mgr.waves.len()
+            );
         }
     }
     if let Some(phase) = phase {

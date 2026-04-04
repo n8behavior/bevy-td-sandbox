@@ -64,7 +64,10 @@ pub fn handle_tower_selection(
         Placing,
         PlacementValid(false),
         Visibility::Hidden,
-        Sprite::from_color(blueprint.color.with_alpha(0.5), Vec2::splat(TILE_SIZE - 2.0)),
+        Sprite::from_color(
+            blueprint.color.with_alpha(0.5),
+            Vec2::splat(TILE_SIZE - 2.0),
+        ),
         Transform::from_translation(Vec3::new(0.0, 0.0, 2.0)),
     ));
     (blueprint.spawn_fn)(&mut entity_cmds);
@@ -76,7 +79,13 @@ pub fn handle_tower_selection(
 /// Move the placing tower to the cursor and compute placement validity.
 pub fn update_placing_tower(
     mut placing: Query<
-        (Entity, &mut Transform, &mut PlacementValid, &mut Visibility, Option<&BlocksNav>),
+        (
+            Entity,
+            &mut Transform,
+            &mut PlacementValid,
+            &mut Visibility,
+            Option<&BlocksNav>,
+        ),
         With<Placing>,
     >,
     windows: Query<&Window>,
@@ -195,7 +204,13 @@ pub fn confirm_tower_placement(
     mut commands: Commands,
     mouse: Res<ButtonInput<MouseButton>>,
     mut placing: Query<
-        (Entity, &Transform, &PlacementValid, Option<&BlocksNav>, &Children),
+        (
+            Entity,
+            &Transform,
+            &PlacementValid,
+            Option<&BlocksNav>,
+            &Children,
+        ),
         With<Placing>,
     >,
     range_rings: Query<Entity, With<RangeRing>>,
@@ -268,10 +283,12 @@ pub fn confirm_tower_placement(
         Placing,
         PlacementValid(false),
         Visibility::Hidden,
-        Sprite::from_color(blueprint.color.with_alpha(0.5), Vec2::splat(TILE_SIZE - 2.0)),
+        Sprite::from_color(
+            blueprint.color.with_alpha(0.5),
+            Vec2::splat(TILE_SIZE - 2.0),
+        ),
         Transform::from_translation(Vec3::new(0.0, 0.0, 2.0)),
     ));
     (blueprint.spawn_fn)(&mut new_cmds);
     selected.entity = Some(new_cmds.id());
 }
-

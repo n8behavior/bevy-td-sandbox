@@ -3,14 +3,12 @@ pub mod placement;
 pub mod systems;
 pub mod types;
 
-use bevy::prelude::*;
-use bevy::sprite_render::MeshMaterial2d;
 use crate::shader::{CircleMaterial, CircleMesh};
 use crate::states::{GameState, PlayPhase};
+use bevy::prelude::*;
+use bevy::sprite_render::MeshMaterial2d;
 
-use components::{
-    AuraRingConfig, AuraVisual, RangeRing, RangeRingConfig, TowerRegistry,
-};
+use components::{AuraRingConfig, AuraVisual, RangeRing, RangeRingConfig, TowerRegistry};
 
 /// Reactive system: when a tower entity gets a `RangeRingConfig`, spawn the
 /// shader-driven range ring as a child.
@@ -110,8 +108,7 @@ impl Plugin for TowerPlugin {
             )
             .add_systems(
                 Update,
-                (spawn_range_rings, spawn_aura_rings)
-                    .run_if(in_state(GameState::Playing)),
+                (spawn_range_rings, spawn_aura_rings).run_if(in_state(GameState::Playing)),
             )
             .add_systems(
                 FixedUpdate,

@@ -63,7 +63,8 @@ pub fn update_pile_state(
 
     pile_state.radius_tiles = new_radius;
     pile_state.last_radius_int = new_radius_int;
-    pile_state.cells = compute_pile_cells(pile_state.center, new_radius, config.width, config.height);
+    pile_state.cells =
+        compute_pile_cells(pile_state.center, new_radius, config.width, config.height);
 }
 
 /// Sync the visual appearance of grid cells to match current pile state.
@@ -71,7 +72,10 @@ pub fn update_pile_state(
 pub fn update_pile_visuals(
     mut commands: Commands,
     pile_state: Res<PileState>,
-    mut cells: Query<(Entity, &GridCell, &mut Sprite, Option<&PileCell>), (Without<Tower>, Without<Obstacle>)>,
+    mut cells: Query<
+        (Entity, &GridCell, &mut Sprite, Option<&PileCell>),
+        (Without<Tower>, Without<Obstacle>),
+    >,
 ) {
     if !pile_state.is_changed() {
         return;

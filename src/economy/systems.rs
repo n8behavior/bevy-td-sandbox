@@ -19,10 +19,7 @@ pub fn on_enemy_died(trigger: On<EnemyDied>, mut commands: Commands) {
         return;
     }
 
-    let offset = Vec2::new(
-        rng.random_range(-6.0..6.0),
-        rng.random_range(-6.0..6.0),
-    );
+    let offset = Vec2::new(rng.random_range(-6.0..6.0), rng.random_range(-6.0..6.0));
     let pos = event.position + offset;
 
     commands
@@ -32,8 +29,7 @@ pub fn on_enemy_died(trigger: On<EnemyDied>, mut commands: Commands) {
                 lifetime: Timer::from_seconds(SCRAP_DROP_LIFETIME, TimerMode::Once),
             },
             Sprite::from_color(SCRAP_COLOR, Vec2::splat(8.0)),
-            Transform::from_translation(pos.extend(1.5))
-                .with_scale(Vec3::ZERO),
+            Transform::from_translation(pos.extend(1.5)).with_scale(Vec3::ZERO),
             SpawnAnimation {
                 timer: Timer::from_seconds(0.2, TimerMode::Once),
             },
@@ -46,10 +42,7 @@ pub fn on_enemy_died(trigger: On<EnemyDied>, mut commands: Commands) {
 }
 
 /// Slowly rotate scrap drops for visual flair (diamond ↔ square oscillation).
-pub fn scrap_idle_rotation(
-    mut drops: Query<&mut Transform, With<ScrapDrop>>,
-    time: Res<Time>,
-) {
+pub fn scrap_idle_rotation(mut drops: Query<&mut Transform, With<ScrapDrop>>, time: Res<Time>) {
     for mut tf in &mut drops {
         tf.rotate_z(0.8 * time.delta_secs()); // ~45 deg/sec
     }
@@ -78,4 +71,3 @@ pub fn scrap_drop_lifetime(
         }
     }
 }
-

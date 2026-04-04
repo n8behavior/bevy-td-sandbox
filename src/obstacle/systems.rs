@@ -18,10 +18,7 @@ const NEIGHBORS_4: [IVec2; 4] = [
 ];
 
 fn in_bounds(cell: IVec2, config: &GridConfig) -> bool {
-    cell.x >= 0
-        && cell.y >= 0
-        && (cell.x as u32) < config.width
-        && (cell.y as u32) < config.height
+    cell.x >= 0 && cell.y >= 0 && (cell.x as u32) < config.width && (cell.y as u32) < config.height
 }
 
 /// Build set of cells that must never be obstacles.
@@ -131,9 +128,10 @@ fn validate_paths(grid: &OrdinalGrid, config: &GridConfig, center: UVec3) -> boo
         UVec3::new(config.width / 2, config.height - 1, 0),
     ];
 
-    edge_midpoints
-        .iter()
-        .all(|edge| grid.pathfind(&mut PathfindArgs::new(*edge, center).astar()).is_some())
+    edge_midpoints.iter().all(|edge| {
+        grid.pathfind(&mut PathfindArgs::new(*edge, center).astar())
+            .is_some()
+    })
 }
 
 pub fn generate_obstacles(
@@ -200,7 +198,9 @@ pub fn generate_obstacles(
     for (entity, grid_cell, mut sprite) in &mut cell_query {
         if obstacle_set.contains(&grid_cell.coord) {
             commands.entity(entity).insert(Obstacle);
-            let Srgba { red, green, blue, .. } = Srgba::from(OBSTACLE_COLOR);
+            let Srgba {
+                red, green, blue, ..
+            } = Srgba::from(OBSTACLE_COLOR);
             let v = rng.random_range(-0.03..0.03);
             sprite.color = Color::srgb(
                 (red + v).clamp(0.0, 1.0),

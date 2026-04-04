@@ -1,8 +1,8 @@
 pub mod components;
 pub mod systems;
 
-use bevy::prelude::*;
 use crate::states::{GameState, PlayPhase};
+use bevy::prelude::*;
 
 pub struct ProjectilePlugin;
 
@@ -20,10 +20,7 @@ impl Plugin for ProjectilePlugin {
         )
         .add_systems(
             Update,
-            (
-                systems::emit_trail_particles,
-                systems::fade_trail_particles,
-            )
+            (systems::emit_trail_particles, systems::fade_trail_particles)
                 .run_if(in_state(GameState::Playing)),
         );
     }

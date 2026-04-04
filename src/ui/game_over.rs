@@ -1,7 +1,7 @@
-use bevy::prelude::*;
+use crate::states::GameState;
 #[cfg(not(target_arch = "wasm32"))]
 use bevy::ecs::message::MessageWriter;
-use crate::states::GameState;
+use bevy::prelude::*;
 
 pub fn setup_main_menu(mut commands: Commands) {
     commands.spawn((Camera2d, DespawnOnExit(GameState::MainMenu)));

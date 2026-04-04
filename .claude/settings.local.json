@@ -27,7 +27,17 @@
       "Bash(cargo clippy:*)",
       "Bash(find ~/.cargo/registry/src -maxdepth 3 -type d -name bevy_camera-0.18*)",
       "Bash(find ~/.cargo/registry/src -maxdepth 3 -type d -name bevy_window-0.18*)",
-      "Bash(find ~/.cargo/registry/src -maxdepth 3 -type d -name bevy_sprite-0.18*)"
+      "Bash(find ~/.cargo/registry/src -maxdepth 3 -type d -name bevy_sprite-0.18*)",
+      "Bash(find:*)",
+      "Bash(awk 'NR>1')",
+      "WebFetch(domain:bevy-cheatbook.github.io)",
+      "WebFetch(domain:blog.erikhorton.com)",
+      "Bash(ls /home/sandman/.cargo/registry/src/index.crates.io-*/)",
+      "Bash(rustup show:*)",
+      "Bash(rustup target:*)",
+      "Bash(rustc --version)",
+      "Bash(rustup toolchain:*)",
+      "Bash(RUSTFLAGS='--cfg getrandom_backend=\"wasm_js\"' cargo check:*)"
     ]
   }
 }

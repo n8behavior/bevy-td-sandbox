@@ -1,5 +1,5 @@
-use bevy::prelude::*;
 use crate::enemy::components::EnemyType;
+use bevy::prelude::*;
 
 #[derive(Resource)]
 pub struct WaveManager {

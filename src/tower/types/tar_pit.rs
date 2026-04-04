@@ -22,14 +22,22 @@ fn register(mut registry: ResMut<TowerRegistry>) {
         key: KeyCode::Digit2,
         special_label: "SLOW",
         spawn_fn: |cmds| {
-            let stats = TowerStats { damage: 2.0, range: 70.0 };
+            let stats = TowerStats {
+                damage: 2.0,
+                range: 70.0,
+            };
             cmds.insert((
-                RangeRingConfig { range: stats.range, color: Color::srgba(0.3, 0.1, 0.35, 0.25) },
-                AuraRingConfig { range: stats.range, color: Color::srgba(0.4, 0.15, 0.45, 0.55) },
+                RangeRingConfig {
+                    range: stats.range,
+                    color: Color::srgba(0.3, 0.1, 0.35, 0.25),
+                },
+                AuraRingConfig {
+                    range: stats.range,
+                    color: Color::srgba(0.4, 0.15, 0.45, 0.55),
+                },
                 TarPit,
                 // No BlocksNav — enemies walk through
                 stats,
-
                 SlowOnHit {
                     factor: 0.4,
                     duration: 0.5,

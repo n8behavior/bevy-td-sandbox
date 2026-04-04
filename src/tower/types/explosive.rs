@@ -23,18 +23,28 @@ fn register(mut registry: ResMut<TowerRegistry>) {
         key: KeyCode::Digit3,
         special_label: "AOE",
         spawn_fn: |cmds| {
-            let stats = TowerStats { damage: 25.0, range: 100.0 };
+            let stats = TowerStats {
+                damage: 25.0,
+                range: 100.0,
+            };
             let collect_range = 30.0;
             cmds.insert((
-                RangeRingConfig { range: stats.range, color: Color::srgba(0.9, 0.2, 0.0, 0.15) },
-                AuraRingConfig { range: collect_range, color: MAGNET_AURA_COLOR },
-                ScrapCollector { range: collect_range },
+                RangeRingConfig {
+                    range: stats.range,
+                    color: Color::srgba(0.9, 0.2, 0.0, 0.15),
+                },
+                AuraRingConfig {
+                    range: collect_range,
+                    color: MAGNET_AURA_COLOR,
+                },
+                ScrapCollector {
+                    range: collect_range,
+                },
                 Explosive,
                 BlocksNav,
                 stats,
                 AimTolerance(0.15),
                 TurretState::with_cooldown(3.33),
-
                 ProjectileVisuals {
                     speed: 200.0,
                     color: Color::srgb(1.0, 1.0, 0.6),

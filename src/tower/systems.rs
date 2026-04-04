@@ -93,14 +93,17 @@ fn spawn_projectile(
 /// Only runs on towers with TurretState + AimTolerance + ProjectileVisuals.
 pub fn turret_state_machine(
     mut commands: Commands,
-    mut towers: Query<(
-        &Transform,
-        &TowerStats,
-        &mut TurretState,
-        &AimTolerance,
-        &ProjectileVisuals,
-        Option<&AoEOnHit>,
-    ), (With<Tower>, Without<Placing>)>,
+    mut towers: Query<
+        (
+            &Transform,
+            &TowerStats,
+            &mut TurretState,
+            &AimTolerance,
+            &ProjectileVisuals,
+            Option<&AoEOnHit>,
+        ),
+        (With<Tower>, Without<Placing>),
+    >,
     enemies: Query<(Entity, &Transform, &Health), (With<Enemy>, Without<Dead>, Without<Dying>)>,
     time: Res<Time>,
 ) {
@@ -146,14 +149,7 @@ pub fn turret_state_machine(
                         state.phase = TurretPhase::Acquiring { target };
                     } else if state.cooldown.is_finished() {
                         // FIRE!
-                        spawn_projectile(
-                            &mut commands,
-                            visuals,
-                            tower_tf,
-                            stats,
-                            target,
-                            aoe,
-                        );
+                        spawn_projectile(&mut commands, visuals, tower_tf, stats, target, aoe);
                         state.cooldown.reset();
                     }
                 }
@@ -205,13 +201,14 @@ pub fn rotate_towers_to_target(
     time: Res<Time>,
 ) {
     for (mut tower_tf, turret_state) in &mut towers {
-        let target_angle = turret_state
-            .target()
-            .and_then(|e| targets.get(e).ok())
-            .map(|target_tf| {
-                let dir = target_tf.translation.truncate() - tower_tf.translation.truncate();
-                dir.y.atan2(dir.x)
-            });
+        let target_angle =
+            turret_state
+                .target()
+                .and_then(|e| targets.get(e).ok())
+                .map(|target_tf| {
+                    let dir = target_tf.translation.truncate() - tower_tf.translation.truncate();
+                    dir.y.atan2(dir.x)
+                });
 
         let goal = match target_angle {
             Some(angle) => Quat::from_rotation_z(angle),
@@ -275,8 +272,14 @@ pub fn scrap_magnet_collect(
 /// Pull enemies toward dedicated Magnet towers, making them struggle against the field.
 /// Only the Magnet tower type (ScrapMagnet marker) pulls enemies, not all collectors.
 pub fn magnetic_pull_enemies(
-    magnets: Query<(&Transform, &ScrapCollector), (With<ScrapMagnet>, With<Tower>, Without<Placing>)>,
-    mut enemies: Query<&mut Transform, (With<Enemy>, Without<Dead>, Without<Dying>, Without<Tower>)>,
+    magnets: Query<
+        (&Transform, &ScrapCollector),
+        (With<ScrapMagnet>, With<Tower>, Without<Placing>),
+    >,
+    mut enemies: Query<
+        &mut Transform,
+        (With<Enemy>, Without<Dead>, Without<Dying>, Without<Tower>),
+    >,
     time: Res<Time>,
 ) {
     for mut enemy_tf in &mut enemies {

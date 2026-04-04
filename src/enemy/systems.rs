@@ -29,7 +29,17 @@ pub struct HealthBar {
 }
 
 pub fn enemy_movement(
-    mut query: Query<(Entity, &mut AgentPos, &NextPos, &mut Transform, &MoveSpeed, Option<&mut WanderOffset>), (Without<Dead>, Without<Dying>)>,
+    mut query: Query<
+        (
+            Entity,
+            &mut AgentPos,
+            &NextPos,
+            &mut Transform,
+            &MoveSpeed,
+            Option<&mut WanderOffset>,
+        ),
+        (Without<Dead>, Without<Dying>),
+    >,
     mut commands: Commands,
     time: Res<Time>,
     config: Res<GridConfig>,
@@ -87,15 +97,27 @@ pub fn enemy_movement(
 /// If the pile is empty, enemies wander on the pile searching for scrap.
 pub fn enemy_reached_pile(
     mut commands: Commands,
-    enemies: Query<(
-        Entity, &AgentPos, &LootValue, &EnemyPhase, &Transform,
-        Option<&SearchWander>, Option<&NextPos>, Option<&Pathfind>, Option<&Path>,
-    ), (With<Enemy>, Without<Dead>, Without<Dying>)>,
+    enemies: Query<
+        (
+            Entity,
+            &AgentPos,
+            &LootValue,
+            &EnemyPhase,
+            &Transform,
+            Option<&SearchWander>,
+            Option<&NextPos>,
+            Option<&Pathfind>,
+            Option<&Path>,
+        ),
+        (With<Enemy>, Without<Dead>, Without<Dying>),
+    >,
     mut pile_scrap: ResMut<PileScrap>,
     edge_cells: Res<EdgeCells>,
 ) {
     let mut rng = rand::rng();
-    for (entity, agent_pos, loot, phase, transform, search, next_pos, pathfind_req, path) in &enemies {
+    for (entity, agent_pos, loot, phase, transform, search, next_pos, pathfind_req, path) in
+        &enemies
+    {
         if *phase != EnemyPhase::Approaching {
             continue;
         }
@@ -134,10 +156,7 @@ pub fn enemy_reached_pile(
         // Visual decal: small gold square on the enemy to indicate carried scrap.
         commands.entity(entity).with_child((
             ScrapCarrierDecal,
-            Sprite::from_color(
-                Color::srgb(1.0, 0.85, 0.1),
-                Vec2::splat(6.0),
-            ),
+            Sprite::from_color(Color::srgb(1.0, 0.85, 0.1), Vec2::splat(6.0)),
             Transform::from_translation(Vec3::new(0.0, -5.0, 0.1)),
         ));
     }
@@ -145,7 +164,10 @@ pub fn enemy_reached_pile(
 
 /// Wander movement for enemies searching an empty pile.
 pub fn search_wander_movement(
-    mut query: Query<(&mut Transform, &MoveSpeed, &mut SearchWander), (With<Enemy>, Without<Dead>, Without<Dying>)>,
+    mut query: Query<
+        (&mut Transform, &MoveSpeed, &mut SearchWander),
+        (With<Enemy>, Without<Dead>, Without<Dying>),
+    >,
     time: Res<Time>,
 ) {
     let mut rng = rand::rng();
@@ -224,7 +246,16 @@ pub fn enemy_escaped(
 /// Mark enemies with zero health as Dying, trigger loot event.
 pub fn check_enemy_death(
     mut commands: Commands,
-    enemies: Query<(Entity, &Health, &Transform, &LootValue, Option<&StolenScrap>), (With<Enemy>, Without<Dead>, Without<Dying>)>,
+    enemies: Query<
+        (
+            Entity,
+            &Health,
+            &Transform,
+            &LootValue,
+            Option<&StolenScrap>,
+        ),
+        (With<Enemy>, Without<Dead>, Without<Dying>),
+    >,
 ) {
     for (entity, health, transform, loot, stolen) in &enemies {
         if health.current <= 0.0 {
@@ -279,11 +310,7 @@ pub fn update_health_bars(
                 // Counter-rotate position and orientation so the bar stays
                 // centered above the enemy regardless of its rotation.
                 let inv = enemy_tf.rotation.inverse();
-                let desired_offset = Vec3::new(
-                    -bar_width * (1.0 - frac) / 2.0,
-                    bar.y_offset,
-                    0.1,
-                );
+                let desired_offset = Vec3::new(-bar_width * (1.0 - frac) / 2.0, bar.y_offset, 0.1);
                 bar_tf.translation = inv * desired_offset;
                 bar_tf.rotation = inv;
             }
@@ -356,7 +383,12 @@ pub fn animate_damage_flash(
 /// Expand and fade AoE burst visuals (shader-driven circles).
 pub fn animate_aoe_burst(
     mut commands: Commands,
-    mut query: Query<(Entity, &mut AoEBurst, &MeshMaterial2d<CircleMaterial>, &mut Transform)>,
+    mut query: Query<(
+        Entity,
+        &mut AoEBurst,
+        &MeshMaterial2d<CircleMaterial>,
+        &mut Transform,
+    )>,
     mut materials: ResMut<Assets<CircleMaterial>>,
     time: Res<Time>,
 ) {
@@ -404,8 +436,7 @@ pub fn spawn_enemy(
             },
             LootValue(enemy_type.loot_value()),
             Sprite::from_color(enemy_type.color(), Vec2::splat(size)),
-            Transform::from_translation(world_pos.extend(1.0))
-                .with_scale(Vec3::ZERO),
+            Transform::from_translation(world_pos.extend(1.0)).with_scale(Vec3::ZERO),
             SpawnAnimation {
                 timer: Timer::from_seconds(0.25, TimerMode::Once),
             },
@@ -418,7 +449,9 @@ pub fn spawn_enemy(
             Pathfind::new(goal_pos).mode(PathfindMode::Waypoints),
         ))
         .with_child((
-            HealthBar { y_offset: size / 2.0 + 3.0 },
+            HealthBar {
+                y_offset: size / 2.0 + 3.0,
+            },
             Sprite::from_color(Color::srgb(0.2, 0.8, 0.2), Vec2::new(16.0, 2.0)),
             Transform::from_translation(Vec3::new(0.0, size / 2.0 + 3.0, 0.1)),
         ));

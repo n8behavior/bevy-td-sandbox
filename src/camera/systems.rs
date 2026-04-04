@@ -7,23 +7,31 @@ use super::components::*;
 pub fn camera_zoom(
     mut scroll: MessageReader<MouseWheel>,
     mut camera_q: Query<
-        (&Camera, &GlobalTransform, &mut Projection, &mut Transform, &CameraController),
+        (
+            &Camera,
+            &GlobalTransform,
+            &mut Projection,
+            &mut Transform,
+            &CameraController,
+        ),
         With<Camera2d>,
     >,
     windows: Query<&Window>,
 ) {
-    let total: f32 = scroll.read().map(|ev| match ev.unit {
-        MouseScrollUnit::Line => ev.y,
-        MouseScrollUnit::Pixel => ev.y / 100.0,
-    }).sum();
+    let total: f32 = scroll
+        .read()
+        .map(|ev| match ev.unit {
+            MouseScrollUnit::Line => ev.y,
+            MouseScrollUnit::Pixel => ev.y / 100.0,
+        })
+        .sum();
 
     if total == 0.0 {
         return;
     }
 
     let Ok(window) = windows.single() else { return };
-    let Ok((camera, global_tf, mut projection, mut transform, controller)) =
-        camera_q.single_mut()
+    let Ok((camera, global_tf, mut projection, mut transform, controller)) = camera_q.single_mut()
     else {
         return;
     };
@@ -60,10 +68,7 @@ pub fn camera_zoom(
 pub fn camera_pan(
     mouse: Res<ButtonInput<MouseButton>>,
     mut pan: ResMut<PanState>,
-    mut camera_q: Query<
-        (&Camera, &GlobalTransform, &mut Transform),
-        With<Camera2d>,
-    >,
+    mut camera_q: Query<(&Camera, &GlobalTransform, &mut Transform), With<Camera2d>>,
     windows: Query<&Window>,
 ) {
     let Ok(window) = windows.single() else { return };
@@ -96,10 +101,7 @@ pub fn camera_pan(
 
 pub fn camera_reset(
     keys: Res<ButtonInput<KeyCode>>,
-    mut camera_q: Query<
-        (&mut Projection, &mut Transform, &CameraController),
-        With<Camera2d>,
-    >,
+    mut camera_q: Query<(&mut Projection, &mut Transform, &CameraController), With<Camera2d>>,
 ) {
     if !keys.just_pressed(KeyCode::Home) {
         return;

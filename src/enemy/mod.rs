@@ -1,8 +1,8 @@
 pub mod components;
 pub mod systems;
 
-use bevy::prelude::*;
 use crate::states::{GameState, PlayPhase};
+use bevy::prelude::*;
 
 pub struct EnemyPlugin;
 

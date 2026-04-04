@@ -1,8 +1,8 @@
 pub mod systems;
 
-use bevy::prelude::*;
 use crate::enemy::components::{Dead, Enemy, EnemyPhase};
 use crate::pile::resources::{EdgeCells, PileState};
+use bevy::prelude::*;
 
 #[derive(Event)]
 pub struct GridChanged;
