@@ -1,5 +1,7 @@
 # Scrap Defence - Gameplay Guide
 
+![Scrap Defence](cover-image.png)
+
 A post-apocalyptic tower defense where you defend your scrap pile from waves of mutants on a procedurally generated open field. No fixed paths — you maze the enemies with your towers.
 
 ## The Basics
