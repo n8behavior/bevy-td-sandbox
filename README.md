@@ -2,6 +2,8 @@
 
 A post-apocalyptic tower defense game built with Rust and Bevy.
 
+**[Play in your browser on itch.io](https://n8behavior.itch.io/bevy-td-sandbox)** | **[Gameplay Guide](GAMEPLAY.md)**
+
 ## Prerequisites
 
 ### Rust
