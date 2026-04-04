@@ -1,7 +1,5 @@
-#![allow(clippy::too_many_arguments, clippy::type_complexity)]
-
+use bevy::asset::AssetMetaCheck;
 use bevy::prelude::*;
-use bevy::window::{MonitorSelection, WindowMode};
 use bevy_northstar::prelude::*;
 
 mod camera;
@@ -39,10 +37,14 @@ fn main() {
             DefaultPlugins
                 .set(WindowPlugin {
                     primary_window: Some(Window {
-                        mode: WindowMode::BorderlessFullscreen(MonitorSelection::Current),
                         title: "Scrap Defence".into(),
+                        fit_canvas_to_parent: true,
                         ..default()
                     }),
+                    ..default()
+                })
+                .set(AssetPlugin {
+                    meta_check: AssetMetaCheck::Never,
                     ..default()
                 })
                 .set(ImagePlugin::default_nearest()),

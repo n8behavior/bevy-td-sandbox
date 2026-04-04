@@ -1,0 +1,120 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version number in the format `v1.2.3` (optional when triggered by tag)"
+        required: false
+        type: string
+      upload_to_itch:
+        description: "Upload to itch.io"
+        default: true
+        type: boolean
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref || github.run_id }}
+  cancel-in-progress: true
+
+env:
+  cargo_build_binary_name: bevy-td-sandbox
+  itch_page: n8behavior/bevy-td-sandbox
+
+jobs:
+  get-version:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Determine version number
+        id: ref
+        run: echo "ref=${GITHUB_REF#refs/*/}" >> "${GITHUB_OUTPUT}"
+    outputs:
+      version: ${{ inputs.version || steps.ref.outputs.ref }}
+
+  build-web:
+    needs: get-version
+    runs-on: ubuntu-latest
+    env:
+      version: ${{ needs.get-version.outputs.version }}
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      RUSTFLAGS: --cfg getrandom_backend="wasm_js"
+    permissions:
+      contents: write
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Install cargo-binstall
+        uses: cargo-bins/cargo-binstall@main
+
+      - name: Install build tools
+        run: |
+          cargo binstall --locked --no-confirm --force --git='https://github.com/TheBevyFlock/bevy_cli' bevy_cli
+          cargo binstall --locked --no-confirm --force wasm-bindgen-cli
+          cargo binstall --locked --no-confirm --force wasm-opt
+
+      - name: Build web bundle
+        run: bevy build --locked --release --yes web --bundle
+
+      - name: Package
+        run: |
+          cd 'target/bevy_web/web-release/${{ env.cargo_build_binary_name }}'
+          zip --recurse-paths '../../../../web.zip' .
+
+      - name: Upload package to workflow artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: package-web
+          path: web.zip
+          retention-days: 1
+
+      - name: Upload package to GitHub release
+        if: ${{ github.event_name == 'push' }}
+        uses: svenstaro/upload-release-action@v2
+        with:
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          file: web.zip
+          asset_name: ${{ env.cargo_build_binary_name }}-web.zip
+          release_name: ${{ needs.get-version.outputs.version }}
+          tag: ${{ needs.get-version.outputs.version }}
+          overwrite: true
+
+  upload-to-itch:
+    needs: [get-version, build-web]
+    runs-on: ubuntu-latest
+    if: ${{ github.event_name == 'push' || inputs.upload_to_itch == true }}
+
+    steps:
+      - name: Download web package
+        uses: actions/download-artifact@v4
+        with:
+          name: package-web
+          path: tmp
+
+      - name: Install butler
+        run: |
+          curl -L -o butler.zip 'https://broth.itch.zone/butler/linux-amd64/LATEST/archive/default'
+          unzip butler.zip
+          chmod +x butler
+          ./butler -V
+
+      - name: Upload to itch.io
+        env:
+          BUTLER_API_KEY: ${{ secrets.ITCHIO_API_KEY }}
+        run: |
+          ./butler push \
+            --fix-permissions \
+            --userversion='${{ needs.get-version.outputs.version }}' \
+            tmp/web.zip \
+            '${{ env.itch_page }}':web

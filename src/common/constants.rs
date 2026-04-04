@@ -21,7 +21,9 @@ pub const MAGNET_AURA_COLOR: Color = Color::srgba(0.15, 0.35, 0.7, 0.55);
 /// Higher = smaller pile for same scrap amount.
 pub const SCRAP_PER_TILE: f32 = 2000.0;
 
+#[cfg(not(target_arch = "wasm32"))]
 pub const WINDOWED_WIDTH: f32 = 1280.0;
+#[cfg(not(target_arch = "wasm32"))]
 pub const WINDOWED_HEIGHT: f32 = 720.0;
 
 /// Cell fill — warm sepia paper.

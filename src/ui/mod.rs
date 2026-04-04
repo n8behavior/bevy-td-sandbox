@@ -3,18 +3,22 @@ pub mod tower_menu;
 pub mod game_over;
 
 use bevy::prelude::*;
+#[cfg(not(target_arch = "wasm32"))]
 use bevy::ecs::message::MessageWriter;
+#[cfg(not(target_arch = "wasm32"))]
 use bevy::window::{MonitorSelection, WindowMode};
 use crate::states::GameState;
+#[cfg(not(target_arch = "wasm32"))]
 use crate::common::constants::*;
 
 pub struct UIPlugin;
 
 impl Plugin for UIPlugin {
     fn build(&self, app: &mut App) {
+        #[cfg(not(target_arch = "wasm32"))]
+        app.add_systems(Update, (toggle_fullscreen, handle_quit));
+
         app
-            // Global (all states)
-            .add_systems(Update, toggle_fullscreen)
             // Main menu
             .add_systems(OnEnter(GameState::MainMenu), game_over::setup_main_menu)
             .add_systems(
@@ -32,7 +36,6 @@ impl Plugin for UIPlugin {
                     hud::update_hud,
                     tower_menu::highlight_selected_tower,
                     tower_menu::update_wave_preview,
-                    handle_quit,
                 )
                     .run_if(in_state(GameState::Playing)),
             )
@@ -45,8 +48,7 @@ impl Plugin for UIPlugin {
     }
 }
 
-/// ESC deselects tower first, then quits if nothing was selected.
-/// Runs AFTER tower_selection so `selected` is already updated this frame.
+#[cfg(not(target_arch = "wasm32"))]
 fn handle_quit(
     keyboard: Res<ButtonInput<KeyCode>>,
     mut exit: MessageWriter<AppExit>,
@@ -63,6 +65,7 @@ fn handle_quit(
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn toggle_fullscreen(keyboard: Res<ButtonInput<KeyCode>>, mut windows: Query<&mut Window>) {
     if keyboard.just_pressed(KeyCode::F11) {
         let Ok(mut window) = windows.single_mut() else {

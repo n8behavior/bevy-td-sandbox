@@ -1,4 +1,5 @@
 use bevy::prelude::*;
+#[cfg(not(target_arch = "wasm32"))]
 use bevy::ecs::message::MessageWriter;
 use crate::states::GameState;
 
@@ -28,8 +29,14 @@ pub fn setup_main_menu(mut commands: Commands) {
                     ..default()
                 },
             ));
+
+            #[cfg(not(target_arch = "wasm32"))]
+            let hint = "Press SPACE to start  |  ESC to quit";
+            #[cfg(target_arch = "wasm32")]
+            let hint = "Press SPACE to start";
+
             parent.spawn((
-                Text::new("Press SPACE to start  |  ESC to quit"),
+                Text::new(hint),
                 TextColor(Color::srgb(0.6, 0.6, 0.5)),
                 TextFont {
                     font_size: 24.0,
@@ -39,6 +46,7 @@ pub fn setup_main_menu(mut commands: Commands) {
         });
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 pub fn handle_main_menu_input(
     keyboard: Res<ButtonInput<KeyCode>>,
     mut next_state: ResMut<NextState<GameState>>,
@@ -49,6 +57,16 @@ pub fn handle_main_menu_input(
     }
     if keyboard.just_pressed(KeyCode::Escape) {
         exit.write(AppExit::Success);
+    }
+}
+
+#[cfg(target_arch = "wasm32")]
+pub fn handle_main_menu_input(
+    keyboard: Res<ButtonInput<KeyCode>>,
+    mut next_state: ResMut<NextState<GameState>>,
+) {
+    if keyboard.just_pressed(KeyCode::Space) {
+        next_state.set(GameState::Playing);
     }
 }
 
@@ -78,8 +96,14 @@ pub fn setup_game_over(mut commands: Commands) {
                     ..default()
                 },
             ));
+
+            #[cfg(not(target_arch = "wasm32"))]
+            let hint = "SPACE: restart  |  ESC: quit";
+            #[cfg(target_arch = "wasm32")]
+            let hint = "SPACE: restart";
+
             parent.spawn((
-                Text::new("SPACE: restart  |  ESC: quit"),
+                Text::new(hint),
                 TextColor(Color::srgb(0.6, 0.6, 0.5)),
                 TextFont {
                     font_size: 24.0,
@@ -89,6 +113,7 @@ pub fn setup_game_over(mut commands: Commands) {
         });
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 pub fn handle_game_over_input(
     keyboard: Res<ButtonInput<KeyCode>>,
     mut next_state: ResMut<NextState<GameState>>,
@@ -99,5 +124,15 @@ pub fn handle_game_over_input(
     }
     if keyboard.just_pressed(KeyCode::Escape) {
         exit.write(AppExit::Success);
+    }
+}
+
+#[cfg(target_arch = "wasm32")]
+pub fn handle_game_over_input(
+    keyboard: Res<ButtonInput<KeyCode>>,
+    mut next_state: ResMut<NextState<GameState>>,
+) {
+    if keyboard.just_pressed(KeyCode::Space) {
+        next_state.set(GameState::MainMenu);
     }
 }

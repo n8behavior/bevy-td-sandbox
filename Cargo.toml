@@ -8,9 +8,61 @@ bevy = { version = "0.18", features = ["2d"] }
 bevy_northstar = "0.6"
 rand = "0.9"
 
+# getrandom 0.3 (pulled in by rand) needs the wasm_js backend on WASM.
+# You must also pass `--cfg getrandom_backend="wasm_js"` in RUSTFLAGS for web builds.
+[target.wasm32-unknown-unknown.dependencies]
+getrandom = { version = "0.3", features = ["wasm_js"] }
+
+[features]
+default = ["dev_native"]
+dev = [
+    "bevy/dynamic_linking",
+    "bevy/bevy_dev_tools",
+    "bevy/bevy_ui_debug",
+    "bevy/track_location",
+]
+dev_native = [
+    "dev",
+    "bevy/file_watcher",
+    "bevy/embedded_watcher",
+]
+
+[package.metadata.bevy_cli.release]
+default-features = false
+
+[package.metadata.bevy_cli.web]
+default-features = false
+
+[package.metadata.bevy_cli.web.dev]
+features = ["dev"]
+
+[lints.clippy]
+too_many_arguments = "allow"
+type_complexity = "allow"
+
 # Enable max optimizations for dependencies, but not for our code
 [profile.dev]
 opt-level = 1
 
 [profile.dev.package."*"]
 opt-level = 3
+
+[profile.release]
+codegen-units = 1
+lto = "thin"
+
+# Used automatically by `bevy build --release web`.
+[profile.web-release]
+inherits = "release"
+opt-level = "s"
+strip = "debuginfo"
+
+# Fast CI compilation.
+[profile.ci]
+inherits = "dev"
+opt-level = 0
+debug = "line-tables-only"
+codegen-units = 4
+
+[profile.ci.package."*"]
+opt-level = 0
