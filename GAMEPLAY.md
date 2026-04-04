@@ -20,8 +20,10 @@ There are **20 waves** of increasing difficulty.
 | Input | Action |
 |-------|--------|
 | **1-5** | Select tower type |
-| **Left Click** | Place selected tower |
-| **Escape** | Deselect tower |
+| **Left Click** | Place selected tower / Inspect placed tower |
+| **Right Click** | Sell tower (60% refund) |
+| **U** | Upgrade inspected tower |
+| **Escape** | Deselect tower / Close inspection |
 | **Enter** | Start next wave (Building phase) |
 | **Scroll Wheel** | Zoom in/out |
 | **Middle Mouse Drag** | Pan camera |
@@ -45,6 +47,20 @@ Towers block enemy pathing (except Tar Pit), so placement is how you build your 
 
 All towers automatically collect nearby scrap drops.
 
+## Tower Upgrades
+
+Click a placed tower (when no tower type is selected) to inspect it. Press **U** to upgrade.
+
+Towers have **3 tiers**. Each upgrade boosts stats and brightens the sprite:
+
+| Tier | Damage | Range | Fire Rate | Cost |
+|------|--------|-------|-----------|------|
+| 1 (base) | 1.0x | 1.0x | 1.0x | — |
+| 2 | 1.4x | 1.1x | +15% faster | 100% of base cost |
+| 3 | 2.0x | 1.2x | +30% faster | 150% of base cost |
+
+Selling an upgraded tower refunds **60% of total investment** (base cost + all upgrade costs).
+
 ## Enemies
 
 | Type | HP | Speed | Loot | Appears |
@@ -61,6 +77,8 @@ If an enemy reaches your pile, it grabs scrap and runs for the nearest edge. Kil
 
 ## Economy Tips
 
+- Right-click a placed tower to sell it for **60% of total investment** — useful for reshaping your maze mid-game.
+- Upgrading towers is more scrap-efficient than placing new ones — a max-tier ScrapGun costs 150 total but hits for 2x damage.
 - Killing enemies is your only income — don't let drops expire.
 - Tower scrap collection auras pull nearby drops automatically.
 - Scrap Magnets have 3x the collection range of other towers — great near kill zones.

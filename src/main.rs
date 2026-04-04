@@ -1,5 +1,7 @@
 use bevy::asset::AssetMetaCheck;
 use bevy::prelude::*;
+#[cfg(not(target_arch = "wasm32"))]
+use bevy::window::{MonitorSelection, WindowMode};
 use bevy_northstar::prelude::*;
 
 mod camera;
@@ -38,6 +40,8 @@ fn main() {
                 .set(WindowPlugin {
                     primary_window: Some(Window {
                         title: "Scrap Defence".into(),
+                        #[cfg(not(target_arch = "wasm32"))]
+                        mode: WindowMode::BorderlessFullscreen(MonitorSelection::Current),
                         fit_canvas_to_parent: true,
                         ..default()
                     }),

@@ -2,6 +2,7 @@ pub mod components;
 pub mod placement;
 pub mod systems;
 pub mod types;
+pub mod upgrade;
 
 use crate::shader::{CircleMaterial, CircleMesh};
 use crate::states::{GameState, PlayPhase};
@@ -87,6 +88,7 @@ impl Plugin for TowerPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<placement::SelectedTower>()
             .init_resource::<TowerRegistry>()
+            .init_resource::<upgrade::InspectedTower>()
             .add_plugins((
                 types::ScrapGunPlugin,
                 types::TarPitPlugin,
@@ -95,6 +97,7 @@ impl Plugin for TowerPlugin {
                 types::ScrapMagnetPlugin,
             ))
             .add_systems(PostStartup, sort_blueprints)
+            .add_systems(OnEnter(GameState::Playing), upgrade::setup_upgrade_panel)
             .add_systems(
                 Update,
                 (
@@ -102,8 +105,21 @@ impl Plugin for TowerPlugin {
                     placement::update_placing_tower,
                     placement::tint_placing_tower,
                     placement::confirm_tower_placement,
+                    placement::sell_tower,
+                    upgrade::inspect_tower,
+                    upgrade::apply_upgrade,
                 )
                     .chain()
+                    .run_if(in_state(GameState::Playing)),
+            )
+            .add_systems(
+                Update,
+                (
+                    placement::animate_sell_text,
+                    upgrade::animate_upgrade_flash,
+                    upgrade::manage_selection_ring,
+                    upgrade::update_upgrade_panel,
+                )
                     .run_if(in_state(GameState::Playing)),
             )
             .add_systems(

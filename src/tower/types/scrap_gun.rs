@@ -23,10 +23,11 @@ fn register(mut registry: ResMut<TowerRegistry>) {
         key: KeyCode::Digit1,
         special_label: "",
         spawn_fn: |cmds| {
-            let stats = TowerStats {
-                damage: 10.0,
-                range: 80.0,
-            };
+            let damage = 10.0;
+            let range = 80.0;
+            let cooldown = 1.0;
+            let color = Color::srgb(0.7, 0.7, 0.3);
+            let stats = TowerStats { damage, range };
             let collect_range = 30.0;
             cmds.insert((
                 RangeRingConfig {
@@ -44,7 +45,7 @@ fn register(mut registry: ResMut<TowerRegistry>) {
                 BlocksNav,
                 stats,
                 AimTolerance(0.15),
-                TurretState::with_cooldown(1.0),
+                TurretState::with_cooldown(cooldown),
                 ProjectileVisuals {
                     speed: 200.0,
                     color: Color::srgb(1.0, 1.0, 0.6),
@@ -53,6 +54,18 @@ fn register(mut registry: ResMut<TowerRegistry>) {
                     trail_interval: 0.03,
                     particle_size: 4.0,
                     particle_lifetime: 0.2,
+                },
+                TowerTier(0),
+                TowerName("ScrapGun"),
+                BaseStats {
+                    cost: 50,
+                    damage,
+                    range,
+                    cooldown_secs: cooldown,
+                    aoe_radius: 0.0,
+                    aoe_damage: 0.0,
+                    slow_factor: 1.0,
+                    color,
                 },
             ));
         },

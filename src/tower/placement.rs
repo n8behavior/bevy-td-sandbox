@@ -12,6 +12,7 @@ use crate::states::GameState;
 use crate::obstacle::components::Obstacle;
 
 use super::components::*;
+use super::upgrade::InspectedTower;
 
 /// Tracks the currently selected tower blueprint index and placing entity.
 #[derive(Resource, Default)]
@@ -26,6 +27,7 @@ pub fn handle_tower_selection(
     keyboard: Res<ButtonInput<KeyCode>>,
     mut selected: ResMut<SelectedTower>,
     registry: Res<TowerRegistry>,
+    mut inspected: ResMut<InspectedTower>,
 ) {
     // Check for Escape — deselect.
     if keyboard.just_pressed(KeyCode::Escape) {
@@ -51,6 +53,9 @@ pub fn handle_tower_selection(
     if selected.index == Some(idx) {
         return;
     }
+
+    // Clear inspection when entering placement mode.
+    inspected.0 = None;
 
     // Despawn old placing entity.
     if let Some(entity) = selected.entity.take() {
@@ -267,6 +272,7 @@ pub fn confirm_tower_placement(
     }
     commands.entity(entity).insert((
         GridCell { coord: grid_pos },
+        TowerCost(blueprint.cost),
         Sprite::from_color(blueprint.color, Vec2::splat(TILE_SIZE - 2.0)),
         Transform::from_translation(snap_pos.extend(0.5)).with_scale(Vec3::ZERO),
         SpawnAnimation {
@@ -291,4 +297,115 @@ pub fn confirm_tower_placement(
     ));
     (blueprint.spawn_fn)(&mut new_cmds);
     selected.entity = Some(new_cmds.id());
+}
+
+// ---------------------------------------------------------------------------
+// Sell towers
+// ---------------------------------------------------------------------------
+
+const SELL_REFUND_PERCENT: u32 = 60;
+
+/// Floating text that rises and fades after selling or upgrading a tower.
+#[derive(Component)]
+pub struct SellText {
+    pub timer: Timer,
+}
+
+/// Right-click a placed tower to sell it for 60% of its original cost.
+pub fn sell_tower(
+    mut commands: Commands,
+    mouse: Res<ButtonInput<MouseButton>>,
+    windows: Query<&Window>,
+    cameras: Query<(&Camera, &GlobalTransform)>,
+    towers: Query<
+        (Entity, &GridCell, &TowerCost, Option<&BlocksNav>),
+        (With<Tower>, Without<Placing>),
+    >,
+    mut grid_query: Query<&mut OrdinalGrid>,
+    mut pile_scrap: ResMut<PileScrap>,
+    config: Res<GridConfig>,
+    mut inspected: ResMut<InspectedTower>,
+) {
+    if !mouse.just_pressed(MouseButton::Right) {
+        return;
+    }
+
+    let Ok(window) = windows.single() else { return };
+    let Ok((camera, cam_transform)) = cameras.single() else {
+        return;
+    };
+    let Some(cursor_pos) = window.cursor_position() else {
+        return;
+    };
+    let Ok(world_pos) = camera.viewport_to_world_2d(cam_transform, cursor_pos) else {
+        return;
+    };
+    let Some(grid_pos) = world_to_grid(world_pos, &config) else {
+        return;
+    };
+
+    // Find a placed tower at this grid cell.
+    let Some((entity, _, cost, blocks_nav)) =
+        towers.iter().find(|(_, gc, _, _)| gc.coord == grid_pos)
+    else {
+        return;
+    };
+
+    let refund = cost.0 * SELL_REFUND_PERCENT / 100;
+    pile_scrap.amount += refund;
+
+    let cell_uvec = UVec3::new(grid_pos.x as u32, grid_pos.y as u32, 0);
+    let tower_world_pos = grid_to_world(cell_uvec, &config);
+
+    // Restore nav grid if this tower blocked pathing.
+    if blocks_nav.is_some()
+        && let Ok(mut grid) = grid_query.single_mut()
+    {
+        grid.set_nav(cell_uvec, Nav::Passable(1));
+        grid.build();
+    }
+
+    // Clear inspection if this was the inspected tower.
+    if inspected.0 == Some(entity) {
+        inspected.0 = None;
+    }
+
+    commands.entity(entity).despawn();
+    commands.trigger(GridChanged);
+
+    // Spawn floating refund text.
+    commands.spawn((
+        Text2d::new(format!("+{refund}")),
+        TextFont {
+            font_size: 14.0,
+            ..default()
+        },
+        TextColor(Color::srgb(0.9, 0.8, 0.2)),
+        Transform::from_translation(tower_world_pos.extend(10.0)),
+        SellText {
+            timer: Timer::from_seconds(0.8, TimerMode::Once),
+        },
+    ));
+}
+
+/// Animate sell text: rise upward, fade out, then despawn.
+pub fn animate_sell_text(
+    mut commands: Commands,
+    time: Res<Time>,
+    mut query: Query<(Entity, &mut Transform, &mut TextColor, &mut SellText)>,
+) {
+    for (entity, mut transform, mut color, mut sell) in &mut query {
+        sell.timer.tick(time.delta());
+        let progress = sell.timer.elapsed_secs() / sell.timer.duration().as_secs_f32();
+
+        // Rise upward.
+        transform.translation.y += 30.0 * time.delta_secs();
+
+        // Fade out.
+        color.0 = Color::srgba(0.9, 0.8, 0.2, 1.0 - progress);
+
+        if sell.timer.is_finished() {
+            commands.entity(entity).despawn();
+        }
+    }
 }

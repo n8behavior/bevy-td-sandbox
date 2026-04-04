@@ -23,10 +23,13 @@ fn register(mut registry: ResMut<TowerRegistry>) {
         key: KeyCode::Digit3,
         special_label: "AOE",
         spawn_fn: |cmds| {
-            let stats = TowerStats {
-                damage: 25.0,
-                range: 100.0,
-            };
+            let damage = 25.0;
+            let range = 100.0;
+            let cooldown = 3.33;
+            let aoe_radius = 70.0;
+            let aoe_damage = 25.0;
+            let color = Color::srgb(0.9, 0.3, 0.1);
+            let stats = TowerStats { damage, range };
             let collect_range = 30.0;
             cmds.insert((
                 RangeRingConfig {
@@ -44,7 +47,7 @@ fn register(mut registry: ResMut<TowerRegistry>) {
                 BlocksNav,
                 stats,
                 AimTolerance(0.15),
-                TurretState::with_cooldown(3.33),
+                TurretState::with_cooldown(cooldown),
                 ProjectileVisuals {
                     speed: 200.0,
                     color: Color::srgb(1.0, 1.0, 0.6),
@@ -55,8 +58,20 @@ fn register(mut registry: ResMut<TowerRegistry>) {
                     particle_lifetime: 0.2,
                 },
                 AoEOnHit {
-                    radius: 70.0,
-                    damage: 25.0,
+                    radius: aoe_radius,
+                    damage: aoe_damage,
+                },
+                TowerTier(0),
+                TowerName("Explosive"),
+                BaseStats {
+                    cost: 125,
+                    damage,
+                    range,
+                    cooldown_secs: cooldown,
+                    aoe_radius,
+                    aoe_damage,
+                    slow_factor: 1.0,
+                    color,
                 },
             ));
         },

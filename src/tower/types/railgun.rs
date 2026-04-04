@@ -23,10 +23,11 @@ fn register(mut registry: ResMut<TowerRegistry>) {
         key: KeyCode::Digit4,
         special_label: "",
         spawn_fn: |cmds| {
-            let stats = TowerStats {
-                damage: 50.0,
-                range: 160.0,
-            };
+            let damage = 50.0;
+            let range = 160.0;
+            let cooldown = 5.0;
+            let color = Color::srgb(0.6, 0.65, 0.75);
+            let stats = TowerStats { damage, range };
             let collect_range = 30.0;
             cmds.insert((
                 RangeRingConfig {
@@ -44,7 +45,7 @@ fn register(mut registry: ResMut<TowerRegistry>) {
                 BlocksNav,
                 stats,
                 AimTolerance(0.05),
-                TurretState::with_cooldown(5.0),
+                TurretState::with_cooldown(cooldown),
                 ProjectileVisuals {
                     speed: 2000.0,
                     color: Color::srgb(0.6, 0.8, 1.0),
@@ -53,6 +54,18 @@ fn register(mut registry: ResMut<TowerRegistry>) {
                     trail_interval: 0.008,
                     particle_size: 6.0,
                     particle_lifetime: 0.4,
+                },
+                TowerTier(0),
+                TowerName("Railgun"),
+                BaseStats {
+                    cost: 150,
+                    damage,
+                    range,
+                    cooldown_secs: cooldown,
+                    aoe_radius: 0.0,
+                    aoe_damage: 0.0,
+                    slow_factor: 1.0,
+                    color,
                 },
             ));
         },

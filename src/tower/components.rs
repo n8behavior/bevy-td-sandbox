@@ -28,6 +28,44 @@ pub struct PlacementValid(pub bool);
 #[derive(Component)]
 pub struct BlocksNav;
 
+/// Original cost of a placed tower (used for sell refund calculation).
+/// Accumulates total investment when upgraded (base cost + upgrade costs).
+#[derive(Component)]
+pub struct TowerCost(pub u32);
+
+/// Current upgrade tier: 0 = base, 1, 2 = max.
+#[derive(Component)]
+pub struct TowerTier(pub u8);
+
+/// Snapshot of a tower's base stats at placement time (before upgrades).
+/// Used to compute multiplied stats at each tier without accumulation errors.
+#[derive(Component, Clone)]
+pub struct BaseStats {
+    pub cost: u32,
+    pub damage: f32,
+    pub range: f32,
+    pub cooldown_secs: f32,
+    pub aoe_radius: f32,
+    pub aoe_damage: f32,
+    pub slow_factor: f32,
+    pub color: Color,
+}
+
+/// Display name for a placed tower (set by the tower-type plugin).
+#[derive(Component)]
+pub struct TowerName(pub &'static str);
+
+/// Marker for the selection ring child spawned on the inspected tower.
+#[derive(Component)]
+pub struct SelectionRing;
+
+/// Brief white flash after upgrading a tower.
+#[derive(Component)]
+pub struct UpgradeFlash {
+    pub timer: Timer,
+    pub target_color: Color,
+}
+
 #[derive(Component, Clone)]
 pub struct TowerStats {
     pub damage: f32,

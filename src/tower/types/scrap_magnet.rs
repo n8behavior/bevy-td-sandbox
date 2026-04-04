@@ -25,29 +25,39 @@ fn register(mut registry: ResMut<TowerRegistry>) {
         key: KeyCode::Digit5,
         special_label: "PULL",
         spawn_fn: |cmds| {
-            let magnet_range = 90.0;
-            let stats = TowerStats {
-                damage: 0.0,
-                range: magnet_range,
-            };
+            let damage = 0.0;
+            let range = 90.0;
+            let slow_factor = 0.5;
+            let color = Color::srgb(0.2, 0.5, 0.8);
+            let stats = TowerStats { damage, range };
             cmds.insert((
                 RangeRingConfig {
-                    range: magnet_range,
+                    range,
                     color: Color::srgba(0.2, 0.4, 0.8, 0.2),
                 },
                 AuraRingConfig {
-                    range: magnet_range,
+                    range,
                     color: MAGNET_AURA_COLOR,
                 },
                 ScrapMagnet,
-                ScrapCollector {
-                    range: magnet_range,
-                },
+                ScrapCollector { range },
                 BlocksNav,
                 stats,
                 SlowOnHit {
-                    factor: 0.5,
+                    factor: slow_factor,
                     duration: 0.5,
+                },
+                TowerTier(0),
+                TowerName("Magnet"),
+                BaseStats {
+                    cost: 100,
+                    damage,
+                    range,
+                    cooldown_secs: 0.0,
+                    aoe_radius: 0.0,
+                    aoe_damage: 0.0,
+                    slow_factor,
+                    color,
                 },
             ));
         },

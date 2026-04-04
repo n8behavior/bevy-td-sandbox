@@ -22,10 +22,11 @@ fn register(mut registry: ResMut<TowerRegistry>) {
         key: KeyCode::Digit2,
         special_label: "SLOW",
         spawn_fn: |cmds| {
-            let stats = TowerStats {
-                damage: 2.0,
-                range: 70.0,
-            };
+            let damage = 2.0;
+            let range = 70.0;
+            let slow_factor = 0.4;
+            let color = Color::srgb(0.3, 0.25, 0.2);
+            let stats = TowerStats { damage, range };
             cmds.insert((
                 RangeRingConfig {
                     range: stats.range,
@@ -39,8 +40,20 @@ fn register(mut registry: ResMut<TowerRegistry>) {
                 // No BlocksNav — enemies walk through
                 stats,
                 SlowOnHit {
-                    factor: 0.4,
+                    factor: slow_factor,
                     duration: 0.5,
+                },
+                TowerTier(0),
+                TowerName("TarPit"),
+                BaseStats {
+                    cost: 75,
+                    damage,
+                    range,
+                    cooldown_secs: 0.0,
+                    aoe_radius: 0.0,
+                    aoe_damage: 0.0,
+                    slow_factor,
+                    color,
                 },
             ));
         },
