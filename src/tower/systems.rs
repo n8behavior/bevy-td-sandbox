@@ -236,9 +236,10 @@ pub fn rotate_towers_to_target(
 // Scrap Magnet systems
 // ---------------------------------------------------------------------------
 
-/// Pull scrap drops toward the nearest magnet tower in range; auto-collect on contact.
+/// Pull scrap drops toward the nearest scrap magnet in range; auto-collect on contact.
+/// Matches both magnet towers and the pile (which has ScrapMagnet but not Tower).
 pub fn scrap_magnet_collect(
-    magnets: Query<(&Transform, &TowerStats), (With<ScrapMagnet>, With<Tower>, Without<Placing>)>,
+    magnets: Query<(&Transform, &TowerStats), (With<ScrapMagnet>, Without<Placing>)>,
     mut drops: Query<(Entity, &ScrapDrop, &mut Transform), Without<Tower>>,
     mut pile_scrap: ResMut<PileScrap>,
     mut commands: Commands,

@@ -15,7 +15,6 @@ impl Plugin for EconomyPlugin {
                 (
                     systems::scrap_drop_lifetime,
                     systems::scrap_idle_rotation,
-                    systems::click_to_collect_scrap,
                 )
                     .run_if(in_state(GameState::Playing)),
             );

@@ -25,7 +25,7 @@ fn register(mut registry: ResMut<TowerRegistry>) {
             let stats = TowerStats { damage: 2.0, range: 70.0 };
             cmds.insert((
                 RangeRingConfig { range: stats.range, color: Color::srgba(0.3, 0.1, 0.35, 0.25) },
-                AuraRingConfig { range: stats.range },
+                AuraRingConfig { range: stats.range, color: Color::srgba(0.4, 0.15, 0.45, 0.55) },
                 TarPit,
                 // No BlocksNav — enemies walk through
                 stats,

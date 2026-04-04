@@ -50,7 +50,7 @@ fn spawn_aura_rings(
     for (entity, config) in &query {
         let diameter = config.range * 2.0;
         let mat = materials.add(CircleMaterial {
-            color: Color::srgba(0.4, 0.15, 0.45, 0.55),
+            color: config.color,
             softness: 0.05,
             fill_fade: 1.0,
             ripple_speed: 0.4,

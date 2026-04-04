@@ -157,4 +157,5 @@ pub struct RangeRingConfig {
 #[derive(Component)]
 pub struct AuraRingConfig {
     pub range: f32,
+    pub color: Color,
 }

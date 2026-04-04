@@ -4,7 +4,6 @@ use rand::Rng;
 use crate::common::constants::*;
 use crate::enemy::components::SpawnAnimation;
 use crate::enemy::systems::EnemyDied;
-use crate::pile::resources::PileScrap;
 
 use super::components::ScrapDrop;
 
@@ -80,38 +79,3 @@ pub fn scrap_drop_lifetime(
     }
 }
 
-/// Right-click to vacuum collect ALL nearby scrap
-pub fn click_to_collect_scrap(
-    mut commands: Commands,
-    mouse: Res<ButtonInput<MouseButton>>,
-    windows: Query<&Window>,
-    cameras: Query<(&Camera, &GlobalTransform)>,
-    drops: Query<(Entity, &ScrapDrop, &Transform)>,
-    mut pile_scrap: ResMut<PileScrap>,
-) {
-    if !mouse.just_pressed(MouseButton::Right) {
-        return;
-    }
-
-    let Ok(window) = windows.single() else { return };
-    let Ok((camera, cam_transform)) = cameras.single() else {
-        return;
-    };
-    let Some(cursor_pos) = window.cursor_position() else {
-        return;
-    };
-    let Ok(world_pos) = camera.viewport_to_world_2d(cam_transform, cursor_pos) else {
-        return;
-    };
-
-    let collect_radius = 50.0;
-
-    // Collect ALL nearby scrap, not just one
-    for (entity, drop, tf) in &drops {
-        let dist = world_pos.distance(tf.translation.truncate());
-        if dist <= collect_radius {
-            pile_scrap.amount += drop.value;
-            commands.entity(entity).despawn();
-        }
-    }
-}

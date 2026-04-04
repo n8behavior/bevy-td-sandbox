@@ -62,7 +62,7 @@ pub fn setup_tower_palette(mut commands: Commands, registry: Res<TowerRegistry>)
             }
 
             parent.spawn((
-                Text::new("\nENTER: Start Wave\nESC: Deselect\nESC ESC: Quit\nR-Click: Collect Scrap"),
+                Text::new("\nENTER: Start Wave\nESC: Deselect\nESC ESC: Quit"),
                 TextColor(HINT_COLOR),
                 TextFont { font_size: 12.0, ..default() },
             ));
