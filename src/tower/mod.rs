@@ -94,6 +94,7 @@ impl Plugin for TowerPlugin {
                 types::TarPitPlugin,
                 types::ExplosivePlugin,
                 types::RailgunPlugin,
+                types::ScrapMagnetPlugin,
             ))
             .add_systems(PostStartup, sort_blueprints)
             .add_systems(
@@ -114,13 +115,20 @@ impl Plugin for TowerPlugin {
             )
             .add_systems(
                 FixedUpdate,
-                (systems::turret_state_machine, systems::slow_aura)
+                (
+                    systems::turret_state_machine,
+                    systems::slow_aura,
+                    systems::magnetic_pull_enemies,
+                )
                     .run_if(in_state(GameState::Playing))
                     .run_if(in_state(PlayPhase::Defending)),
             )
             .add_systems(
                 Update,
-                systems::rotate_towers_to_target
+                (
+                    systems::rotate_towers_to_target,
+                    systems::scrap_magnet_collect,
+                )
                     .run_if(in_state(GameState::Playing)),
             );
     }

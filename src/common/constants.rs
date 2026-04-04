@@ -8,6 +8,13 @@ pub const STARTING_SCRAP: u32 = 200;
 
 pub const SCRAP_DROP_LIFETIME: f32 = 10.0;
 
+/// Scrap Magnet tower: pull speed for scrap drops (world units/sec).
+pub const SCRAP_PULL_SPEED: f32 = 60.0;
+/// Scrap Magnet tower: pull speed for enemies (world units/sec at field center).
+pub const ENEMY_PULL_SPEED: f32 = 15.0;
+/// Scrap Magnet tower: distance at which a drop is auto-collected.
+pub const MAGNET_COLLECT_RADIUS: f32 = 5.0;
+
 /// Tuning constant: how many scrap per tile of pile area.
 /// Higher = smaller pile for same scrap amount.
 pub const SCRAP_PER_TILE: f32 = 2000.0;
