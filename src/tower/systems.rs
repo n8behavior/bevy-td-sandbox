@@ -2,7 +2,7 @@ use bevy::prelude::*;
 
 use crate::common::constants::*;
 use crate::economy::components::ScrapDrop;
-use crate::enemy::components::{Dead, Dying, Enemy, Health, SlowEffect};
+use crate::enemy::components::{DamageFlash, Dead, Dying, Enemy, Health, SlowEffect};
 use crate::pile::resources::PileScrap;
 use crate::projectile::components::{AoEPayload, Projectile, TrailEmitter};
 
@@ -268,6 +268,148 @@ pub fn scrap_magnet_collect(
         }
     }
 }
+
+// ---------------------------------------------------------------------------
+// Chain Lightning
+// ---------------------------------------------------------------------------
+
+/// Find the nearest enemy within range (spatial targeting for chain lightning).
+fn find_nearest_enemy(
+    enemies: &Query<(Entity, &mut Health, &Transform, &Sprite), (With<Enemy>, Without<Dead>, Without<Dying>)>,
+    pos: Vec2,
+    range: f32,
+) -> Option<Entity> {
+    let mut best: Option<(Entity, f32)> = None;
+    for (entity, _, tf, _) in enemies.iter() {
+        let dist = pos.distance(tf.translation.truncate());
+        if dist <= range && best.is_none_or(|(_, d)| dist < d) {
+            best = Some((entity, dist));
+        }
+    }
+    best.map(|(e, _)| e)
+}
+
+/// Chain lightning towers: find target, build chain, deal damage, spawn arcs.
+pub fn chain_lightning_fire(
+    mut commands: Commands,
+    mut towers: Query<
+        (&Transform, &TowerStats, &ChainLightning, &mut ChainCooldown),
+        (With<Tower>, Without<Placing>),
+    >,
+    mut enemies: Query<
+        (Entity, &mut Health, &Transform, &Sprite),
+        (With<Enemy>, Without<Dead>, Without<Dying>),
+    >,
+    time: Res<Time>,
+) {
+    for (tower_tf, stats, chain, mut cooldown) in &mut towers {
+        cooldown.timer.tick(time.delta());
+        if !cooldown.timer.is_finished() {
+            continue;
+        }
+
+        let tower_pos = tower_tf.translation.truncate();
+
+        let Some(first_target) = find_nearest_enemy(&enemies, tower_pos, stats.range) else {
+            continue;
+        };
+
+        cooldown.timer.reset();
+
+        // Build chain (read-only pass via .iter() / .get()).
+        let mut chain_targets: Vec<(Entity, Vec2, f32)> = Vec::new();
+        let mut hit_set = vec![first_target];
+        let mut current_damage = stats.damage;
+
+        if let Ok((_, _, tf, _)) = enemies.get(first_target) {
+            let pos = tf.translation.truncate();
+            chain_targets.push((first_target, pos, current_damage));
+
+            loop {
+                current_damage *= chain.damage_falloff;
+                if current_damage < 1.0 {
+                    break;
+                }
+
+                let last_pos = chain_targets.last().unwrap().1;
+
+                // Find nearest unhit enemy within arc range.
+                let mut best: Option<(Entity, Vec2, f32)> = None;
+                for (e, _, tf, _) in enemies.iter() {
+                    if hit_set.contains(&e) {
+                        continue;
+                    }
+                    let pos = tf.translation.truncate();
+                    let dist = last_pos.distance(pos);
+                    if dist <= chain.arc_range && best.is_none_or(|(_, _, d)| dist < d) {
+                        best = Some((e, pos, dist));
+                    }
+                }
+
+                if let Some((entity, pos, _)) = best {
+                    chain_targets.push((entity, pos, current_damage));
+                    hit_set.push(entity);
+                } else {
+                    break;
+                }
+            }
+        }
+
+        // Apply damage (mutable pass via .get_mut()).
+        let arc_color = Color::srgba(0.7, 0.85, 1.0, 0.9);
+        let mut prev_pos = tower_pos;
+
+        for &(entity, pos, damage) in &chain_targets {
+            if let Ok((_, mut health, _, sprite)) = enemies.get_mut(entity) {
+                health.current -= damage;
+                commands.entity(entity).insert(DamageFlash {
+                    timer: Timer::from_seconds(0.1, TimerMode::Once),
+                    original_color: sprite.color,
+                });
+            }
+
+            spawn_lightning_arc(&mut commands, prev_pos, pos, arc_color);
+            prev_pos = pos;
+        }
+    }
+}
+
+fn spawn_lightning_arc(commands: &mut Commands, from: Vec2, to: Vec2, color: Color) {
+    let midpoint = (from + to) / 2.0;
+    let diff = to - from;
+    let distance = diff.length();
+    let angle = diff.y.atan2(diff.x);
+
+    commands.spawn((
+        LightningArc {
+            timer: Timer::from_seconds(0.15, TimerMode::Once),
+        },
+        Sprite::from_color(color, Vec2::new(1.0, 2.0)),
+        Transform::from_translation(midpoint.extend(5.0))
+            .with_rotation(Quat::from_rotation_z(angle))
+            .with_scale(Vec3::new(distance, 1.0, 1.0)),
+    ));
+}
+
+/// Fade and despawn lightning arc visuals.
+pub fn animate_lightning_arcs(
+    mut commands: Commands,
+    mut arcs: Query<(Entity, &mut LightningArc, &mut Sprite)>,
+    time: Res<Time>,
+) {
+    for (entity, mut arc, mut sprite) in &mut arcs {
+        arc.timer.tick(time.delta());
+        let t = arc.timer.fraction();
+        sprite.color = sprite.color.with_alpha(0.9 * (1.0 - t));
+        if arc.timer.is_finished() {
+            commands.entity(entity).despawn();
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Scrap Magnet systems
+// ---------------------------------------------------------------------------
 
 /// Pull enemies toward dedicated Magnet towers, making them struggle against the field.
 /// Only the Magnet tower type (ScrapMagnet marker) pulls enemies, not all collectors.
