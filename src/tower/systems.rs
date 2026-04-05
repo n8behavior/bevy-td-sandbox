@@ -144,8 +144,18 @@ pub fn turret_state_machine(
     sounds: Res<SoundAssets>,
 ) {
     let pile_center_world = grid_to_world_cfg(pile_state.center, &config);
-    for (tower_tf, stats, mut state, aim_tol, visuals, aoe, targeting, is_scrapgun, is_explosive, is_railgun) in
-        &mut towers
+    for (
+        tower_tf,
+        stats,
+        mut state,
+        aim_tol,
+        visuals,
+        aoe,
+        targeting,
+        is_scrapgun,
+        is_explosive,
+        is_railgun,
+    ) in &mut towers
     {
         let range = stats.range;
         let tower_pos = tower_tf.translation.truncate();
