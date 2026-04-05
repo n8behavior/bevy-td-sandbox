@@ -5,10 +5,12 @@ use rand::Rng;
 use bevy::sprite_render::MeshMaterial2d;
 
 use crate::common::constants::{GridConfig, TILE_SIZE};
-use crate::grid::systems::{grid_to_world, grid_to_world_cfg};
-use crate::pile::resources::{EdgeCells, PileScrap};
-use crate::pile::systems::nearest_edge_cell;
+use crate::grid::systems::{grid_to_world, grid_to_world_cfg, world_to_grid};
+use crate::pile::resources::{EdgeCells, PileScrap, PileState};
+use crate::pile::systems::{nearest_edge_cell, nearest_pile_cell};
 use crate::shader::CircleMaterial;
+
+use crate::wave::resources::BossTrait;
 
 use super::components::*;
 
@@ -21,6 +23,8 @@ pub struct EnemyDied {
     pub loot_value: u32,
     /// Additional scrap the enemy had stolen from the pile.
     pub stolen_scrap: u32,
+    /// Number of enemies to spawn on death (boss splitting trait).
+    pub splits: u32,
 }
 
 #[derive(Component)]
@@ -253,17 +257,20 @@ pub fn check_enemy_death(
             &Transform,
             &LootValue,
             Option<&StolenScrap>,
+            Option<&SplitsOnDeath>,
         ),
         (With<Enemy>, Without<Dead>, Without<Dying>),
     >,
 ) {
-    for (entity, health, transform, loot, stolen) in &enemies {
+    for (entity, health, transform, loot, stolen, splits) in &enemies {
         if health.current <= 0.0 {
             let stolen_amount = stolen.map_or(0, |s| s.0);
+            let split_count = splits.map_or(0, |s| s.count);
             commands.trigger(EnemyDied {
                 position: transform.translation.truncate(),
                 loot_value: loot.0,
                 stolen_scrap: stolen_amount,
+                splits: split_count,
             });
             commands.entity(entity).insert((
                 Dying,
@@ -415,6 +422,7 @@ pub fn spawn_enemy(
     health_mult: f32,
     speed_mult: f32,
     config: &GridConfig,
+    boss_trait: Option<BossTrait>,
 ) {
     let world_pos = grid_to_world_cfg(spawn_pos, config);
     let size = enemy_type.size();
@@ -422,7 +430,7 @@ pub fn spawn_enemy(
     let speed = enemy_type.base_speed() * speed_mult;
     let mut rng = rand::rng();
 
-    commands
+    let entity_id = commands
         .spawn((
             Enemy,
             EnemyPhase::Approaching,
@@ -454,5 +462,69 @@ pub fn spawn_enemy(
             },
             Sprite::from_color(Color::srgb(0.2, 0.8, 0.2), Vec2::new(16.0, 2.0)),
             Transform::from_translation(Vec3::new(0.0, size / 2.0 + 3.0, 0.1)),
-        ));
+        ))
+        .id();
+
+    match boss_trait {
+        Some(BossTrait::Regeneration) => {
+            commands.entity(entity_id).insert(Regeneration { rate: 5.0 });
+        }
+        Some(BossTrait::Armor) => {
+            commands.entity(entity_id).insert(Armor { reduction: 10.0 });
+        }
+        Some(BossTrait::Splitting) => {
+            commands
+                .entity(entity_id)
+                .insert(SplitsOnDeath { count: 3 });
+        }
+        None => {}
+    }
+}
+
+/// Boss regeneration: heal over time.
+pub fn boss_regeneration(
+    mut query: Query<(&Regeneration, &mut Health), (With<Enemy>, Without<Dead>, Without<Dying>)>,
+    time: Res<Time>,
+) {
+    for (regen, mut health) in &mut query {
+        health.current = (health.current + regen.rate * time.delta_secs()).min(health.max);
+    }
+}
+
+/// On boss death with splitting trait, spawn smaller enemies at the death position.
+pub fn on_boss_split(
+    trigger: On<EnemyDied>,
+    mut commands: Commands,
+    config: Res<GridConfig>,
+    grid_query: Query<Entity, With<OrdinalGrid>>,
+    pile_state: Res<PileState>,
+) {
+    let event = &*trigger;
+    if event.splits == 0 {
+        return;
+    }
+
+    let Ok(grid_entity) = grid_query.single() else {
+        return;
+    };
+
+    let Some(grid_pos) = world_to_grid(event.position, &config) else {
+        return;
+    };
+    let spawn_pos = UVec3::new(grid_pos.x as u32, grid_pos.y as u32, 0);
+    let goal_pos = nearest_pile_cell(spawn_pos, &pile_state);
+
+    for _ in 0..event.splits {
+        spawn_enemy(
+            &mut commands,
+            EnemyType::Shambler,
+            spawn_pos,
+            goal_pos,
+            grid_entity,
+            1.0,
+            1.0,
+            &config,
+            None,
+        );
+    }
 }

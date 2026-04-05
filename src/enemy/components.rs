@@ -8,6 +8,7 @@ pub enum EnemyType {
     Shambler,
     Runner,
     Brute,
+    Boss,
 }
 
 impl EnemyType {
@@ -16,6 +17,7 @@ impl EnemyType {
             EnemyType::Shambler => Color::srgb(0.4, 0.7, 0.3),
             EnemyType::Runner => Color::srgb(0.9, 0.8, 0.2),
             EnemyType::Brute => Color::srgb(0.6, 0.2, 0.5),
+            EnemyType::Boss => Color::srgb(0.8, 0.1, 0.1),
         }
     }
 
@@ -24,6 +26,7 @@ impl EnemyType {
             EnemyType::Shambler => 50.0,
             EnemyType::Runner => 30.0,
             EnemyType::Brute => 150.0,
+            EnemyType::Boss => 500.0,
         }
     }
 
@@ -32,6 +35,7 @@ impl EnemyType {
             EnemyType::Shambler => 40.0,
             EnemyType::Runner => 80.0,
             EnemyType::Brute => 25.0,
+            EnemyType::Boss => 20.0,
         }
     }
 
@@ -40,6 +44,7 @@ impl EnemyType {
             EnemyType::Shambler => 10,
             EnemyType::Runner => 15,
             EnemyType::Brute => 30,
+            EnemyType::Boss => 150,
         }
     }
 
@@ -48,6 +53,7 @@ impl EnemyType {
             EnemyType::Shambler => Color::srgb(0.5, 0.9, 0.4),
             EnemyType::Runner => Color::srgb(1.0, 0.9, 0.3),
             EnemyType::Brute => Color::srgb(0.8, 0.4, 0.7),
+            EnemyType::Boss => Color::srgb(1.0, 0.3, 0.3),
         }
     }
 
@@ -56,6 +62,7 @@ impl EnemyType {
             EnemyType::Shambler => 14.0,
             EnemyType::Runner => 10.0,
             EnemyType::Brute => 18.0,
+            EnemyType::Boss => 28.0,
         }
     }
 }
@@ -143,4 +150,22 @@ pub struct ScrapCarrierDecal;
 pub struct SearchWander {
     pub target: Vec2,
     pub timer: Timer,
+}
+
+/// Boss trait: slow HP recovery over time.
+#[derive(Component)]
+pub struct Regeneration {
+    pub rate: f32,
+}
+
+/// Boss trait: flat damage reduction per hit (minimum 1 damage).
+#[derive(Component)]
+pub struct Armor {
+    pub reduction: f32,
+}
+
+/// Boss trait: on death, spawn smaller enemies at this position.
+#[derive(Component)]
+pub struct SplitsOnDeath {
+    pub count: u32,
 }

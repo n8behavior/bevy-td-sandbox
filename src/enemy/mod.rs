@@ -16,6 +16,7 @@ impl Plugin for EnemyPlugin {
                     systems::enemy_movement,
                     systems::search_wander_movement,
                     systems::apply_slow_effects,
+                    systems::boss_regeneration,
                     systems::enemy_reached_pile,
                     systems::enemy_escaped,
                     systems::check_enemy_death,
@@ -37,6 +38,7 @@ impl Plugin for EnemyPlugin {
                 systems::animate_aoe_burst,
             )
                 .run_if(in_state(GameState::Playing)),
-        );
+        )
+        .add_observer(systems::on_boss_split);
     }
 }

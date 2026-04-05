@@ -1,7 +1,7 @@
 use crate::states::{GameState, PlayPhase};
 use crate::tower::components::TowerRegistry;
 use crate::tower::placement::SelectedTower;
-use crate::wave::resources::WaveManager;
+use crate::wave::resources::{BossTrait, WaveManager};
 use bevy::prelude::*;
 
 const LABEL_COLOR: Color = Color::srgb(0.95, 0.85, 0.5);
@@ -179,10 +179,16 @@ pub fn update_wave_preview(
             let base_hp = we.enemy_type.base_health() * we.health_multiplier;
             let base_spd = we.enemy_type.base_speed() * we.speed_multiplier;
             let color = we.enemy_type.ui_color();
+            let trait_label = match we.boss_trait {
+                Some(BossTrait::Regeneration) => " [REGEN]",
+                Some(BossTrait::Armor) => " [ARMORED]",
+                Some(BossTrait::Splitting) => " [SPLITTING]",
+                None => "",
+            };
 
             parent.spawn((
                 Text::new(format!(
-                    " {:>2}x {:?}  HP:{:.0}  SPD:{:.0}",
+                    " {:>2}x {:?}  HP:{:.0}  SPD:{:.0}{trait_label}",
                     we.count, we.enemy_type, base_hp, base_spd,
                 )),
                 TextColor(color),

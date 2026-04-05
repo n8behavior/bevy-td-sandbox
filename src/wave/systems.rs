@@ -29,6 +29,7 @@ pub fn start_wave(mut wave_mgr: ResMut<WaveManager>) {
                 enemy_type: we.enemy_type,
                 health_multiplier: we.health_multiplier,
                 speed_multiplier: we.speed_multiplier,
+                boss_trait: we.boss_trait,
             })
         })
         .collect();
@@ -84,6 +85,7 @@ pub fn spawn_enemies(
         entry.health_multiplier,
         entry.speed_multiplier,
         &config,
+        entry.boss_trait,
     );
 }
 
@@ -138,11 +140,30 @@ pub fn check_game_over(
 
 pub fn generate_waves() -> Vec<WaveConfig> {
     let mut waves = Vec::new();
+    let mut rng = rand::rng();
+    let boss_traits = [BossTrait::Regeneration, BossTrait::Armor, BossTrait::Splitting];
 
     for i in 0..20 {
         let wave_num = i + 1;
         let health_mult = 1.0 + (i as f32 * 0.15);
         let speed_mult = 1.0 + (i as f32 * 0.05);
+
+        // Boss wave every 5th wave
+        if wave_num % 5 == 0 {
+            let boss_trait = *boss_traits.choose(&mut rng).unwrap();
+            waves.push(WaveConfig {
+                enemies: vec![WaveEnemy {
+                    enemy_type: EnemyType::Boss,
+                    count: 1,
+                    health_multiplier: health_mult,
+                    speed_multiplier: speed_mult,
+                    boss_trait: Some(boss_trait),
+                }],
+                spawn_interval: 1.0,
+            });
+            continue;
+        }
+
         let base_count = 5 + i * 2;
 
         let mut enemies = vec![WaveEnemy {
@@ -150,6 +171,7 @@ pub fn generate_waves() -> Vec<WaveConfig> {
             count: base_count,
             health_multiplier: health_mult,
             speed_multiplier: speed_mult,
+            boss_trait: None,
         }];
 
         if wave_num >= 3 {
@@ -158,6 +180,7 @@ pub fn generate_waves() -> Vec<WaveConfig> {
                 count: (base_count / 2).max(2),
                 health_multiplier: health_mult,
                 speed_multiplier: speed_mult,
+                boss_trait: None,
             });
         }
 
@@ -167,6 +190,7 @@ pub fn generate_waves() -> Vec<WaveConfig> {
                 count: (base_count / 4).max(1),
                 health_multiplier: health_mult,
                 speed_multiplier: speed_mult,
+                boss_trait: None,
             });
         }
 
