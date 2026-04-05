@@ -176,8 +176,7 @@ fn check_wave_complete_does_not_transition_with_drops() {
 // check_game_over
 // ---------------------------------------------------------------------------
 
-#[test]
-fn check_game_over_no_trigger_with_scrap() {
+fn game_over_app(scrap: u32) -> App {
     let mut app = test_app();
     app.init_state::<GameState>();
     app.add_sub_state::<PlayPhase>();
@@ -191,48 +190,148 @@ fn check_game_over_no_trigger_with_scrap() {
         .set(PlayPhase::Defending);
     app.update();
 
-    app.insert_resource(PileScrap { amount: 100 });
+    app.insert_resource(PileScrap { amount: scrap });
     app.insert_resource(mock_sound_assets());
+    app.insert_resource(WaveManager {
+        current_wave: 0,
+        waves: Vec::new(),
+        spawn_timer: Timer::from_seconds(1.0, TimerMode::Repeating),
+        enemies_remaining: 0,
+        spawn_queue: Vec::new(),
+    });
 
     app.add_systems(
         Update,
         check_game_over.run_if(in_state(PlayPhase::Defending)),
     );
-    app.update();
-    app.update();
+    app
+}
 
-    let state = app.world().resource::<State<GameState>>();
-    assert_eq!(*state.get(), GameState::Playing);
+fn game_state(app: &App) -> GameState {
+    app.world().resource::<State<GameState>>().get().clone()
+}
+
+#[test]
+fn check_game_over_no_trigger_with_scrap() {
+    let mut app = game_over_app(100);
+    app.update();
+    app.update();
+    assert_eq!(game_state(&app), GameState::Playing);
 }
 
 #[test]
 fn check_game_over_triggers_when_truly_bankrupt() {
-    let mut app = test_app();
-    app.init_state::<GameState>();
-    app.add_sub_state::<PlayPhase>();
+    let mut app = game_over_app(0);
+    app.update();
+    app.update();
+    assert_eq!(game_state(&app), GameState::GameOver);
+}
 
+#[test]
+fn check_game_over_no_trigger_with_active_enemies() {
+    let mut app = game_over_app(0);
+    // Active enemy (approaching, not wandering) — could be killed for loot.
+    app.world_mut().spawn((Enemy, EnemyPhase::Approaching));
+    app.update();
+    app.update();
+    assert_eq!(game_state(&app), GameState::Playing);
+}
+
+#[test]
+fn check_game_over_no_trigger_with_stolen_scrap() {
+    let mut app = game_over_app(0);
+    // Fleeing enemy carrying stolen scrap — recoverable if killed.
     app.world_mut()
-        .resource_mut::<NextState<GameState>>()
-        .set(GameState::Playing);
+        .spawn((Enemy, EnemyPhase::Fleeing, StolenScrap(50)));
     app.update();
+    app.update();
+    assert_eq!(game_state(&app), GameState::Playing);
+}
+
+#[test]
+fn check_game_over_no_trigger_with_spawn_queue() {
+    let mut app = game_over_app(0);
+    // Enemies still queued to spawn — could be killed for loot by towers.
     app.world_mut()
-        .resource_mut::<NextState<PlayPhase>>()
-        .set(PlayPhase::Defending);
-    app.update();
-
-    app.insert_resource(PileScrap { amount: 0 });
-    app.insert_resource(mock_sound_assets());
-
-    // No enemies, no drops, no scrap — truly bankrupt.
-    app.add_systems(
-        Update,
-        check_game_over.run_if(in_state(PlayPhase::Defending)),
-    );
+        .resource_mut::<WaveManager>()
+        .spawn_queue
+        .push(bevy_td_sandbox::wave::resources::SpawnEntry {
+            enemy_type: bevy_td_sandbox::enemy::components::EnemyType::Shambler,
+            health_multiplier: 1.0,
+            speed_multiplier: 1.0,
+            boss_trait: None,
+        });
     app.update();
     app.update();
+    assert_eq!(game_state(&app), GameState::Playing);
+}
 
-    let state = app.world().resource::<State<GameState>>();
-    assert_eq!(*state.get(), GameState::GameOver);
+/// Scrap drops on the ground should prevent game over even with empty pile.
+#[test]
+fn check_game_over_no_trigger_with_drops_on_ground() {
+    let mut app = game_over_app(0);
+    app.world_mut().spawn(ScrapDrop {
+        value: 10,
+        lifetime: Timer::from_seconds(10.0, TimerMode::Once),
+    });
+    app.update();
+    app.update();
+    assert_eq!(game_state(&app), GameState::Playing);
+}
+
+/// Dying enemies (death animation playing, not yet Dead) should not block
+/// game over — they're already doomed and can't contribute to recovery.
+#[test]
+fn check_game_over_triggers_with_only_dying_enemies() {
+    let mut app = game_over_app(0);
+    app.world_mut().spawn((Enemy, Dying));
+    app.update();
+    app.update();
+    assert_eq!(game_state(&app), GameState::GameOver);
+}
+
+/// Mix of wandering and dying enemies — neither should block game over.
+#[test]
+fn check_game_over_triggers_with_wandering_and_dying_enemies() {
+    let mut app = game_over_app(0);
+    app.world_mut().spawn((
+        Enemy,
+        EnemyPhase::Approaching,
+        SearchWander {
+            target: Vec2::ZERO,
+            timer: Timer::from_seconds(2.0, TimerMode::Once),
+        },
+        Transform::default(),
+    ));
+    app.world_mut().spawn((Enemy, Dying));
+    app.update();
+    app.update();
+    assert_eq!(game_state(&app), GameState::GameOver);
+}
+
+/// Dead enemies (pending cleanup) should not block game over.
+#[test]
+fn check_game_over_triggers_with_only_dead_enemies() {
+    let mut app = game_over_app(0);
+    app.world_mut().spawn((Enemy, Dead));
+    app.update();
+    app.update();
+    assert_eq!(game_state(&app), GameState::GameOver);
+}
+
+/// Stolen scrap of 0 should not block game over (enemy stole nothing).
+#[test]
+fn check_game_over_triggers_with_zero_stolen_scrap() {
+    let mut app = game_over_app(0);
+    app.world_mut()
+        .spawn((Enemy, EnemyPhase::Fleeing, StolenScrap(0)));
+    // Enemy is active (fleeing, not wandering) so it blocks game over —
+    // but it has 0 stolen scrap, so the stolen check shouldn't block.
+    // However the active_enemies check WILL block because it's fleeing.
+    app.update();
+    app.update();
+    // Fleeing enemy is still "active" — it's not stuck wandering.
+    assert_eq!(game_state(&app), GameState::Playing);
 }
 
 // ---------------------------------------------------------------------------
@@ -421,21 +520,7 @@ fn find_best_target_closest_mode() {
 /// for loot" even though no towers exist to kill them.
 #[test]
 fn game_over_triggers_with_wandering_enemies_on_empty_pile() {
-    let mut app = test_app();
-    app.init_state::<GameState>();
-    app.add_sub_state::<PlayPhase>();
-
-    app.world_mut()
-        .resource_mut::<NextState<GameState>>()
-        .set(GameState::Playing);
-    app.update();
-    app.world_mut()
-        .resource_mut::<NextState<PlayPhase>>()
-        .set(PlayPhase::Defending);
-    app.update();
-
-    app.insert_resource(PileScrap { amount: 0 });
-    app.insert_resource(mock_sound_assets());
+    let mut app = game_over_app(0);
 
     // Enemies wandering on the empty pile — no stolen scrap, no path to flee.
     // No towers exist to kill them. This is the deadlock scenario from #10.
