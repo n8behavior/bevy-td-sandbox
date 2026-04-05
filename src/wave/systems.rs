@@ -141,7 +141,11 @@ pub fn check_game_over(
 pub fn generate_waves() -> Vec<WaveConfig> {
     let mut waves = Vec::new();
     let mut rng = rand::rng();
-    let boss_traits = [BossTrait::Regeneration, BossTrait::Armor, BossTrait::Splitting];
+    let boss_traits = [
+        BossTrait::Regeneration,
+        BossTrait::Armor,
+        BossTrait::Splitting,
+    ];
 
     for i in 0..20 {
         let wave_num = i + 1;

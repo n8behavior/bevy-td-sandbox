@@ -275,7 +275,10 @@ pub fn scrap_magnet_collect(
 
 /// Find the nearest enemy within range (spatial targeting for chain lightning).
 fn find_nearest_enemy(
-    enemies: &Query<(Entity, &mut Health, &Transform, &Sprite), (With<Enemy>, Without<Dead>, Without<Dying>)>,
+    enemies: &Query<
+        (Entity, &mut Health, &Transform, &Sprite),
+        (With<Enemy>, Without<Dead>, Without<Dying>),
+    >,
     pos: Vec2,
     range: f32,
 ) -> Option<Entity> {

@@ -483,7 +483,10 @@ pub fn update_upgrade_panel(
 
         if let Some(cc) = chain_cd {
             parent.spawn((
-                Text::new(format!("FIRE RATE: {:.2}s", cc.timer.duration().as_secs_f32())),
+                Text::new(format!(
+                    "FIRE RATE: {:.2}s",
+                    cc.timer.duration().as_secs_f32()
+                )),
                 TextColor(STAT_COLOR),
                 TextFont {
                     font_size: 13.0,

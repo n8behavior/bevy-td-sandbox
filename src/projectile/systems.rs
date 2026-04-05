@@ -3,9 +3,7 @@ use bevy::prelude::*;
 use bevy::sprite_render::MeshMaterial2d;
 
 use crate::camera::components::ScreenShake;
-use crate::enemy::components::{
-    AoEBurst, Armor, DamageFlash, Dead, Enemy, Health, SlowEffect,
-};
+use crate::enemy::components::{AoEBurst, Armor, DamageFlash, Dead, Enemy, Health, SlowEffect};
 use crate::shader::{CircleMaterial, CircleMesh};
 
 use super::components::*;

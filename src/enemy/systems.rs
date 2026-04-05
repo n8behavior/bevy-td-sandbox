@@ -283,9 +283,7 @@ pub fn check_enemy_death(
 }
 
 /// Reset all enemy speeds to base each tick, before slow effects re-apply.
-pub fn reset_speed(
-    mut query: Query<&mut MoveSpeed, (With<Enemy>, Without<Dead>, Without<Dying>)>,
-) {
+pub fn reset_speed(mut query: Query<&mut MoveSpeed, (With<Enemy>, Without<Dead>, Without<Dying>)>) {
     for mut speed in &mut query {
         speed.current = speed.base;
     }
@@ -476,7 +474,9 @@ pub fn spawn_enemy(
 
     match boss_trait {
         Some(BossTrait::Regeneration) => {
-            commands.entity(entity_id).insert(Regeneration { rate: 5.0 });
+            commands
+                .entity(entity_id)
+                .insert(Regeneration { rate: 5.0 });
         }
         Some(BossTrait::Armor) => {
             commands.entity(entity_id).insert(Armor { reduction: 10.0 });

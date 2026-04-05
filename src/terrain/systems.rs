@@ -229,8 +229,7 @@ pub fn generate_terrain(
 
     // 5. Generate passable terrain clusters (no path validation needed).
     let puddle_clusters = generate_clusters(num_puddle, &mut occupied, &config, &mut rng);
-    let radioactive_clusters =
-        generate_clusters(num_radioactive, &mut occupied, &config, &mut rng);
+    let radioactive_clusters = generate_clusters(num_radioactive, &mut occupied, &config, &mut rng);
 
     // 6. Build terrain map.
     let mut terrain_map = TerrainMap::default();
@@ -281,10 +280,7 @@ pub fn generate_terrain(
 // ---------------------------------------------------------------------------
 
 pub fn apply_puddle_slow(
-    mut enemies: Query<
-        (&Transform, &mut MoveSpeed),
-        (With<Enemy>, Without<Dead>, Without<Dying>),
-    >,
+    mut enemies: Query<(&Transform, &mut MoveSpeed), (With<Enemy>, Without<Dead>, Without<Dying>)>,
     terrain_map: Res<TerrainMap>,
     config: Res<GridConfig>,
 ) {
@@ -300,10 +296,7 @@ pub fn apply_puddle_slow(
 }
 
 pub fn apply_radioactive_damage(
-    mut enemies: Query<
-        (&Transform, &mut Health),
-        (With<Enemy>, Without<Dead>, Without<Dying>),
-    >,
+    mut enemies: Query<(&Transform, &mut Health), (With<Enemy>, Without<Dead>, Without<Dying>)>,
     terrain_map: Res<TerrainMap>,
     config: Res<GridConfig>,
     time: Res<Time>,
