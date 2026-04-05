@@ -1,4 +1,4 @@
-use crate::states::{GameState, PlayPhase};
+use crate::states::{GameMode, GameState, PlayPhase};
 use crate::tower::components::TowerRegistry;
 use crate::tower::placement::SelectedTower;
 use crate::wave::resources::{BossTrait, WaveManager};
@@ -14,7 +14,11 @@ pub struct TowerButton(pub usize);
 #[derive(Component)]
 pub struct WavePreviewPanel;
 
-pub fn setup_tower_palette(mut commands: Commands, registry: Res<TowerRegistry>) {
+pub fn setup_tower_palette(
+    mut commands: Commands,
+    registry: Res<TowerRegistry>,
+    game_mode: Res<GameMode>,
+) {
     commands
         .spawn((
             Node {
@@ -77,8 +81,13 @@ pub fn setup_tower_palette(mut commands: Commands, registry: Res<TowerRegistry>)
                     });
             }
 
+            let hints = if *game_mode == GameMode::Endless {
+                "\nESC: Deselect\nESC ESC: Quit"
+            } else {
+                "\nENTER: Start Wave\nESC: Deselect\nESC ESC: Quit"
+            };
             parent.spawn((
-                Text::new("\nENTER: Start Wave\nESC: Deselect\nESC ESC: Quit"),
+                Text::new(hints),
                 TextColor(HINT_COLOR),
                 TextFont {
                     font_size: 12.0,
@@ -120,6 +129,7 @@ pub fn highlight_selected_tower(
 
 pub fn update_wave_preview(
     mut commands: Commands,
+    game_mode: Res<GameMode>,
     wave_mgr: Option<Res<WaveManager>>,
     phase: Option<Res<State<PlayPhase>>>,
     mut panel_query: Query<(Entity, &mut Visibility), With<WavePreviewPanel>>,
@@ -127,6 +137,12 @@ pub fn update_wave_preview(
     let Ok((panel_entity, mut vis)) = panel_query.single_mut() else {
         return;
     };
+
+    // No wave preview in Endless mode.
+    if *game_mode == GameMode::Endless {
+        *vis = Visibility::Hidden;
+        return;
+    }
 
     let Some(wave_mgr) = wave_mgr else {
         *vis = Visibility::Hidden;

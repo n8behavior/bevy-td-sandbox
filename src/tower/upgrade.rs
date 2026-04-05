@@ -9,6 +9,7 @@ use crate::grid::systems::world_to_grid;
 use crate::pile::resources::PileScrap;
 use crate::shader::{CircleMaterial, CircleMesh};
 use crate::states::GameState;
+use crate::stats::resources::RunStats;
 use crate::ui::tower_menu::WavePreviewPanel;
 
 use super::components::*;
@@ -156,6 +157,7 @@ pub fn apply_upgrade(
     range_rings: Query<Entity, With<RangeRing>>,
     aura_visuals: Query<Entity, With<AuraVisual>>,
     mut pile_scrap: ResMut<PileScrap>,
+    mut run_stats: Option<ResMut<RunStats>>,
 ) {
     if !keyboard.just_pressed(KeyCode::KeyU) {
         return;
@@ -194,6 +196,10 @@ pub fn apply_upgrade(
     // Deduct and track.
     pile_scrap.amount -= ucost;
     cost.0 += ucost;
+
+    if let Some(run_stats) = run_stats.as_mut() {
+        run_stats.scrap_spent += ucost;
+    }
     tier.0 += 1;
     let t = tier.0 as usize;
 

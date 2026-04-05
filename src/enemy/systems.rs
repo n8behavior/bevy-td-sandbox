@@ -25,6 +25,8 @@ pub struct EnemyDied {
     pub stolen_scrap: u32,
     /// Number of enemies to spawn on death (boss splitting trait).
     pub splits: u32,
+    /// Type of enemy that died (for stats tracking).
+    pub enemy_type: EnemyType,
 }
 
 #[derive(Component)]
@@ -256,13 +258,14 @@ pub fn check_enemy_death(
             &Health,
             &Transform,
             &LootValue,
+            &EnemyType,
             Option<&StolenScrap>,
             Option<&SplitsOnDeath>,
         ),
         (With<Enemy>, Without<Dead>, Without<Dying>),
     >,
 ) {
-    for (entity, health, transform, loot, stolen, splits) in &enemies {
+    for (entity, health, transform, loot, enemy_type, stolen, splits) in &enemies {
         if health.current <= 0.0 {
             let stolen_amount = stolen.map_or(0, |s| s.0);
             let split_count = splits.map_or(0, |s| s.count);
@@ -271,6 +274,7 @@ pub fn check_enemy_death(
                 loot_value: loot.0,
                 stolen_scrap: stolen_amount,
                 splits: split_count,
+                enemy_type: *enemy_type,
             });
             commands.entity(entity).insert((
                 Dying,
@@ -440,6 +444,7 @@ pub fn spawn_enemy(
     let entity_id = commands
         .spawn((
             Enemy,
+            enemy_type,
             EnemyPhase::Approaching,
             Health {
                 current: health,

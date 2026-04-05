@@ -4,7 +4,11 @@
 
 A post-apocalyptic tower defense where you defend your scrap pile from waves of mutants on a procedurally generated open field. No fixed paths — you maze the enemies with your towers.
 
-## The Basics
+Two game modes are available from the main menu:
+- **Classic Mode** (SPACE) — 20 waves with building phases between each
+- **Endless Mode** (E) — Continuous survival with escalating difficulty (see [Endless Mode](#endless-mode) below)
+
+## The Basics (Classic Mode)
 
 You start with **200 scrap** and a pile in the center of the map. Enemies spawn from the edges and path toward your pile. If they reach it, they **steal scrap and flee**. If your pile hits zero and there's no scrap left anywhere, it's game over.
 
@@ -120,3 +124,38 @@ The grid is procedurally generated each game with **terrain clusters** covering 
 | **Radioactive** | Yes | ~8 DPS to enemies | Green |
 
 No towers can be placed on any terrain type. Rubble creates chokepoints like walls. Puddles and radioactive zones are passable — enemies walk through them but suffer the effect. The puddle slow (30%) is weaker than Tar Pit (40%) but comes free.
+
+## Endless Mode
+
+Select **Endless Mode** from the main menu by pressing **E**. This is a continuous survival challenge — no waves, no building phases. How long can you last?
+
+### How It Works
+
+- Enemies spawn **continuously** from the start — there are no breaks
+- You can **place, sell, and upgrade towers at any time** during combat
+- You start with **400 scrap** (double the normal amount) to build an initial maze
+- Spawn rate **accelerates** over time — starting at 1.5s between spawns, dropping to 0.25s
+
+### Difficulty Ramp
+
+Enemy types escalate over time:
+
+| Elapsed Time | Enemies |
+|-------------|---------|
+| **0:00+** | Shamblers only |
+| **1:00+** | Runners mix in (~30%) |
+| **2:30+** | Brutes mix in (~15%) |
+| **5:00+** | Bosses appear (rare, with random traits) |
+
+Stats scale with elapsed time: **+15% HP** and **+5% speed** per minute — the same curve as wave mode, but continuous.
+
+### End-of-Run Stats
+
+When you die, a stats screen shows:
+
+- **Survival time** (mm:ss)
+- **Total kills** broken down by enemy type
+- **Scrap collected** and **scrap spent**
+- **Towers placed** and **towers sold**
+
+Stats are also tracked in Classic mode.

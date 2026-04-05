@@ -8,6 +8,7 @@ use crate::grid::systems::{grid_to_world, world_to_grid};
 use crate::pathfinding::GridChanged;
 use crate::pile::resources::{PileScrap, PileState};
 use crate::states::GameState;
+use crate::stats::resources::RunStats;
 
 use crate::terrain::components::Terrain;
 
@@ -224,6 +225,7 @@ pub fn confirm_tower_placement(
     mut selected: ResMut<SelectedTower>,
     registry: Res<TowerRegistry>,
     config: Res<GridConfig>,
+    mut stats: Option<ResMut<RunStats>>,
 ) {
     if !mouse.just_pressed(MouseButton::Left) {
         return;
@@ -259,6 +261,11 @@ pub fn confirm_tower_placement(
 
     // Deduct cost.
     pile_scrap.amount -= blueprint.cost;
+
+    if let Some(stats) = stats.as_mut() {
+        stats.towers_placed += 1;
+        stats.scrap_spent += blueprint.cost;
+    }
 
     // Transition from Placing to placed.
     let snap_pos = grid_to_world(cell_uvec, &config);
@@ -325,6 +332,7 @@ pub fn sell_tower(
     mut pile_scrap: ResMut<PileScrap>,
     config: Res<GridConfig>,
     mut inspected: ResMut<InspectedTower>,
+    mut stats: Option<ResMut<RunStats>>,
 ) {
     if !mouse.just_pressed(MouseButton::Right) {
         return;
@@ -353,6 +361,10 @@ pub fn sell_tower(
 
     let refund = cost.0 * SELL_REFUND_PERCENT / 100;
     pile_scrap.amount += refund;
+
+    if let Some(stats) = stats.as_mut() {
+        stats.towers_sold += 1;
+    }
 
     let cell_uvec = UVec3::new(grid_pos.x as u32, grid_pos.y as u32, 0);
     let tower_world_pos = grid_to_world(cell_uvec, &config);

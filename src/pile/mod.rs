@@ -5,7 +5,7 @@ pub mod systems;
 use bevy::prelude::*;
 
 use crate::common::constants::*;
-use crate::states::GameState;
+use crate::states::{GameMode, GameState};
 use crate::tower::components::{AuraRingConfig, ScrapCollector};
 
 use resources::{EdgeCells, PileScrap, PileState};
@@ -27,14 +27,18 @@ impl Plugin for PilePlugin {
     }
 }
 
-pub fn init_pile(mut commands: Commands, config: Res<GridConfig>) {
+pub fn init_pile(mut commands: Commands, config: Res<GridConfig>, game_mode: Res<GameMode>) {
+    let starting_scrap = match *game_mode {
+        GameMode::Classic => STARTING_SCRAP,
+        GameMode::Endless => ENDLESS_STARTING_SCRAP,
+    };
     let center = config.center();
-    let radius = systems::pile_radius(STARTING_SCRAP);
+    let radius = systems::pile_radius(starting_scrap);
 
     let cells = systems::compute_pile_cells(center, radius, config.width, config.height);
 
     commands.insert_resource(PileScrap {
-        amount: STARTING_SCRAP,
+        amount: starting_scrap,
     });
     commands.insert_resource(PileState {
         cells,
