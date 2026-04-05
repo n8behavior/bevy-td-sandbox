@@ -47,15 +47,28 @@ pub const MAJOR_LINE_WIDTH: f32 = 1.5;
 /// Junk pile cell color.
 pub const PILE_COLOR: Color = Color::srgb(0.7, 0.55, 0.2);
 
-/// Obstacle (rubble/ruin) base color.
-pub const OBSTACLE_COLOR: Color = Color::srgb(0.42, 0.38, 0.32);
+/// Total terrain coverage fraction (~8% of eligible cells).
+pub const TERRAIN_COVERAGE: f32 = 0.08;
 
-/// Fraction of eligible cells covered by obstacles.
-pub const OBSTACLE_COVERAGE: f32 = 0.08;
+/// Cluster size range for terrain generation.
+pub const TERRAIN_MIN_CLUSTER: u32 = 5;
+pub const TERRAIN_MAX_CLUSTER: u32 = 25;
 
-/// Cluster size range for obstacle generation.
-pub const OBSTACLE_MIN_CLUSTER: u32 = 5;
-pub const OBSTACLE_MAX_CLUSTER: u32 = 25;
+/// Coverage weight per terrain type (sum to 1.0).
+pub const RUBBLE_WEIGHT: f32 = 0.45;
+pub const PUDDLE_WEIGHT: f32 = 0.30;
+pub const RADIOACTIVE_WEIGHT: f32 = 0.25;
+
+/// Terrain base colors.
+pub const RUBBLE_COLOR: Color = Color::srgb(0.42, 0.38, 0.32);
+pub const PUDDLE_COLOR: Color = Color::srgb(0.25, 0.40, 0.55);
+pub const RADIOACTIVE_COLOR: Color = Color::srgb(0.35, 0.55, 0.20);
+
+/// Puddle slow: enemy moves at 70% speed (30% reduction).
+pub const PUDDLE_SLOW_FACTOR: f32 = 0.70;
+
+/// Radioactive damage per second.
+pub const RADIOACTIVE_DPS: f32 = 8.0;
 
 #[derive(Resource)]
 pub struct GridConfig {

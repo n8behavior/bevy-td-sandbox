@@ -15,6 +15,7 @@ impl Plugin for EnemyPlugin {
                 (
                     systems::enemy_movement,
                     systems::search_wander_movement,
+                    systems::reset_speed,
                     systems::apply_slow_effects,
                     systems::boss_regeneration,
                     systems::enemy_reached_pile,

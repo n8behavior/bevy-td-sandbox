@@ -4,7 +4,7 @@ use std::f32::consts::PI;
 
 use crate::common::constants::*;
 use crate::grid::components::GridCell;
-use crate::obstacle::components::Obstacle;
+use crate::terrain::components::Terrain;
 use crate::tower::components::Tower;
 
 use super::components::PileCell;
@@ -74,7 +74,7 @@ pub fn update_pile_visuals(
     pile_state: Res<PileState>,
     mut cells: Query<
         (Entity, &GridCell, &mut Sprite, Option<&PileCell>),
-        (Without<Tower>, Without<Obstacle>),
+        (Without<Tower>, Without<Terrain>),
     >,
 ) {
     if !pile_state.is_changed() {

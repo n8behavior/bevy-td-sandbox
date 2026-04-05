@@ -9,7 +9,7 @@ mod common;
 mod economy;
 mod enemy;
 mod grid;
-mod obstacle;
+mod terrain;
 mod pathfinding;
 mod pile;
 mod projectile;
@@ -23,7 +23,7 @@ use camera::CameraPlugin;
 use economy::EconomyPlugin;
 use enemy::EnemyPlugin;
 use grid::GridPlugin;
-use obstacle::ObstaclePlugin;
+use terrain::TerrainPlugin;
 use pathfinding::PathfindingPlugin;
 use pile::PilePlugin;
 use projectile::ProjectilePlugin;
@@ -61,7 +61,7 @@ fn main() {
             CameraPlugin,
             GridPlugin,
             PilePlugin,
-            ObstaclePlugin,
+            TerrainPlugin,
             PathfindingPlugin,
             TowerPlugin,
             EnemyPlugin,

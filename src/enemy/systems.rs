@@ -282,6 +282,15 @@ pub fn check_enemy_death(
     }
 }
 
+/// Reset all enemy speeds to base each tick, before slow effects re-apply.
+pub fn reset_speed(
+    mut query: Query<&mut MoveSpeed, (With<Enemy>, Without<Dead>, Without<Dying>)>,
+) {
+    for mut speed in &mut query {
+        speed.current = speed.base;
+    }
+}
+
 pub fn apply_slow_effects(
     mut commands: Commands,
     mut query: Query<(Entity, &mut MoveSpeed, &mut SlowEffect), Without<Dead>>,

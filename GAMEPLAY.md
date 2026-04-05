@@ -111,4 +111,12 @@ If an enemy reaches your pile, it grabs scrap and runs for the nearest edge. Kil
 
 ## Map
 
-The grid is procedurally generated each game with **obstacle clusters** (rubble/ruins) covering ~8% of the field. These block both placement and pathing, creating natural chokepoints to build around.
+The grid is procedurally generated each game with **terrain clusters** covering ~8% of the field, creating natural hazards to play around.
+
+| Terrain | Passable? | Effect | Color |
+|---------|-----------|--------|-------|
+| **Rubble** | No | Blocks movement and placement | Grey-brown |
+| **Puddle** | Yes | 30% slow to enemies | Blue-grey |
+| **Radioactive** | Yes | ~8 DPS to enemies | Green |
+
+No towers can be placed on any terrain type. Rubble creates chokepoints like walls. Puddles and radioactive zones are passable — enemies walk through them but suffer the effect. The puddle slow (30%) is weaker than Tar Pit (40%) but comes free.

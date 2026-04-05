@@ -9,7 +9,7 @@ use crate::pathfinding::GridChanged;
 use crate::pile::resources::{PileScrap, PileState};
 use crate::states::GameState;
 
-use crate::obstacle::components::Obstacle;
+use crate::terrain::components::Terrain;
 
 use super::components::*;
 use super::upgrade::InspectedTower;
@@ -96,7 +96,7 @@ pub fn update_placing_tower(
     windows: Query<&Window>,
     cameras: Query<(&Camera, &GlobalTransform)>,
     existing_towers: Query<&GridCell, (With<Tower>, Without<Placing>)>,
-    obstacles: Query<&GridCell, With<Obstacle>>,
+    terrain_cells: Query<&GridCell, With<Terrain>>,
     mut grid_query: Query<&mut OrdinalGrid>,
     pile_state: Res<PileState>,
     pile_scrap: Res<PileScrap>,
@@ -137,11 +137,11 @@ pub fn update_placing_tower(
         .unwrap_or(u32::MAX);
 
     let occupied = existing_towers.iter().any(|c| c.coord == grid_pos);
-    let is_obstacle = obstacles.iter().any(|c| c.coord == grid_pos);
+    let is_terrain = terrain_cells.iter().any(|c| c.coord == grid_pos);
     let is_pile = pile_state.cells.contains(&cell_uvec);
     let can_afford = pile_scrap.amount >= cost;
 
-    let mut is_valid = !occupied && !is_obstacle && !is_pile && can_afford;
+    let mut is_valid = !occupied && !is_terrain && !is_pile && can_afford;
 
     // Path validation for BlocksNav towers.
     if is_valid
