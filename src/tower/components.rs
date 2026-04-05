@@ -280,3 +280,34 @@ pub struct LightningArc {
 pub struct ScrapCollector {
     pub range: f32,
 }
+
+// ---------------------------------------------------------------------------
+// Magnet upgrade components
+// ---------------------------------------------------------------------------
+
+/// Current magnet upgrade tier: 0 = base, 1–3 = upgraded.
+/// Separate from TowerTier (combat upgrades). Not present on ScrapMagnet
+/// (which has built-in max collection range).
+#[derive(Component)]
+pub struct MagnetTier(pub u8);
+
+/// Immutable base scrap collection range, used to compute upgraded range
+/// via multiplier table. Set at tower spawn time.
+#[derive(Component)]
+pub struct BaseMagnetRange(pub f32);
+
+/// Insert on a tower entity to request a magnet collection aura ring child.
+/// A reactive system converts this into a `Mesh2d` + `CircleMaterial`.
+/// Separate from `AuraRingConfig` so towers can have both (e.g. TarPit has
+/// a slow aura AND a collection aura).
+#[derive(Component)]
+pub struct MagnetAuraConfig {
+    pub range: f32,
+    pub color: Color,
+}
+
+/// Marker for the magnet collection aura ring child (spawned from
+/// `MagnetAuraConfig`). Distinct from `AuraVisual` to avoid interference
+/// during tower stat upgrades.
+#[derive(Component)]
+pub struct MagnetAura;

@@ -1,5 +1,6 @@
 use bevy::prelude::*;
 
+use crate::common::constants::MAGNET_AURA_COLOR;
 use crate::tower::components::*;
 
 #[derive(Component)]
@@ -36,6 +37,13 @@ fn register(mut registry: ResMut<TowerRegistry>) {
                     range: stats.range,
                     color: Color::srgba(0.4, 0.15, 0.45, 0.55),
                 },
+                MagnetAuraConfig {
+                    range: 30.0,
+                    color: MAGNET_AURA_COLOR,
+                },
+                ScrapCollector { range: 30.0 },
+                MagnetTier(0),
+                BaseMagnetRange(30.0),
                 TarPit,
                 // No BlocksNav — enemies walk through
                 stats,

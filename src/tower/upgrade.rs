@@ -15,6 +15,7 @@ use crate::ui::tower_menu::WavePreviewPanel;
 use super::components::*;
 use super::placement::{SelectedTower, SellText};
 use super::targeting::RadialMenuState;
+use super::types::scrap_magnet::ScrapMagnet;
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -31,6 +32,10 @@ const SLOW_MULT: [f32; 3] = [1.0, 0.85, 0.7];
 const ARC_RANGE_MULT: [f32; 3] = [1.0, 1.333, 1.667];
 
 const TIER_COLOR_BOOST: [f32; 3] = [0.0, 0.15, 0.3];
+
+pub const MAX_MAGNET_TIER: u8 = 3;
+const MAGNET_UPGRADE_COSTS: [u32; 3] = [25, 50, 75];
+const MAGNET_RANGE_MULT: [f32; 4] = [1.0, 1.5, 2.0, 2.5];
 
 const LABEL_COLOR: Color = Color::srgb(0.95, 0.85, 0.5);
 const HINT_COLOR: Color = Color::srgb(0.7, 0.65, 0.5);
@@ -272,8 +277,10 @@ pub fn apply_upgrade(
         ecmds.insert(new_rr);
     }
     if let Some(ar) = aura_ring {
+        // Use updated stats.range so the aura visual scales with upgrades
+        // (affects TarPit slow aura and ScrapMagnet pull aura).
         let new_ar = AuraRingConfig {
-            range: ar.range,
+            range: stats.range,
             color: ar.color,
         };
         ecmds.remove::<AuraRingConfig>();
@@ -297,6 +304,107 @@ pub fn apply_upgrade(
             ..default()
         },
         TextColor(Color::srgb(0.9, 0.8, 0.2)),
+        Transform::from_translation(pos.extend(10.0)),
+        SellText {
+            timer: Timer::from_seconds(0.8, TimerMode::Once),
+        },
+    ));
+}
+
+/// When a tower WITHOUT `MagnetTier` (i.e. ScrapMagnet) gets a stat
+/// upgrade, sync its `ScrapCollector.range` to the new `TowerStats.range`.
+/// Towers WITH `MagnetTier` manage collection range via the magnet system.
+pub fn sync_collector_on_upgrade(
+    mut towers: Query<
+        (&TowerStats, &mut ScrapCollector),
+        (
+            With<Tower>,
+            Without<Placing>,
+            Without<MagnetTier>,
+            Changed<TowerTier>,
+        ),
+    >,
+) {
+    for (stats, mut collector) in &mut towers {
+        collector.range = stats.range;
+    }
+}
+
+/// Press M to upgrade the magnet tier of the inspected tower.
+pub fn apply_magnet_upgrade(
+    mut commands: Commands,
+    keyboard: Res<ButtonInput<KeyCode>>,
+    inspected: Res<InspectedTower>,
+    mut towers: Query<
+        (
+            &mut MagnetTier,
+            &BaseMagnetRange,
+            &mut ScrapCollector,
+            &mut TowerCost,
+            &Transform,
+            &Children,
+            Option<&MagnetAuraConfig>,
+        ),
+        (With<Tower>, Without<Placing>),
+    >,
+    magnet_auras: Query<Entity, With<MagnetAura>>,
+    mut pile_scrap: ResMut<PileScrap>,
+) {
+    if !keyboard.just_pressed(KeyCode::KeyM) {
+        return;
+    }
+    let Some(entity) = inspected.0 else { return };
+    let Ok((mut tier, base_range, mut collector, mut cost, transform, children, magnet_aura)) =
+        towers.get_mut(entity)
+    else {
+        return;
+    };
+
+    if tier.0 >= MAX_MAGNET_TIER {
+        return;
+    }
+
+    let ucost = MAGNET_UPGRADE_COSTS[tier.0 as usize];
+    if pile_scrap.amount < ucost {
+        return;
+    }
+
+    // Deduct and track.
+    pile_scrap.amount -= ucost;
+    cost.0 += ucost;
+    tier.0 += 1;
+    let t = tier.0 as usize;
+
+    // Update collection range.
+    collector.range = base_range.0 * MAGNET_RANGE_MULT[t];
+
+    // Despawn old magnet aura children before re-inserting config.
+    for child in children.iter() {
+        if magnet_auras.contains(child) {
+            commands.entity(child).despawn();
+        }
+    }
+
+    // Re-insert MagnetAuraConfig to trigger the Added<> reactive system.
+    let color = magnet_aura
+        .map(|c| c.color)
+        .unwrap_or(crate::common::constants::MAGNET_AURA_COLOR);
+    let mut ecmds = commands.entity(entity);
+    ecmds.remove::<MagnetAuraConfig>();
+    ecmds.insert(MagnetAuraConfig {
+        range: collector.range,
+        color,
+    });
+
+    // Floating text feedback.
+    let pos = transform.translation.truncate();
+    commands.spawn((
+        Text2d::new(format!("Magnet {}", tier.0)),
+        TextFont {
+            font_size: 14.0,
+            ..default()
+        },
+        TextColor(Color::srgb(0.4, 0.7, 1.0)),
         Transform::from_translation(pos.extend(10.0)),
         SellText {
             timer: Timer::from_seconds(0.8, TimerMode::Once),
@@ -399,6 +507,9 @@ pub fn update_upgrade_panel(
             Option<&ChainCooldown>,
             Option<&BaseArcRange>,
             Option<&TargetingMode>,
+            Option<&MagnetTier>,
+            Option<&ScrapCollector>,
+            Option<&ScrapMagnet>,
         ),
         (With<Tower>, Without<Placing>),
     >,
@@ -437,6 +548,9 @@ pub fn update_upgrade_panel(
         chain_cd,
         base_arc,
         targeting_mode,
+        magnet_tier,
+        collector,
+        is_scrap_magnet,
     )) = towers.get(entity)
     else {
         *vis = Visibility::Hidden;
@@ -590,6 +704,56 @@ pub fn update_upgrade_panel(
             parent.spawn((
                 Text::new("\nMAX TIER"),
                 TextColor(Color::srgb(0.4, 0.9, 0.4)),
+                TextFont {
+                    font_size: 13.0,
+                    ..default()
+                },
+            ));
+        }
+
+        // Magnet upgrade section
+        if let Some(col) = collector {
+            parent.spawn((
+                Text::new(format!("COLLECT: {:.0}", col.range)),
+                TextColor(STAT_COLOR),
+                TextFont {
+                    font_size: 13.0,
+                    ..default()
+                },
+            ));
+        }
+
+        if let Some(mt) = magnet_tier {
+            if mt.0 < MAX_MAGNET_TIER {
+                let mcost = MAGNET_UPGRADE_COSTS[mt.0 as usize];
+                let can_afford_m = pile_scrap.amount >= mcost;
+                let mcost_color = if can_afford_m {
+                    LABEL_COLOR
+                } else {
+                    Color::srgb(0.9, 0.3, 0.3)
+                };
+                parent.spawn((
+                    Text::new(format!("[M] Magnet: ${mcost}")),
+                    TextColor(mcost_color),
+                    TextFont {
+                        font_size: 13.0,
+                        ..default()
+                    },
+                ));
+            } else {
+                parent.spawn((
+                    Text::new("MAGNET: MAX"),
+                    TextColor(Color::srgb(0.4, 0.7, 1.0)),
+                    TextFont {
+                        font_size: 13.0,
+                        ..default()
+                    },
+                ));
+            }
+        } else if is_scrap_magnet.is_some() {
+            parent.spawn((
+                Text::new("MAGNET: MAX"),
+                TextColor(Color::srgb(0.4, 0.7, 1.0)),
                 TextFont {
                     font_size: 13.0,
                     ..default()

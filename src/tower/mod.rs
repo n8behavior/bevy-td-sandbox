@@ -10,7 +10,10 @@ use crate::states::{GameState, PlayPhase};
 use bevy::prelude::*;
 use bevy::sprite_render::MeshMaterial2d;
 
-use components::{AuraRingConfig, AuraVisual, RangeRing, RangeRingConfig, TowerRegistry};
+use components::{
+    AuraRingConfig, AuraVisual, MagnetAura, MagnetAuraConfig, RangeRing, RangeRingConfig,
+    TowerRegistry,
+};
 
 /// Reactive system: when a tower entity gets a `RangeRingConfig`, spawn the
 /// shader-driven range ring as a child.
@@ -66,6 +69,34 @@ fn spawn_aura_rings(
     }
 }
 
+/// Reactive system: when a tower entity gets a `MagnetAuraConfig`, spawn
+/// a collection aura ring as a child. Separate from `AuraRingConfig` so
+/// towers can have both a gameplay aura and a collection aura.
+fn spawn_magnet_aura_rings(
+    mut commands: Commands,
+    query: Query<(Entity, &MagnetAuraConfig), Added<MagnetAuraConfig>>,
+    circle_mesh: Res<CircleMesh>,
+    mut materials: ResMut<Assets<CircleMaterial>>,
+) {
+    for (entity, config) in &query {
+        let diameter = config.range * 2.0;
+        let mat = materials.add(CircleMaterial {
+            color: config.color,
+            softness: 0.05,
+            fill_fade: 1.0,
+            ripple_speed: 0.4,
+            time: 0.0,
+        });
+        commands.entity(entity).with_child((
+            MagnetAura,
+            Mesh2d(circle_mesh.0.clone()),
+            MeshMaterial2d(mat),
+            Transform::from_translation(Vec3::new(0.0, 0.0, -0.2))
+                .with_scale(Vec3::splat(diameter)),
+        ));
+    }
+}
+
 /// Sort tower blueprints by key so the menu order matches key assignments,
 /// regardless of which Startup `register` system ran first.
 fn sort_blueprints(mut registry: ResMut<TowerRegistry>) {
@@ -112,6 +143,8 @@ impl Plugin for TowerPlugin {
                     targeting::handle_radial_click,
                     upgrade::inspect_tower,
                     upgrade::apply_upgrade,
+                    upgrade::sync_collector_on_upgrade,
+                    upgrade::apply_magnet_upgrade,
                 )
                     .chain()
                     .run_if(in_state(GameState::Playing)),
@@ -133,7 +166,8 @@ impl Plugin for TowerPlugin {
             )
             .add_systems(
                 Update,
-                (spawn_range_rings, spawn_aura_rings).run_if(in_state(GameState::Playing)),
+                (spawn_range_rings, spawn_aura_rings, spawn_magnet_aura_rings)
+                    .run_if(in_state(GameState::Playing)),
             )
             .add_systems(
                 FixedUpdate,

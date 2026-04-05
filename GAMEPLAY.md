@@ -28,6 +28,7 @@ There are **20 waves** of increasing difficulty.
 | **Left Click** (inspected tower) | Open targeting mode menu |
 | **Right Click** | Sell tower (60% refund) |
 | **U** | Upgrade inspected tower |
+| **M** | Upgrade magnet tier (inspection) |
 | **Escape** | Close targeting menu / Close inspection / Deselect tower |
 | **Enter** | Start next wave (Building phase) |
 | **Scroll Wheel** | Zoom in/out |
@@ -68,6 +69,23 @@ Towers have **3 tiers**. Each upgrade boosts stats and brightens the sprite:
 | 3 | 2.0x | 1.2x | +30% faster | 150% of base cost |
 
 Selling an upgraded tower refunds **60% of total investment** (base cost + all upgrade costs).
+
+## Magnet Upgrades
+
+Every tower has a scrap collection aura that pulls nearby drops. Press **M** while inspecting a tower to upgrade its magnet tier, increasing collection radius independently from stat upgrades.
+
+| Magnet Tier | Cost | Collection Radius |
+|-------------|------|-------------------|
+| 0 (base) | -- | 30 units |
+| 1 | 25 | 45 units (+50%) |
+| 2 | 50 | 60 units (+100%) |
+| 3 | 75 | 75 units (+150%) |
+
+**Total investment for max magnet: 150 scrap.**
+
+The **Scrap Magnet** tower has built-in max collection (90 units) and cannot be further magnet-upgraded. Its collection range scales with stat upgrades instead.
+
+Magnet upgrade costs are included in the sell refund calculation (60% of total investment).
 
 ## Targeting Modes
 

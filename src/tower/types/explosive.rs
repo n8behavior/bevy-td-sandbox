@@ -36,10 +36,6 @@ fn register(mut registry: ResMut<TowerRegistry>) {
                     range: stats.range,
                     color: Color::srgba(0.9, 0.2, 0.0, 0.15),
                 },
-                AuraRingConfig {
-                    range: collect_range,
-                    color: MAGNET_AURA_COLOR,
-                },
                 ScrapCollector {
                     range: collect_range,
                 },
@@ -73,6 +69,14 @@ fn register(mut registry: ResMut<TowerRegistry>) {
                     aoe_damage,
                     slow_factor: 1.0,
                     color,
+                },
+            ));
+            cmds.insert((
+                MagnetTier(0),
+                BaseMagnetRange(collect_range),
+                MagnetAuraConfig {
+                    range: collect_range,
+                    color: MAGNET_AURA_COLOR,
                 },
             ));
         },
