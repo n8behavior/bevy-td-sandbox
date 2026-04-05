@@ -1,6 +1,6 @@
 use bevy::prelude::*;
 
-use crate::common::constants::MAGNET_AURA_COLOR;
+use crate::common::constants::{MAGNET_AURA_COLOR, TOWER_HP_COST_MULT};
 use crate::tower::components::*;
 
 #[derive(Component)]
@@ -71,6 +71,11 @@ fn register(mut registry: ResMut<TowerRegistry>) {
                     color,
                 },
             ));
+            let max_hp = 125.0 * TOWER_HP_COST_MULT;
+            cmds.insert(TowerHealth {
+                current: max_hp,
+                max: max_hp,
+            });
             cmds.insert((
                 MagnetTier(0),
                 BaseMagnetRange(collect_range),

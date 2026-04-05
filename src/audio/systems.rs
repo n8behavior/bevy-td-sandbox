@@ -17,6 +17,9 @@ pub fn init_sound_assets(mut commands: Commands, mut pitches: ResMut<Assets<Pitc
         boss_spawn: pitches.add(Pitch::new(55.0, Duration::from_millis(500))),
         wave_start: pitches.add(Pitch::new(440.0, Duration::from_millis(200))),
         game_over: pitches.add(Pitch::new(165.0, Duration::from_millis(400))),
+        brute_attack: pitches.add(Pitch::new(165.0, Duration::from_millis(100))),
+        tower_destroyed: pitches.add(Pitch::new(82.0, Duration::from_millis(300))),
+        tower_repaired: pitches.add(Pitch::new(550.0, Duration::from_millis(150))),
     });
 }
 

@@ -14,6 +14,11 @@ use crate::pile::resources::{EdgeCells, PileScrap, PileState};
 use crate::pile::systems::{nearest_edge_cell, nearest_pile_cell};
 use crate::shader::CircleMaterial;
 
+use crate::common::constants::{BRUTE_ATTACK_COOLDOWN, BRUTE_ATTACK_DAMAGE, BRUTE_ATTACK_RANGE};
+use crate::tower::components::{
+    BaseStats, BlocksNav, Placing, Tower, TowerHealth, TowerRubble, TowerTier, UpgradeFlash,
+};
+use crate::tower::upgrade::degradation_color;
 use crate::wave::resources::BossTrait;
 
 use super::components::*;
@@ -496,6 +501,13 @@ pub fn spawn_enemy(
         ))
         .id();
 
+    if matches!(enemy_type, EnemyType::Brute) {
+        commands.entity(entity_id).insert(BruteAttack {
+            cooldown: Timer::from_seconds(BRUTE_ATTACK_COOLDOWN, TimerMode::Once),
+            damage: BRUTE_ATTACK_DAMAGE,
+        });
+    }
+
     match boss_trait {
         Some(BossTrait::Regeneration) => {
             commands
@@ -559,5 +571,79 @@ pub fn on_boss_split(
             &config,
             None,
         );
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Brute tower attack
+// ---------------------------------------------------------------------------
+
+/// Brutes attack adjacent impassable towers, dealing damage over time.
+pub fn brute_attack_towers(
+    mut brutes: Query<
+        (&Transform, &mut BruteAttack),
+        (With<Enemy>, Without<Dead>, Without<Dying>, Without<Tower>),
+    >,
+    mut towers: Query<
+        (
+            Entity,
+            &Transform,
+            &mut TowerHealth,
+            &BaseStats,
+            &TowerTier,
+            &mut Sprite,
+        ),
+        (
+            With<Tower>,
+            With<BlocksNav>,
+            Without<Placing>,
+            Without<TowerRubble>,
+            Without<Enemy>,
+        ),
+    >,
+    mut commands: Commands,
+    time: Res<Time>,
+    sounds: Res<SoundAssets>,
+) {
+    for (brute_tf, mut attack) in &mut brutes {
+        attack.cooldown.tick(time.delta());
+        if !attack.cooldown.is_finished() {
+            continue;
+        }
+
+        let brute_pos = brute_tf.translation.truncate();
+
+        // Find nearest tower in attack range.
+        let mut best: Option<(Entity, f32)> = None;
+        for (entity, tower_tf, _, _, _, _) in &towers {
+            let dist = brute_pos.distance(tower_tf.translation.truncate());
+            if dist <= BRUTE_ATTACK_RANGE && best.is_none_or(|(_, d)| dist < d) {
+                best = Some((entity, dist));
+            }
+        }
+
+        let Some((target_entity, _)) = best else {
+            continue;
+        };
+
+        attack.cooldown.reset();
+
+        if let Ok((entity, _, mut health, base, tier, mut sprite)) = towers.get_mut(target_entity) {
+            health.current = (health.current - attack.damage).max(0.0);
+
+            play_sound(&mut commands, &sounds.brute_attack, 0.3);
+
+            // Flash white then restore to degradation color.
+            sprite.color = Color::WHITE;
+            commands.entity(entity).insert(UpgradeFlash {
+                timer: Timer::from_seconds(0.1, TimerMode::Once),
+                target_color: degradation_color(base.color, tier.0, &health),
+            });
+
+            if health.current <= 0.0 {
+                commands.entity(entity).insert(TowerRubble);
+                play_sound(&mut commands, &sounds.tower_destroyed, 0.5);
+            }
+        }
     }
 }

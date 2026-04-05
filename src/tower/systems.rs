@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use bevy::prelude::*;
 
 use crate::audio::resources::SoundAssets;
@@ -15,6 +17,7 @@ use super::types::explosive::Explosive;
 use super::types::railgun::Railgun;
 use super::types::scrap_gun::ScrapGun;
 use super::types::scrap_magnet::ScrapMagnet;
+use super::upgrade::degradation_color;
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -86,13 +89,13 @@ fn spawn_projectile(
     commands: &mut Commands,
     visuals: &ProjectileVisuals,
     tower_tf: &Transform,
-    stats: &TowerStats,
+    damage: f32,
     target: Entity,
     aoe: Option<&AoEOnHit>,
 ) {
     let mut proj = commands.spawn((
         Projectile {
-            damage: stats.damage,
+            damage,
             speed: visuals.speed,
             target,
         },
@@ -134,8 +137,9 @@ pub fn turret_state_machine(
             Option<&ScrapGun>,
             Option<&Explosive>,
             Option<&Railgun>,
+            Option<&TowerHealth>,
         ),
-        (With<Tower>, Without<Placing>),
+        (With<Tower>, Without<Placing>, Without<TowerRubble>),
     >,
     enemies: Query<(Entity, &Transform, &Health), (With<Enemy>, Without<Dead>, Without<Dying>)>,
     time: Res<Time>,
@@ -155,14 +159,18 @@ pub fn turret_state_machine(
         is_scrapgun,
         is_explosive,
         is_railgun,
+        tower_health,
     ) in &mut towers
     {
+        let eff = tower_health.map_or(1.0, |h| h.effectiveness());
         let range = stats.range;
         let tower_pos = tower_tf.translation.truncate();
         let mode = targeting.copied().unwrap_or_default();
 
-        // Cooldown ticks in all phases.
-        state.cooldown.tick(time.delta());
+        // Cooldown ticks scaled by effectiveness (slower fire when damaged).
+        state
+            .cooldown
+            .tick(Duration::from_secs_f64(time.delta_secs_f64() * eff as f64));
 
         let best = find_best_target(&enemies, tower_pos, range, mode, pile_center_world);
 
@@ -199,7 +207,14 @@ pub fn turret_state_machine(
                         state.phase = TurretPhase::Acquiring { target };
                     } else if state.cooldown.is_finished() {
                         // FIRE!
-                        spawn_projectile(&mut commands, visuals, tower_tf, stats, target, aoe);
+                        spawn_projectile(
+                            &mut commands,
+                            visuals,
+                            tower_tf,
+                            stats.damage * eff,
+                            target,
+                            aoe,
+                        );
                         state.cooldown.reset();
 
                         if is_scrapgun.is_some() {
@@ -223,19 +238,25 @@ pub fn turret_state_machine(
 /// Continuously slow enemies within range of any tower with SlowOnHit.
 pub fn slow_aura(
     mut commands: Commands,
-    aura_towers: Query<(&Transform, &TowerStats, &SlowOnHit), (With<Tower>, Without<Placing>)>,
+    aura_towers: Query<
+        (&Transform, &TowerStats, &SlowOnHit, Option<&TowerHealth>),
+        (With<Tower>, Without<Placing>, Without<TowerRubble>),
+    >,
     enemies: Query<(Entity, &Transform), (With<Enemy>, Without<Dead>, Without<Dying>)>,
 ) {
-    for (tower_tf, stats, slow) in aura_towers.iter() {
+    for (tower_tf, stats, slow, tower_health) in aura_towers.iter() {
+        let eff = tower_health.map_or(1.0, |h| h.effectiveness());
         let range = stats.range;
         let tower_pos = tower_tf.translation.truncate();
 
         for (enemy_entity, enemy_tf) in &enemies {
             let dist = tower_pos.distance(enemy_tf.translation.truncate());
             if dist <= range {
-                // Slow proportional to distance: full slow at center, no slow at edge
+                // Slow proportional to distance: full slow at center, no slow at edge.
                 let t = (dist / range).clamp(0.0, 1.0);
-                let factor = slow.factor + (1.0 - slow.factor) * t;
+                let base_factor = slow.factor + (1.0 - slow.factor) * t;
+                // Scale slow strength by effectiveness.
+                let factor = 1.0 - (1.0 - base_factor) * eff;
                 commands.entity(enemy_entity).insert(SlowEffect {
                     factor,
                     remaining: Timer::from_seconds(slow.duration, TimerMode::Once),
@@ -294,7 +315,10 @@ pub fn rotate_towers_to_target(
 /// Pull scrap drops toward the nearest scrap collector in range; auto-collect on contact.
 /// Matches the pile, magnet tower, and mechanical towers with ScrapCollector.
 pub fn scrap_magnet_collect(
-    collectors: Query<(&Transform, &ScrapCollector), (Without<Placing>, Without<ScrapDrop>)>,
+    collectors: Query<
+        (&Transform, &ScrapCollector, Option<&TowerRubble>),
+        (Without<Placing>, Without<ScrapDrop>),
+    >,
     mut drops: Query<(Entity, &ScrapDrop, &mut Transform), Without<ScrapCollector>>,
     mut pile_scrap: ResMut<PileScrap>,
     mut commands: Commands,
@@ -307,7 +331,10 @@ pub fn scrap_magnet_collect(
 
         // Find nearest collector in range.
         let mut best: Option<(Vec2, f32, f32)> = None;
-        for (col_tf, collector) in &collectors {
+        for (col_tf, collector, rubble) in &collectors {
+            if rubble.is_some() {
+                continue;
+            }
             let col_pos = col_tf.translation.truncate();
             let dist = col_pos.distance(drop_pos);
             if dist <= collector.range && best.is_none_or(|(_, d, _)| dist < d) {
@@ -372,8 +399,9 @@ pub fn chain_lightning_fire(
             &ChainLightning,
             &mut ChainCooldown,
             Option<&TargetingMode>,
+            Option<&TowerHealth>,
         ),
-        (With<Tower>, Without<Placing>),
+        (With<Tower>, Without<Placing>, Without<TowerRubble>),
     >,
     mut enemies: Query<
         (Entity, &mut Health, &Transform, &Sprite),
@@ -385,8 +413,11 @@ pub fn chain_lightning_fire(
     sounds: Res<SoundAssets>,
 ) {
     let pile_center_world = grid_to_world_cfg(pile_state.center, &config);
-    for (tower_tf, stats, chain, mut cooldown, targeting) in &mut towers {
-        cooldown.timer.tick(time.delta());
+    for (tower_tf, stats, chain, mut cooldown, targeting, tower_health) in &mut towers {
+        let eff = tower_health.map_or(1.0, |h| h.effectiveness());
+        cooldown
+            .timer
+            .tick(Duration::from_secs_f64(time.delta_secs_f64() * eff as f64));
         if !cooldown.timer.is_finished() {
             continue;
         }
@@ -406,7 +437,7 @@ pub fn chain_lightning_fire(
         // Build chain (read-only pass via .iter() / .get()).
         let mut chain_targets: Vec<(Entity, Vec2, f32)> = Vec::new();
         let mut hit_set = vec![first_target];
-        let mut current_damage = stats.damage;
+        let mut current_damage = stats.damage * eff;
 
         if let Ok((_, _, tf, _)) = enemies.get(first_target) {
             let pos = tf.translation.truncate();
@@ -503,7 +534,12 @@ pub fn animate_lightning_arcs(
 pub fn magnetic_pull_enemies(
     magnets: Query<
         (&Transform, &ScrapCollector),
-        (With<ScrapMagnet>, With<Tower>, Without<Placing>),
+        (
+            With<ScrapMagnet>,
+            With<Tower>,
+            Without<Placing>,
+            Without<TowerRubble>,
+        ),
     >,
     mut enemies: Query<
         &mut Transform,
@@ -523,5 +559,66 @@ pub fn magnetic_pull_enemies(
                 enemy_tf.translation += pull.extend(0.0);
             }
         }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Tower damage / rubble systems
+// ---------------------------------------------------------------------------
+
+/// When a tower becomes rubble, set sprite to grey, despawn ring children,
+/// and reset turret state.
+pub fn on_tower_becomes_rubble(
+    mut commands: Commands,
+    mut rubble_towers: Query<
+        (Entity, &Children, &mut Sprite, Option<&mut TurretState>),
+        Added<TowerRubble>,
+    >,
+    range_rings: Query<Entity, With<RangeRing>>,
+    aura_visuals: Query<Entity, With<AuraVisual>>,
+    magnet_auras: Query<Entity, With<MagnetAura>>,
+    sounds: Res<SoundAssets>,
+) {
+    for (entity, children, mut sprite, turret) in &mut rubble_towers {
+        sprite.color = RUBBLE_TOWER_COLOR;
+
+        if let Some(mut turret) = turret {
+            turret.phase = TurretPhase::Idle;
+        }
+
+        // Despawn visual ring children (keep config components for repair).
+        for child in children.iter() {
+            if range_rings.contains(child)
+                || aura_visuals.contains(child)
+                || magnet_auras.contains(child)
+            {
+                commands.entity(child).despawn();
+            }
+        }
+
+        // Remove the UpgradeFlash so the rubble color sticks.
+        commands.entity(entity).remove::<UpgradeFlash>();
+
+        play_sound(&mut commands, &sounds.tower_destroyed, 0.5);
+    }
+}
+
+/// Update tower sprite color based on health degradation thresholds.
+/// Skips towers with an active UpgradeFlash (the flash will restore the
+/// correct color when it finishes).
+pub fn update_tower_degradation_visual(
+    mut towers: Query<
+        (&TowerHealth, &BaseStats, &TowerTier, &mut Sprite),
+        (
+            With<Tower>,
+            Without<Placing>,
+            Without<TowerRubble>,
+            Without<UpgradeFlash>,
+            Changed<TowerHealth>,
+        ),
+    >,
+) {
+    for (health, base, tier, mut sprite) in &mut towers {
+        sprite.color = degradation_color(base.color, tier.0, health);
     }
 }

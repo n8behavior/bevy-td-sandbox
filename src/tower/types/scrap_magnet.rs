@@ -1,6 +1,6 @@
 use bevy::prelude::*;
 
-use crate::common::constants::MAGNET_AURA_COLOR;
+use crate::common::constants::{MAGNET_AURA_COLOR, TOWER_HP_COST_MULT};
 use crate::tower::components::*;
 
 /// Marker for the dedicated Magnet tower type.
@@ -60,6 +60,11 @@ fn register(mut registry: ResMut<TowerRegistry>) {
                     color,
                 },
             ));
+            let max_hp = 100.0 * TOWER_HP_COST_MULT;
+            cmds.insert(TowerHealth {
+                current: max_hp,
+                max: max_hp,
+            });
         },
     });
 }

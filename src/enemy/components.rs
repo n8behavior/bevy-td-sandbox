@@ -169,3 +169,11 @@ pub struct Armor {
 pub struct SplitsOnDeath {
     pub count: u32,
 }
+
+/// Brute tower attack: cooldown timer and damage per hit.
+/// Only present on Brute enemies.
+#[derive(Component)]
+pub struct BruteAttack {
+    pub cooldown: Timer,
+    pub damage: f32,
+}

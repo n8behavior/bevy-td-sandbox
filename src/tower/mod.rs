@@ -145,6 +145,7 @@ impl Plugin for TowerPlugin {
                     upgrade::apply_upgrade,
                     upgrade::sync_collector_on_upgrade,
                     upgrade::apply_magnet_upgrade,
+                    upgrade::apply_repair,
                 )
                     .chain()
                     .run_if(in_state(GameState::Playing)),
@@ -186,6 +187,8 @@ impl Plugin for TowerPlugin {
                     systems::rotate_towers_to_target,
                     systems::scrap_magnet_collect,
                     systems::animate_lightning_arcs,
+                    systems::on_tower_becomes_rubble,
+                    systems::update_tower_degradation_visual,
                 )
                     .run_if(in_state(GameState::Playing)),
             );

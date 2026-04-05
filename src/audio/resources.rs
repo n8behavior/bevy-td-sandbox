@@ -12,4 +12,7 @@ pub struct SoundAssets {
     pub boss_spawn: Handle<Pitch>,
     pub wave_start: Handle<Pitch>,
     pub game_over: Handle<Pitch>,
+    pub brute_attack: Handle<Pitch>,
+    pub tower_destroyed: Handle<Pitch>,
+    pub tower_repaired: Handle<Pitch>,
 }

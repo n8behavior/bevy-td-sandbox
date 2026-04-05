@@ -3,6 +3,8 @@ use std::time::Duration;
 use bevy::prelude::*;
 use bevy::sprite_render::MeshMaterial2d;
 
+use crate::audio::resources::SoundAssets;
+use crate::audio::systems::play_sound;
 use crate::common::constants::{GridConfig, TILE_SIZE};
 use crate::grid::components::GridCell;
 use crate::grid::systems::world_to_grid;
@@ -11,6 +13,10 @@ use crate::shader::{CircleMaterial, CircleMesh};
 use crate::states::GameState;
 use crate::stats::resources::RunStats;
 use crate::ui::tower_menu::WavePreviewPanel;
+
+use crate::common::constants::{
+    REPAIR_COST_FRAC, REPAIR_RUBBLE_COST_FRAC, TOWER_HP_COST_MULT, TOWER_HP_TIER_MULT,
+};
 
 use super::components::*;
 use super::placement::{SelectedTower, SellText};
@@ -60,7 +66,7 @@ pub struct UpgradePanel;
 // Helpers
 // ---------------------------------------------------------------------------
 
-fn tier_color(base: Color, tier: u8) -> Color {
+pub fn tier_color(base: Color, tier: u8) -> Color {
     let Srgba {
         red,
         green,
@@ -72,6 +78,37 @@ fn tier_color(base: Color, tier: u8) -> Color {
         (red + boost).min(1.0),
         (green + boost).min(1.0),
         (blue + boost).min(1.0),
+        alpha,
+    )
+}
+
+/// Compute tower sprite color based on health degradation + tier.
+pub fn degradation_color(base: Color, tier: u8, health: &TowerHealth) -> Color {
+    use crate::common::constants::RUBBLE_TOWER_COLOR;
+    let eff = health.effectiveness();
+    let tc = tier_color(base, tier);
+    if eff >= 1.0 {
+        tc
+    } else if eff >= 0.75 {
+        darken(tc, 0.15)
+    } else if eff > 0.0 {
+        darken(tc, 0.35)
+    } else {
+        RUBBLE_TOWER_COLOR
+    }
+}
+
+fn darken(color: Color, amount: f32) -> Color {
+    let Srgba {
+        red,
+        green,
+        blue,
+        alpha,
+    } = Srgba::from(color);
+    Color::srgba(
+        (red - amount).max(0.0),
+        (green - amount).max(0.0),
+        (blue - amount).max(0.0),
         alpha,
     )
 }
@@ -175,13 +212,16 @@ pub fn apply_upgrade(
             Option<&mut TurretState>,
             Option<&mut AoEOnHit>,
             Option<&mut SlowOnHit>,
-            Option<&RangeRingConfig>,
-            Option<&AuraRingConfig>,
-            Option<&mut ChainLightning>,
-            Option<&BaseArcRange>,
-            Option<&mut ChainCooldown>,
+            (
+                Option<&RangeRingConfig>,
+                Option<&AuraRingConfig>,
+                Option<&mut ChainLightning>,
+                Option<&BaseArcRange>,
+                Option<&mut ChainCooldown>,
+                Option<&mut TowerHealth>,
+            ),
         ),
-        (With<Tower>, Without<Placing>),
+        (With<Tower>, Without<Placing>, Without<TowerRubble>),
     >,
     range_rings: Query<Entity, With<RangeRing>>,
     aura_visuals: Query<Entity, With<AuraVisual>>,
@@ -203,11 +243,7 @@ pub fn apply_upgrade(
         turret,
         aoe,
         slow,
-        range_ring,
-        aura_ring,
-        chain_lightning,
-        base_arc_range,
-        chain_cooldown,
+        (range_ring, aura_ring, chain_lightning, base_arc_range, chain_cooldown, tower_health),
     )) = towers.get_mut(entity)
     else {
         return;
@@ -231,6 +267,14 @@ pub fn apply_upgrade(
     }
     tier.0 += 1;
     let t = tier.0 as usize;
+
+    // Scale tower HP with tier (preserve damage fraction).
+    if let Some(mut health) = tower_health {
+        let old_frac = health.fraction();
+        let new_max = base.cost as f32 * TOWER_HP_COST_MULT * TOWER_HP_TIER_MULT[t];
+        health.max = new_max;
+        health.current = new_max * old_frac;
+    }
 
     // Apply stat multipliers from base.
     stats.damage = base.damage * DAMAGE_MULT[t];
@@ -345,7 +389,7 @@ pub fn apply_magnet_upgrade(
             &Children,
             Option<&MagnetAuraConfig>,
         ),
-        (With<Tower>, Without<Placing>),
+        (With<Tower>, Without<Placing>, Without<TowerRubble>),
     >,
     magnet_auras: Query<Entity, With<MagnetAura>>,
     mut pile_scrap: ResMut<PileScrap>,
@@ -405,6 +449,145 @@ pub fn apply_magnet_upgrade(
             ..default()
         },
         TextColor(Color::srgb(0.4, 0.7, 1.0)),
+        Transform::from_translation(pos.extend(10.0)),
+        SellText {
+            timer: Timer::from_seconds(0.8, TimerMode::Once),
+        },
+    ));
+}
+
+/// Press R to repair the inspected damaged tower.
+pub fn apply_repair(
+    mut commands: Commands,
+    keyboard: Res<ButtonInput<KeyCode>>,
+    inspected: Res<InspectedTower>,
+    mut towers: Query<
+        (
+            Entity,
+            &mut TowerHealth,
+            &BaseStats,
+            &TowerTier,
+            &mut Sprite,
+            &Transform,
+            &Children,
+            Option<&TowerRubble>,
+            Option<&RangeRingConfig>,
+            Option<&AuraRingConfig>,
+            Option<&MagnetAuraConfig>,
+        ),
+        (With<Tower>, Without<Placing>),
+    >,
+    range_rings: Query<Entity, With<RangeRing>>,
+    aura_visuals: Query<Entity, With<AuraVisual>>,
+    magnet_auras: Query<Entity, With<MagnetAura>>,
+    mut pile_scrap: ResMut<PileScrap>,
+    mut run_stats: Option<ResMut<RunStats>>,
+    sounds: Res<SoundAssets>,
+) {
+    if !keyboard.just_pressed(KeyCode::KeyR) {
+        return;
+    }
+    let Some(entity) = inspected.0 else { return };
+    let Ok((
+        entity,
+        mut health,
+        base,
+        tier,
+        mut sprite,
+        transform,
+        children,
+        rubble,
+        range_ring,
+        aura_ring,
+        magnet_aura,
+    )) = towers.get_mut(entity)
+    else {
+        return;
+    };
+
+    // No-op if already at full HP.
+    if health.current >= health.max {
+        return;
+    }
+
+    let is_rubble = rubble.is_some();
+    let fraction = if is_rubble {
+        REPAIR_RUBBLE_COST_FRAC
+    } else {
+        REPAIR_COST_FRAC
+    };
+    let repair_cost = (base.cost as f32 * fraction) as u32;
+
+    if pile_scrap.amount < repair_cost {
+        return;
+    }
+
+    pile_scrap.amount -= repair_cost;
+    if let Some(run_stats) = run_stats.as_mut() {
+        run_stats.scrap_spent += repair_cost;
+    }
+
+    health.current = health.max;
+
+    if is_rubble {
+        commands.entity(entity).remove::<TowerRubble>();
+
+        // Despawn any stale ring children that survived.
+        for child in children.iter() {
+            if range_rings.contains(child)
+                || aura_visuals.contains(child)
+                || magnet_auras.contains(child)
+            {
+                commands.entity(child).despawn();
+            }
+        }
+
+        // Re-insert ring configs to trigger Added<> reactive spawning.
+        let mut ecmds = commands.entity(entity);
+        if let Some(rr) = range_ring {
+            let rr_new = RangeRingConfig {
+                range: rr.range,
+                color: rr.color,
+            };
+            ecmds.remove::<RangeRingConfig>();
+            ecmds.insert(rr_new);
+        }
+        if let Some(ar) = aura_ring {
+            let ar_new = AuraRingConfig {
+                range: ar.range,
+                color: ar.color,
+            };
+            ecmds.remove::<AuraRingConfig>();
+            ecmds.insert(ar_new);
+        }
+        if let Some(ma) = magnet_aura {
+            let ma_new = MagnetAuraConfig {
+                range: ma.range,
+                color: ma.color,
+            };
+            ecmds.remove::<MagnetAuraConfig>();
+            ecmds.insert(ma_new);
+        }
+    }
+
+    // Visual: white flash restoring to healthy tier color.
+    let healthy_color = tier_color(base.color, tier.0);
+    sprite.color = Color::WHITE;
+    commands.entity(entity).insert(UpgradeFlash {
+        timer: Timer::from_seconds(0.15, TimerMode::Once),
+        target_color: healthy_color,
+    });
+
+    play_sound(&mut commands, &sounds.tower_repaired, 0.4);
+
+    let pos = transform.translation.truncate();
+    commands.spawn((
+        Text2d::new("Repaired!"),
+        TextFont {
+            font_size: 14.0,
+            ..default()
+        },
+        TextColor(Color::srgb(0.3, 0.9, 0.3)),
         Transform::from_translation(pos.extend(10.0)),
         SellText {
             timer: Timer::from_seconds(0.8, TimerMode::Once),
@@ -503,16 +686,21 @@ pub fn update_upgrade_panel(
             Option<&TurretState>,
             Option<&AoEOnHit>,
             Option<&SlowOnHit>,
-            Option<&ChainLightning>,
-            Option<&ChainCooldown>,
-            Option<&BaseArcRange>,
-            Option<&TargetingMode>,
-            Option<&MagnetTier>,
-            Option<&ScrapCollector>,
-            Option<&ScrapMagnet>,
+            (
+                Option<&ChainLightning>,
+                Option<&ChainCooldown>,
+                Option<&BaseArcRange>,
+                Option<&TargetingMode>,
+                Option<&MagnetTier>,
+                Option<&ScrapCollector>,
+                Option<&ScrapMagnet>,
+                Option<&TowerHealth>,
+                Option<&TowerRubble>,
+            ),
         ),
         (With<Tower>, Without<Placing>),
     >,
+    tower_health_check: Query<&TowerHealth, (With<Tower>, Changed<TowerHealth>)>,
     mut panel_query: Query<(Entity, &mut Visibility), With<UpgradePanel>>,
     mut wave_preview: Query<&mut Visibility, (With<WavePreviewPanel>, Without<UpgradePanel>)>,
     pile_scrap: Res<PileScrap>,
@@ -521,8 +709,13 @@ pub fn update_upgrade_panel(
         return;
     };
 
-    // Only rebuild when something relevant changes.
-    if !inspected.is_changed() && !pile_scrap.is_changed() && !radial_menu.is_changed() {
+    // Rebuild when something relevant changes (including tower health during combat).
+    let health_changed = inspected.0.is_some_and(|e| tower_health_check.contains(e));
+    if !health_changed
+        && !inspected.is_changed()
+        && !pile_scrap.is_changed()
+        && !radial_menu.is_changed()
+    {
         return;
     }
 
@@ -544,13 +737,17 @@ pub fn update_upgrade_panel(
         turret,
         aoe,
         slow,
-        chain,
-        chain_cd,
-        base_arc,
-        targeting_mode,
-        magnet_tier,
-        collector,
-        is_scrap_magnet,
+        (
+            chain,
+            chain_cd,
+            base_arc,
+            targeting_mode,
+            magnet_tier,
+            collector,
+            is_scrap_magnet,
+            tower_health,
+            tower_rubble,
+        ),
     )) = towers.get(entity)
     else {
         *vis = Visibility::Hidden;
@@ -581,6 +778,33 @@ pub fn update_upgrade_panel(
                 ..default()
             },
         ));
+
+        // Tower HP (only shown for towers with health)
+        if let Some(health) = tower_health {
+            let is_rubble = tower_rubble.is_some();
+            let hp_text = if is_rubble {
+                "HP: RUBBLE".to_string()
+            } else {
+                format!("HP: {:.0}/{:.0}", health.current, health.max)
+            };
+            let hp_color = if is_rubble {
+                Color::srgb(0.5, 0.2, 0.2)
+            } else if health.fraction() > 0.5 {
+                Color::srgb(0.3, 0.8, 0.3)
+            } else if health.fraction() > 0.25 {
+                Color::srgb(0.9, 0.8, 0.2)
+            } else {
+                Color::srgb(0.9, 0.3, 0.3)
+            };
+            parent.spawn((
+                Text::new(hp_text),
+                TextColor(hp_color),
+                TextFont {
+                    font_size: 13.0,
+                    ..default()
+                },
+            ));
+        }
 
         // Current stats
         parent.spawn((
@@ -664,8 +888,17 @@ pub fn update_upgrade_panel(
             ));
         }
 
-        // Upgrade or max tier
-        if tier.0 < MAX_TIER {
+        // Upgrade or max tier (hidden when rubble — must repair first)
+        if tower_rubble.is_some() {
+            parent.spawn((
+                Text::new("\nREPAIR REQUIRED"),
+                TextColor(Color::srgb(0.9, 0.3, 0.3)),
+                TextFont {
+                    font_size: 13.0,
+                    ..default()
+                },
+            ));
+        } else if tier.0 < MAX_TIER {
             let ucost = upgrade_cost(base.cost, tier.0);
             let t = tier.0 as usize + 1;
             let next_dmg = base.damage * DAMAGE_MULT[t];
@@ -754,6 +987,33 @@ pub fn update_upgrade_panel(
             parent.spawn((
                 Text::new("MAGNET: MAX"),
                 TextColor(Color::srgb(0.4, 0.7, 1.0)),
+                TextFont {
+                    font_size: 13.0,
+                    ..default()
+                },
+            ));
+        }
+
+        // Repair hint (only when damaged)
+        if let Some(health) = tower_health
+            && health.current < health.max
+        {
+            let is_rubble = tower_rubble.is_some();
+            let frac = if is_rubble {
+                REPAIR_RUBBLE_COST_FRAC
+            } else {
+                REPAIR_COST_FRAC
+            };
+            let repair_cost = (base.cost as f32 * frac) as u32;
+            let can_afford = pile_scrap.amount >= repair_cost;
+            let repair_color = if can_afford {
+                LABEL_COLOR
+            } else {
+                Color::srgb(0.9, 0.3, 0.3)
+            };
+            parent.spawn((
+                Text::new(format!("[R] Repair: ${repair_cost}")),
+                TextColor(repair_color),
                 TextFont {
                     font_size: 13.0,
                     ..default()

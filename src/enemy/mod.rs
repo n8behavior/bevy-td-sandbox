@@ -21,6 +21,7 @@ impl Plugin for EnemyPlugin {
                     systems::enemy_reached_pile,
                     systems::enemy_escaped,
                     systems::check_enemy_death,
+                    systems::brute_attack_towers,
                 ),
                 // Cleanup runs after all game logic
                 systems::cleanup_dead,

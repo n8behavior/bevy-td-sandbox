@@ -111,6 +111,40 @@ pub struct UpgradeFlash {
     pub target_color: Color,
 }
 
+/// Tower hit points. Only on BlocksNav towers (impassable towers that can be attacked).
+/// When current reaches 0, the tower becomes rubble.
+#[derive(Component)]
+pub struct TowerHealth {
+    pub current: f32,
+    pub max: f32,
+}
+
+impl TowerHealth {
+    /// Effectiveness multiplier based on HP thresholds.
+    /// >50% → 1.0, 25–50% → 0.75, <25% → 0.5, 0% → 0.0
+    pub fn effectiveness(&self) -> f32 {
+        let frac = self.fraction();
+        if frac > 0.5 {
+            1.0
+        } else if frac > 0.25 {
+            0.75
+        } else if frac > 0.0 {
+            0.5
+        } else {
+            0.0
+        }
+    }
+
+    /// HP fraction 0.0..1.0.
+    pub fn fraction(&self) -> f32 {
+        (self.current / self.max).clamp(0.0, 1.0)
+    }
+}
+
+/// Marker for towers destroyed to rubble. Non-functional but still impassable.
+#[derive(Component)]
+pub struct TowerRubble;
+
 #[derive(Component, Clone)]
 pub struct TowerStats {
     pub damage: f32,

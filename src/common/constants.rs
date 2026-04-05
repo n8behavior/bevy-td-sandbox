@@ -71,6 +71,35 @@ pub const PUDDLE_SLOW_FACTOR: f32 = 0.70;
 /// Radioactive damage per second.
 pub const RADIOACTIVE_DPS: f32 = 8.0;
 
+// ---------------------------------------------------------------------------
+// Tower health & degradation
+// ---------------------------------------------------------------------------
+
+/// Tower HP = base_cost × this multiplier.
+pub const TOWER_HP_COST_MULT: f32 = 3.0;
+
+/// HP tier multipliers (index = tier).
+pub const TOWER_HP_TIER_MULT: [f32; 3] = [1.0, 1.4, 2.0];
+
+/// Brute melee damage per hit against towers.
+pub const BRUTE_ATTACK_DAMAGE: f32 = 20.0;
+
+/// Brute attack cooldown in seconds.
+pub const BRUTE_ATTACK_COOLDOWN: f32 = 1.5;
+
+/// Max world distance for a Brute to hit an adjacent tower.
+/// Covers adjacent cells (TILE_SIZE=20) plus wander offset (±7).
+pub const BRUTE_ATTACK_RANGE: f32 = 30.0;
+
+/// Rubble tower sprite color (dark grey).
+pub const RUBBLE_TOWER_COLOR: Color = Color::srgb(0.3, 0.3, 0.3);
+
+/// Repair cost as fraction of base cost (damaged tower → full HP).
+pub const REPAIR_COST_FRAC: f32 = 0.3;
+
+/// Repair cost as fraction of base cost (rubble tower → full HP).
+pub const REPAIR_RUBBLE_COST_FRAC: f32 = 0.5;
+
 #[derive(Resource)]
 pub struct GridConfig {
     pub width: u32,
