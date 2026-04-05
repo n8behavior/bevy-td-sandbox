@@ -1,8 +1,9 @@
 use crate::common::constants::*;
 use crate::economy::components::ScrapDrop;
+use crate::endless::resources::EndlessSpawner;
 use crate::enemy::components::{Dead, Enemy, StolenScrap};
 use crate::pile::resources::PileScrap;
-use crate::states::{GameState, PlayPhase};
+use crate::states::{GameMode, GameState, PlayPhase};
 use crate::wave::resources::WaveManager;
 use bevy::prelude::*;
 
@@ -86,7 +87,9 @@ pub fn setup_hud(mut commands: Commands) {
 
 pub fn update_hud(
     pile_scrap: Res<PileScrap>,
+    game_mode: Res<GameMode>,
     wave_mgr: Option<Res<WaveManager>>,
+    endless_spawner: Option<Res<EndlessSpawner>>,
     phase: Option<Res<State<PlayPhase>>>,
     drops: Query<&ScrapDrop>,
     stolen: Query<&StolenScrap, (With<Enemy>, Without<Dead>)>,
@@ -155,25 +158,42 @@ pub fn update_hud(
         **text = format!("Stolen: {}", stolen_total);
     }
 
-    if let Some(wave_mgr) = wave_mgr {
-        for mut text in &mut wave_query {
-            **text = format!(
-                "Wave: {} / {}",
-                wave_mgr.current_wave + 1,
-                wave_mgr.waves.len()
-            );
-        }
-    }
-    if let Some(phase) = phase {
-        for (mut text, mut color) in &mut phase_query {
-            match phase.get() {
-                PlayPhase::Building => {
-                    **text = "BUILDING [Enter]".into();
-                    *color = TextColor(Color::srgb(0.3, 0.9, 0.3));
+    match *game_mode {
+        GameMode::Endless => {
+            if let Some(spawner) = &endless_spawner {
+                let mins = (spawner.elapsed_time / 60.0) as u32;
+                let secs = (spawner.elapsed_time % 60.0) as u32;
+                for mut text in &mut wave_query {
+                    **text = format!("Time: {:02}:{:02}", mins, secs);
                 }
-                PlayPhase::Defending => {
-                    **text = "DEFENDING".into();
-                    *color = TextColor(Color::srgb(0.9, 0.3, 0.3));
+            }
+            for (mut text, mut color) in &mut phase_query {
+                **text = "ENDLESS".into();
+                *color = TextColor(Color::srgb(0.9, 0.6, 0.2));
+            }
+        }
+        GameMode::Classic => {
+            if let Some(wave_mgr) = wave_mgr {
+                for mut text in &mut wave_query {
+                    **text = format!(
+                        "Wave: {} / {}",
+                        wave_mgr.current_wave + 1,
+                        wave_mgr.waves.len()
+                    );
+                }
+            }
+            if let Some(phase) = phase {
+                for (mut text, mut color) in &mut phase_query {
+                    match phase.get() {
+                        PlayPhase::Building => {
+                            **text = "BUILDING [Enter]".into();
+                            *color = TextColor(Color::srgb(0.3, 0.9, 0.3));
+                        }
+                        PlayPhase::Defending => {
+                            **text = "DEFENDING".into();
+                            *color = TextColor(Color::srgb(0.9, 0.3, 0.3));
+                        }
+                    }
                 }
             }
         }

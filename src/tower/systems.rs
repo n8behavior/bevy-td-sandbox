@@ -5,6 +5,7 @@ use crate::economy::components::ScrapDrop;
 use crate::enemy::components::{DamageFlash, Dead, Dying, Enemy, Health, SlowEffect};
 use crate::pile::resources::PileScrap;
 use crate::projectile::components::{AoEPayload, Projectile, TrailEmitter};
+use crate::stats::resources::RunStats;
 
 use super::components::*;
 use super::types::scrap_magnet::ScrapMagnet;
@@ -241,6 +242,7 @@ pub fn scrap_magnet_collect(
     mut pile_scrap: ResMut<PileScrap>,
     mut commands: Commands,
     time: Res<Time>,
+    mut stats: Option<ResMut<RunStats>>,
 ) {
     for (entity, drop, mut drop_tf) in &mut drops {
         let drop_pos = drop_tf.translation.truncate();
@@ -258,6 +260,9 @@ pub fn scrap_magnet_collect(
         if let Some((col_pos, dist, range)) = best {
             if dist < MAGNET_COLLECT_RADIUS {
                 pile_scrap.amount += drop.value;
+                if let Some(stats) = stats.as_mut() {
+                    stats.scrap_collected += drop.value;
+                }
                 commands.entity(entity).despawn();
             } else {
                 let direction = (col_pos - drop_pos).normalize();

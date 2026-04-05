@@ -7,6 +7,7 @@ use bevy_northstar::prelude::*;
 mod camera;
 mod common;
 mod economy;
+mod endless;
 mod enemy;
 mod grid;
 mod pathfinding;
@@ -14,6 +15,7 @@ mod pile;
 mod projectile;
 mod shader;
 mod states;
+mod stats;
 mod terrain;
 mod tower;
 mod ui;
@@ -21,13 +23,15 @@ mod wave;
 
 use camera::CameraPlugin;
 use economy::EconomyPlugin;
+use endless::EndlessPlugin;
 use enemy::EnemyPlugin;
 use grid::GridPlugin;
 use pathfinding::PathfindingPlugin;
 use pile::PilePlugin;
 use projectile::ProjectilePlugin;
 use shader::ShaderPlugin;
-use states::GameState;
+use states::{GameMode, GameState};
+use stats::StatsPlugin;
 use terrain::TerrainPlugin;
 use tower::TowerPlugin;
 use ui::UIPlugin;
@@ -54,6 +58,7 @@ fn main() {
                 .set(ImagePlugin::default_nearest()),
         )
         .add_plugins(NorthstarPlugin::<OrdinalNeighborhood>::default())
+        .init_resource::<GameMode>()
         .init_state::<GameState>()
         .add_sub_state::<states::PlayPhase>()
         .add_plugins((
@@ -67,7 +72,9 @@ fn main() {
             EnemyPlugin,
             ProjectilePlugin,
             WavePlugin,
+            EndlessPlugin,
             EconomyPlugin,
+            StatsPlugin,
             UIPlugin,
         ))
         .run();

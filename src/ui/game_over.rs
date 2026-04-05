@@ -1,4 +1,6 @@
-use crate::states::GameState;
+use crate::states::{GameMode, GameState};
+use crate::stats::resources::RunStats;
+use crate::wave::resources::WaveManager;
 #[cfg(not(target_arch = "wasm32"))]
 use bevy::ecs::message::MessageWriter;
 use bevy::prelude::*;
@@ -30,16 +32,21 @@ pub fn setup_main_menu(mut commands: Commands) {
                 },
             ));
 
-            #[cfg(not(target_arch = "wasm32"))]
-            let hint = "Press SPACE to start  |  ESC to quit";
-            #[cfg(target_arch = "wasm32")]
-            let hint = "Press SPACE to start";
-
             parent.spawn((
-                Text::new(hint),
+                Text::new("[SPACE] Classic Mode  |  [E] Endless Mode"),
                 TextColor(Color::srgb(0.6, 0.6, 0.5)),
                 TextFont {
                     font_size: 24.0,
+                    ..default()
+                },
+            ));
+
+            #[cfg(not(target_arch = "wasm32"))]
+            parent.spawn((
+                Text::new("ESC to quit"),
+                TextColor(Color::srgb(0.4, 0.4, 0.35)),
+                TextFont {
+                    font_size: 16.0,
                     ..default()
                 },
             ));
@@ -50,9 +57,15 @@ pub fn setup_main_menu(mut commands: Commands) {
 pub fn handle_main_menu_input(
     keyboard: Res<ButtonInput<KeyCode>>,
     mut next_state: ResMut<NextState<GameState>>,
+    mut game_mode: ResMut<GameMode>,
     mut exit: MessageWriter<AppExit>,
 ) {
     if keyboard.just_pressed(KeyCode::Space) {
+        *game_mode = GameMode::Classic;
+        next_state.set(GameState::Playing);
+    }
+    if keyboard.just_pressed(KeyCode::KeyE) {
+        *game_mode = GameMode::Endless;
         next_state.set(GameState::Playing);
     }
     if keyboard.just_pressed(KeyCode::Escape) {
@@ -64,13 +77,24 @@ pub fn handle_main_menu_input(
 pub fn handle_main_menu_input(
     keyboard: Res<ButtonInput<KeyCode>>,
     mut next_state: ResMut<NextState<GameState>>,
+    mut game_mode: ResMut<GameMode>,
 ) {
     if keyboard.just_pressed(KeyCode::Space) {
+        *game_mode = GameMode::Classic;
+        next_state.set(GameState::Playing);
+    }
+    if keyboard.just_pressed(KeyCode::KeyE) {
+        *game_mode = GameMode::Endless;
         next_state.set(GameState::Playing);
     }
 }
 
-pub fn setup_game_over(mut commands: Commands) {
+pub fn setup_game_over(
+    mut commands: Commands,
+    stats: Option<Res<RunStats>>,
+    game_mode: Res<GameMode>,
+    wave_mgr: Option<Res<WaveManager>>,
+) {
     commands.spawn((Camera2d, DespawnOnExit(GameState::GameOver)));
 
     commands
@@ -81,7 +105,7 @@ pub fn setup_game_over(mut commands: Commands) {
                 justify_content: JustifyContent::Center,
                 align_items: AlignItems::Center,
                 flex_direction: FlexDirection::Column,
-                row_gap: Val::Px(20.0),
+                row_gap: Val::Px(12.0),
                 ..default()
             },
             BackgroundColor(Color::srgb(0.1, 0.02, 0.02)),
@@ -96,6 +120,75 @@ pub fn setup_game_over(mut commands: Commands) {
                     ..default()
                 },
             ));
+
+            let stat_color = Color::srgb(0.75, 0.7, 0.55);
+            let stat_font = TextFont {
+                font_size: 18.0,
+                ..default()
+            };
+
+            if let Some(stats) = &stats {
+                // Mode-specific headline.
+                match *game_mode {
+                    GameMode::Endless => {
+                        let mins = (stats.survival_time_secs / 60.0) as u32;
+                        let secs = (stats.survival_time_secs % 60.0) as u32;
+                        parent.spawn((
+                            Text::new(format!("Survival Time: {:02}:{:02}", mins, secs)),
+                            TextColor(Color::srgb(0.9, 0.6, 0.2)),
+                            TextFont {
+                                font_size: 28.0,
+                                ..default()
+                            },
+                        ));
+                    }
+                    GameMode::Classic => {
+                        let waves = wave_mgr.as_ref().map_or(0, |w| w.current_wave);
+                        parent.spawn((
+                            Text::new(format!("Waves Survived: {} / 20", waves)),
+                            TextColor(Color::srgb(0.9, 0.6, 0.2)),
+                            TextFont {
+                                font_size: 28.0,
+                                ..default()
+                            },
+                        ));
+                    }
+                }
+
+                // Kill breakdown.
+                parent.spawn((
+                    Text::new(format!(
+                        "Kills: {}  (Shambler: {}  Runner: {}  Brute: {}  Boss: {})",
+                        stats.total_kills(),
+                        stats.kills_shambler,
+                        stats.kills_runner,
+                        stats.kills_brute,
+                        stats.kills_boss,
+                    )),
+                    TextColor(stat_color),
+                    stat_font.clone(),
+                ));
+
+                // Economy.
+                parent.spawn((
+                    Text::new(format!(
+                        "Scrap Collected: {}  |  Scrap Spent: {}",
+                        stats.scrap_collected, stats.scrap_spent,
+                    )),
+                    TextColor(stat_color),
+                    stat_font.clone(),
+                ));
+
+                // Towers.
+                parent.spawn((
+                    Text::new(format!(
+                        "Towers Placed: {}  |  Towers Sold: {}",
+                        stats.towers_placed, stats.towers_sold,
+                    )),
+                    TextColor(stat_color),
+                    stat_font,
+                ));
+            }
 
             #[cfg(not(target_arch = "wasm32"))]
             let hint = "SPACE: restart  |  ESC: quit";

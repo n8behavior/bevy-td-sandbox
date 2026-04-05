@@ -15,3 +15,10 @@ pub enum PlayPhase {
     Building,
     Defending,
 }
+
+#[derive(Resource, Default, Clone, Copy, PartialEq, Eq, Debug)]
+pub enum GameMode {
+    #[default]
+    Classic,
+    Endless,
+}
