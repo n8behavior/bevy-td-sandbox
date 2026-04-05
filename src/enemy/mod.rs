@@ -11,12 +11,17 @@ impl Plugin for EnemyPlugin {
         app.add_systems(
             FixedUpdate,
             (
-                // Game logic first
                 (
-                    systems::enemy_movement,
-                    systems::search_wander_movement,
-                    systems::reset_speed,
-                    systems::apply_slow_effects,
+                    // Speed pipeline: reset → apply slows → movement
+                    (
+                        systems::reset_speed,
+                        systems::apply_slow_effects,
+                        (
+                            systems::enemy_movement,
+                            systems::search_wander_movement,
+                        ),
+                    )
+                        .chain(),
                     systems::boss_regeneration,
                     systems::enemy_reached_pile,
                     systems::enemy_escaped,

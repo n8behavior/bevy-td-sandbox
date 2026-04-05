@@ -20,6 +20,8 @@ impl Plugin for TerrainPlugin {
                     systems::apply_radioactive_damage,
                 )
                     .after(crate::enemy::systems::apply_slow_effects)
+                    .before(crate::enemy::systems::enemy_movement)
+                    .before(crate::enemy::systems::search_wander_movement)
                     .run_if(in_state(GameState::Playing))
                     .run_if(in_state(PlayPhase::Defending)),
             );
