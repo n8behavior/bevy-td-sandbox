@@ -8,6 +8,51 @@ use bevy::prelude::*;
 #[derive(Component)]
 pub struct Tower;
 
+/// Per-tower targeting priority. Only present on towers with active targeting
+/// (turret towers and chain lightning). Aura towers (TarPit, Magnet) don't get this.
+#[derive(Component, Default, Clone, Copy, PartialEq, Eq, Debug)]
+pub enum TargetingMode {
+    Closest,
+    #[default]
+    LowestHp,
+    HighestHp,
+    FurthestAlongPath,
+}
+
+impl TargetingMode {
+    /// Short label for world-space display on the tower sprite.
+    pub fn label(&self) -> &'static str {
+        match self {
+            Self::Closest => "C",
+            Self::LowestHp => "L",
+            Self::HighestHp => "H",
+            Self::FurthestAlongPath => "F",
+        }
+    }
+
+    /// Human-readable name for the upgrade panel.
+    pub fn name(&self) -> &'static str {
+        match self {
+            Self::Closest => "Closest",
+            Self::LowestHp => "Lowest HP",
+            Self::HighestHp => "Highest HP",
+            Self::FurthestAlongPath => "Furthest Along",
+        }
+    }
+
+    /// All modes in radial menu order: top, right, bottom, left.
+    pub const ALL: [TargetingMode; 4] = [
+        Self::Closest,
+        Self::HighestHp,
+        Self::FurthestAlongPath,
+        Self::LowestHp,
+    ];
+}
+
+/// Marker for the Text2d child that shows the targeting mode letter on a tower.
+#[derive(Component)]
+pub struct TargetingModeLabel;
+
 // ---------------------------------------------------------------------------
 // Placement state
 // ---------------------------------------------------------------------------

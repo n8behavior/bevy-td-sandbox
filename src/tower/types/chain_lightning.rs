@@ -44,6 +44,7 @@ fn register(mut registry: ResMut<TowerRegistry>) {
                 },
                 ChainLightningMarker,
                 BlocksNav,
+                TargetingMode::default(),
                 stats,
                 ChainLightning {
                     arc_range,

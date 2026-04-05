@@ -45,6 +45,7 @@ fn register(mut registry: ResMut<TowerRegistry>) {
                 },
                 Explosive,
                 BlocksNav,
+                TargetingMode::default(),
                 stats,
                 AimTolerance(0.15),
                 TurretState::with_cooldown(cooldown),

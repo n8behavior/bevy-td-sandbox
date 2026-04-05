@@ -14,6 +14,7 @@ use crate::ui::tower_menu::WavePreviewPanel;
 
 use super::components::*;
 use super::placement::{SelectedTower, SellText};
+use super::targeting::RadialMenuState;
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -85,21 +86,31 @@ pub fn inspect_tower(
     keyboard: Res<ButtonInput<KeyCode>>,
     windows: Query<&Window>,
     cameras: Query<(&Camera, &GlobalTransform)>,
-    towers: Query<(Entity, &GridCell), (With<Tower>, Without<Placing>)>,
+    towers: Query<(Entity, &GridCell, Option<&TargetingMode>), (With<Tower>, Without<Placing>)>,
     selected: Res<SelectedTower>,
     mut inspected: ResMut<InspectedTower>,
+    mut radial_menu: ResMut<RadialMenuState>,
     config: Res<GridConfig>,
 ) {
-    // Escape clears inspection (only when not in placement mode — placement
-    // mode Escape is handled by handle_tower_selection which runs first).
+    // Escape: close radial menu first, then clear inspection.
     if keyboard.just_pressed(KeyCode::Escape) && selected.index.is_none() {
-        inspected.0 = None;
+        if radial_menu.tower.is_some() {
+            radial_menu.tower = None;
+        } else {
+            inspected.0 = None;
+        }
         return;
     }
 
-    // Entering placement mode clears inspection.
+    // Entering placement mode clears inspection and radial menu.
     if selected.is_changed() && selected.index.is_some() {
         inspected.0 = None;
+        radial_menu.tower = None;
+    }
+
+    // If radial menu was just closed by handle_radial_click, skip click processing.
+    if radial_menu.is_changed() {
+        return;
     }
 
     // Left-click when no tower selected for placement.
@@ -118,13 +129,26 @@ pub fn inspect_tower(
         return;
     };
     let Some(grid_pos) = world_to_grid(world_pos, &config) else {
+        radial_menu.tower = None;
         inspected.0 = None;
         return;
     };
 
-    if let Some((entity, _)) = towers.iter().find(|(_, gc)| gc.coord == grid_pos) {
-        inspected.0 = Some(entity);
+    if let Some((entity, _, targeting)) = towers.iter().find(|(_, gc, _)| gc.coord == grid_pos) {
+        if inspected.0 == Some(entity) {
+            // Re-click the already-inspected tower: toggle radial menu.
+            if radial_menu.tower.is_some() {
+                radial_menu.tower = None;
+            } else if targeting.is_some() {
+                radial_menu.tower = Some(entity);
+            }
+        } else {
+            // New tower: inspect it, close any open radial menu.
+            radial_menu.tower = None;
+            inspected.0 = Some(entity);
+        }
     } else {
+        radial_menu.tower = None;
         inspected.0 = None;
     }
 }
@@ -360,6 +384,7 @@ pub fn setup_upgrade_panel(mut commands: Commands) {
 pub fn update_upgrade_panel(
     mut commands: Commands,
     inspected: Res<InspectedTower>,
+    radial_menu: Res<RadialMenuState>,
     towers: Query<
         (
             &TowerName,
@@ -373,6 +398,7 @@ pub fn update_upgrade_panel(
             Option<&ChainLightning>,
             Option<&ChainCooldown>,
             Option<&BaseArcRange>,
+            Option<&TargetingMode>,
         ),
         (With<Tower>, Without<Placing>),
     >,
@@ -385,7 +411,7 @@ pub fn update_upgrade_panel(
     };
 
     // Only rebuild when something relevant changes.
-    if !inspected.is_changed() && !pile_scrap.is_changed() {
+    if !inspected.is_changed() && !pile_scrap.is_changed() && !radial_menu.is_changed() {
         return;
     }
 
@@ -398,8 +424,20 @@ pub fn update_upgrade_panel(
         return;
     };
 
-    let Ok((name, tier, stats, cost, base, turret, aoe, slow, chain, chain_cd, base_arc)) =
-        towers.get(entity)
+    let Ok((
+        name,
+        tier,
+        stats,
+        cost,
+        base,
+        turret,
+        aoe,
+        slow,
+        chain,
+        chain_cd,
+        base_arc,
+        targeting_mode,
+    )) = towers.get(entity)
     else {
         *vis = Visibility::Hidden;
         return;
@@ -501,6 +539,17 @@ pub fn update_upgrade_panel(
             ));
         }
 
+        if let Some(mode) = targeting_mode {
+            parent.spawn((
+                Text::new(format!("TARGET: {}", mode.name())),
+                TextColor(STAT_COLOR),
+                TextFont {
+                    font_size: 13.0,
+                    ..default()
+                },
+            ));
+        }
+
         // Upgrade or max tier
         if tier.0 < MAX_TIER {
             let ucost = upgrade_cost(base.cost, tier.0);
@@ -558,6 +607,17 @@ pub fn update_upgrade_panel(
                 ..default()
             },
         ));
+
+        if targeting_mode.is_some() {
+            parent.spawn((
+                Text::new("[Click tower] Targeting"),
+                TextColor(HINT_COLOR),
+                TextFont {
+                    font_size: 11.0,
+                    ..default()
+                },
+            ));
+        }
 
         parent.spawn((
             Text::new("[ESC] Close"),

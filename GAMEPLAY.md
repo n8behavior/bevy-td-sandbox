@@ -25,9 +25,10 @@ There are **20 waves** of increasing difficulty.
 |-------|--------|
 | **1-6** | Select tower type |
 | **Left Click** | Place selected tower / Inspect placed tower |
+| **Left Click** (inspected tower) | Open targeting mode menu |
 | **Right Click** | Sell tower (60% refund) |
 | **U** | Upgrade inspected tower |
-| **Escape** | Deselect tower / Close inspection |
+| **Escape** | Close targeting menu / Close inspection / Deselect tower |
 | **Enter** | Start next wave (Building phase) |
 | **Scroll Wheel** | Zoom in/out |
 | **Middle Mouse Drag** | Pan camera |
@@ -67,6 +68,23 @@ Towers have **3 tiers**. Each upgrade boosts stats and brightens the sprite:
 | 3 | 2.0x | 1.2x | +30% faster | 150% of base cost |
 
 Selling an upgraded tower refunds **60% of total investment** (base cost + all upgrade costs).
+
+## Targeting Modes
+
+Towers with active targeting (Scrap Gun, Explosive, Railgun, Chain Lightning) can be set to one of four targeting priorities. Click an inspected tower to open the targeting menu, then click a quadrant to select.
+
+| Icon | Mode | Behavior |
+|------|------|----------|
+| **C** | **Closest** | Nearest enemy to the tower |
+| **L** | **Lowest HP** | Enemy with least current HP *(default)* |
+| **H** | **Highest HP** | Enemy with most current HP |
+| **F** | **Furthest Along** | Enemy closest to reaching the pile |
+
+The selected mode is shown as a letter on the tower sprite. Targeting persists across Building and Defending phases.
+
+**Tar Pit** and **Magnet** are aura towers that affect all enemies in range — they have no targeting mode.
+
+For **Chain Lightning**, the targeting mode determines which enemy gets hit first. The chain then arcs to the nearest unhit enemies regardless of mode.
 
 ## Enemies
 

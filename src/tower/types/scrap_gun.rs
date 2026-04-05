@@ -43,6 +43,7 @@ fn register(mut registry: ResMut<TowerRegistry>) {
                 },
                 ScrapGun,
                 BlocksNav,
+                TargetingMode::default(),
                 stats,
                 AimTolerance(0.15),
                 TurretState::with_cooldown(cooldown),

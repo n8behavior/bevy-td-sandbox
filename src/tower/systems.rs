@@ -3,7 +3,8 @@ use bevy::prelude::*;
 use crate::common::constants::*;
 use crate::economy::components::ScrapDrop;
 use crate::enemy::components::{DamageFlash, Dead, Dying, Enemy, Health, SlowEffect};
-use crate::pile::resources::PileScrap;
+use crate::grid::systems::grid_to_world_cfg;
+use crate::pile::resources::{PileScrap, PileState};
 use crate::projectile::components::{AoEPayload, Projectile, TrailEmitter};
 use crate::stats::resources::RunStats;
 
@@ -14,17 +15,39 @@ use super::types::scrap_magnet::ScrapMagnet;
 // Helpers
 // ---------------------------------------------------------------------------
 
-/// Find the lowest-health enemy within range.
+/// Compute a targeting score for an enemy. Lower score = higher priority.
+fn targeting_score(
+    mode: TargetingMode,
+    dist_to_tower: f32,
+    health_current: f32,
+    enemy_pos: Vec2,
+    pile_center_world: Vec2,
+) -> f32 {
+    match mode {
+        TargetingMode::Closest => dist_to_tower,
+        TargetingMode::LowestHp => health_current,
+        TargetingMode::HighestHp => -health_current,
+        TargetingMode::FurthestAlongPath => pile_center_world.distance(enemy_pos),
+    }
+}
+
+/// Find the best enemy within range according to the given targeting mode.
 fn find_best_target(
     enemies: &Query<(Entity, &Transform, &Health), (With<Enemy>, Without<Dead>, Without<Dying>)>,
     tower_pos: Vec2,
     range: f32,
+    mode: TargetingMode,
+    pile_center_world: Vec2,
 ) -> Option<Entity> {
     let mut best: Option<(Entity, f32)> = None;
     for (entity, tf, health) in enemies.iter() {
-        let dist = tower_pos.distance(tf.translation.truncate());
-        if dist <= range && (best.is_none() || health.current < best.unwrap().1) {
-            best = Some((entity, health.current));
+        let enemy_pos = tf.translation.truncate();
+        let dist = tower_pos.distance(enemy_pos);
+        if dist <= range {
+            let score = targeting_score(mode, dist, health.current, enemy_pos, pile_center_world);
+            if best.is_none_or(|(_, s)| score < s) {
+                best = Some((entity, score));
+            }
         }
     }
     best.map(|(e, _)| e)
@@ -102,20 +125,25 @@ pub fn turret_state_machine(
             &AimTolerance,
             &ProjectileVisuals,
             Option<&AoEOnHit>,
+            Option<&TargetingMode>,
         ),
         (With<Tower>, Without<Placing>),
     >,
     enemies: Query<(Entity, &Transform, &Health), (With<Enemy>, Without<Dead>, Without<Dying>)>,
     time: Res<Time>,
+    pile_state: Res<PileState>,
+    config: Res<GridConfig>,
 ) {
-    for (tower_tf, stats, mut state, aim_tol, visuals, aoe) in &mut towers {
+    let pile_center_world = grid_to_world_cfg(pile_state.center, &config);
+    for (tower_tf, stats, mut state, aim_tol, visuals, aoe, targeting) in &mut towers {
         let range = stats.range;
         let tower_pos = tower_tf.translation.truncate();
+        let mode = targeting.copied().unwrap_or_default();
 
         // Cooldown ticks in all phases.
         state.cooldown.tick(time.delta());
 
-        let best = find_best_target(&enemies, tower_pos, range);
+        let best = find_best_target(&enemies, tower_pos, range, mode, pile_center_world);
 
         match state.phase {
             TurretPhase::Idle => {
@@ -278,20 +306,26 @@ pub fn scrap_magnet_collect(
 // Chain Lightning
 // ---------------------------------------------------------------------------
 
-/// Find the nearest enemy within range (spatial targeting for chain lightning).
-fn find_nearest_enemy(
+/// Find the best initial target for chain lightning within range.
+fn find_chain_target(
     enemies: &Query<
         (Entity, &mut Health, &Transform, &Sprite),
         (With<Enemy>, Without<Dead>, Without<Dying>),
     >,
-    pos: Vec2,
+    tower_pos: Vec2,
     range: f32,
+    mode: TargetingMode,
+    pile_center_world: Vec2,
 ) -> Option<Entity> {
     let mut best: Option<(Entity, f32)> = None;
-    for (entity, _, tf, _) in enemies.iter() {
-        let dist = pos.distance(tf.translation.truncate());
-        if dist <= range && best.is_none_or(|(_, d)| dist < d) {
-            best = Some((entity, dist));
+    for (entity, health, tf, _) in enemies.iter() {
+        let enemy_pos = tf.translation.truncate();
+        let dist = tower_pos.distance(enemy_pos);
+        if dist <= range {
+            let score = targeting_score(mode, dist, health.current, enemy_pos, pile_center_world);
+            if best.is_none_or(|(_, s)| score < s) {
+                best = Some((entity, score));
+            }
         }
     }
     best.map(|(e, _)| e)
@@ -301,7 +335,13 @@ fn find_nearest_enemy(
 pub fn chain_lightning_fire(
     mut commands: Commands,
     mut towers: Query<
-        (&Transform, &TowerStats, &ChainLightning, &mut ChainCooldown),
+        (
+            &Transform,
+            &TowerStats,
+            &ChainLightning,
+            &mut ChainCooldown,
+            Option<&TargetingMode>,
+        ),
         (With<Tower>, Without<Placing>),
     >,
     mut enemies: Query<
@@ -309,16 +349,22 @@ pub fn chain_lightning_fire(
         (With<Enemy>, Without<Dead>, Without<Dying>),
     >,
     time: Res<Time>,
+    pile_state: Res<PileState>,
+    config: Res<GridConfig>,
 ) {
-    for (tower_tf, stats, chain, mut cooldown) in &mut towers {
+    let pile_center_world = grid_to_world_cfg(pile_state.center, &config);
+    for (tower_tf, stats, chain, mut cooldown, targeting) in &mut towers {
         cooldown.timer.tick(time.delta());
         if !cooldown.timer.is_finished() {
             continue;
         }
 
         let tower_pos = tower_tf.translation.truncate();
+        let mode = targeting.copied().unwrap_or_default();
 
-        let Some(first_target) = find_nearest_enemy(&enemies, tower_pos, stats.range) else {
+        let Some(first_target) =
+            find_chain_target(&enemies, tower_pos, stats.range, mode, pile_center_world)
+        else {
             continue;
         };
 

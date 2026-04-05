@@ -1,6 +1,7 @@
 pub mod components;
 pub mod placement;
 pub mod systems;
+pub mod targeting;
 pub mod types;
 pub mod upgrade;
 
@@ -89,6 +90,7 @@ impl Plugin for TowerPlugin {
         app.init_resource::<placement::SelectedTower>()
             .init_resource::<TowerRegistry>()
             .init_resource::<upgrade::InspectedTower>()
+            .init_resource::<targeting::RadialMenuState>()
             .add_plugins((
                 types::ScrapGunPlugin,
                 types::TarPitPlugin,
@@ -107,6 +109,7 @@ impl Plugin for TowerPlugin {
                     placement::tint_placing_tower,
                     placement::confirm_tower_placement,
                     placement::sell_tower,
+                    targeting::handle_radial_click,
                     upgrade::inspect_tower,
                     upgrade::apply_upgrade,
                 )
@@ -120,6 +123,11 @@ impl Plugin for TowerPlugin {
                     upgrade::animate_upgrade_flash,
                     upgrade::manage_selection_ring,
                     upgrade::update_upgrade_panel,
+                    targeting::spawn_radial_menu,
+                    targeting::highlight_radial_segments,
+                    targeting::spawn_targeting_label,
+                    targeting::update_targeting_label,
+                    targeting::stabilize_targeting_labels,
                 )
                     .run_if(in_state(GameState::Playing)),
             )

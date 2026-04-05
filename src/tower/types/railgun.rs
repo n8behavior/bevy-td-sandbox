@@ -43,6 +43,7 @@ fn register(mut registry: ResMut<TowerRegistry>) {
                 },
                 Railgun,
                 BlocksNav,
+                TargetingMode::default(),
                 stats,
                 AimTolerance(0.05),
                 TurretState::with_cooldown(cooldown),
