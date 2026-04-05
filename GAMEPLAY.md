@@ -74,6 +74,27 @@ Selling an upgraded tower refunds **60% of total investment** (base cost + all u
 
 Enemies get tougher each wave: **+15% HP** and **+5% speed** per wave. Spawn rate also increases — starting at 1.5s between spawns, dropping to 0.3s by late waves.
 
+### Boss Waves
+
+Every 5th wave (**5, 10, 15, 20**) is a **solo boss wave** — one massive enemy replaces the regular horde.
+
+| Stat | Value |
+|------|-------|
+| **Base HP** | 500 |
+| **Speed** | 20 |
+| **Loot** | 150 scrap |
+| **Size** | 28 px (largest enemy) |
+
+Each boss spawns with a **random trait** — check the wave preview to plan your defense:
+
+| Trait | Effect | Counter |
+|-------|--------|---------|
+| **Regeneration** | Heals +5 HP/sec | Sustained DPS — don't rely on chip damage |
+| **Armor** | -10 damage per hit (minimum 1) | High-damage towers (Railgun, Explosive) |
+| **Splitting** | Spawns 3 Shamblers on death | Keep defenses up after the boss drops |
+
+Boss HP scales with wave progression like regular enemies (+15% per wave), so the wave-20 boss has nearly 4x the base HP.
+
 When killed, enemies drop scrap on the ground. Drops last **10 seconds** (they blink before expiring), so tower placement near kill zones matters for collection.
 
 If an enemy reaches your pile, it grabs scrap and runs for the nearest edge. Kill it before it escapes or that scrap is gone for good.

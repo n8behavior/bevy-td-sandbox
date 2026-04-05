@@ -3,7 +3,9 @@ use bevy::prelude::*;
 use bevy::sprite_render::MeshMaterial2d;
 
 use crate::camera::components::ScreenShake;
-use crate::enemy::components::*;
+use crate::enemy::components::{
+    AoEBurst, Armor, DamageFlash, Dead, Enemy, Health, SlowEffect,
+};
 use crate::shader::{CircleMaterial, CircleMesh};
 
 use super::components::*;
@@ -44,6 +46,15 @@ struct PendingHit {
     hit_pos: Vec3,
     slow: Option<(f32, f32)>,
     aoe: Option<(f32, f32)>,
+    armor: Option<f32>,
+}
+
+fn apply_damage(health: &mut Health, raw_damage: f32, armor: Option<f32>) {
+    let effective = match armor {
+        Some(reduction) => (raw_damage - reduction).max(1.0),
+        None => raw_damage,
+    };
+    health.current -= effective;
 }
 
 pub fn projectile_hit_detection(
@@ -55,7 +66,10 @@ pub fn projectile_hit_detection(
         Option<&AoEPayload>,
         Option<&SlowPayload>,
     )>,
-    mut enemies: Query<(Entity, &mut Health, &Transform, &Sprite), (With<Enemy>, Without<Dead>)>,
+    mut enemies: Query<
+        (Entity, &mut Health, &Transform, &Sprite, Option<&Armor>),
+        (With<Enemy>, Without<Dead>),
+    >,
     mut shake: ResMut<ScreenShake>,
     circle_mesh: Res<CircleMesh>,
     mut circle_mats: ResMut<Assets<CircleMaterial>>,
@@ -63,7 +77,7 @@ pub fn projectile_hit_detection(
     let mut hits: Vec<PendingHit> = Vec::new();
 
     for (proj_entity, proj, proj_tf, aoe, slow) in &projectiles {
-        let Ok((_, _, target_tf, _)) = enemies.get(proj.target) else {
+        let Ok((_, _, target_tf, _, target_armor)) = enemies.get(proj.target) else {
             commands.entity(proj_entity).despawn();
             continue;
         };
@@ -80,14 +94,15 @@ pub fn projectile_hit_detection(
             hit_pos: proj_tf.translation,
             slow: slow.map(|s| (s.factor, s.duration)),
             aoe: aoe.map(|a| (a.radius, a.damage)),
+            armor: target_armor.map(|a| a.reduction),
         });
     }
 
     for hit in hits {
         commands.entity(hit.proj_entity).despawn();
 
-        if let Ok((_, mut health, _, sprite)) = enemies.get_mut(hit.target) {
-            health.current -= hit.damage;
+        if let Ok((_, mut health, _, sprite, _)) = enemies.get_mut(hit.target) {
+            apply_damage(&mut health, hit.damage, hit.armor);
             // Flash white on damage.
             commands.entity(hit.target).insert(DamageFlash {
                 timer: Timer::from_seconds(0.1, TimerMode::Once),
@@ -126,20 +141,20 @@ pub fn projectile_hit_detection(
                 Transform::from_translation(hit.hit_pos).with_scale(Vec3::splat(4.0)),
             ));
 
-            let aoe_targets: Vec<(Entity, f32)> = enemies
+            let aoe_targets: Vec<(Entity, f32, Option<f32>)> = enemies
                 .iter()
-                .filter(|(e, _, _, _)| *e != hit.target)
-                .filter_map(|(e, _, tf, _)| {
+                .filter(|(e, _, _, _, _)| *e != hit.target)
+                .filter_map(|(e, _, tf, _, armor)| {
                     let dist = tf.translation.distance(hit.hit_pos);
-                    (dist <= radius).then_some((e, dist))
+                    (dist <= radius).then_some((e, dist, armor.map(|a| a.reduction)))
                 })
                 .collect();
 
-            for (aoe_entity, dist) in aoe_targets {
-                if let Ok((_, mut health, _, sprite)) = enemies.get_mut(aoe_entity) {
+            for (aoe_entity, dist, aoe_armor) in aoe_targets {
+                if let Ok((_, mut health, _, sprite, _)) = enemies.get_mut(aoe_entity) {
                     // Full damage at center, zero at edge.
                     let falloff = 1.0 - (dist / radius).clamp(0.0, 1.0);
-                    health.current -= aoe_damage * falloff;
+                    apply_damage(&mut health, aoe_damage * falloff, aoe_armor);
                     commands.entity(aoe_entity).insert(DamageFlash {
                         timer: Timer::from_seconds(0.1, TimerMode::Once),
                         original_color: sprite.color,

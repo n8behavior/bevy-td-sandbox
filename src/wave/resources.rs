@@ -1,6 +1,13 @@
 use crate::enemy::components::EnemyType;
 use bevy::prelude::*;
 
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum BossTrait {
+    Regeneration,
+    Armor,
+    Splitting,
+}
+
 #[derive(Resource)]
 pub struct WaveManager {
     pub current_wave: u32,
@@ -16,6 +23,7 @@ pub struct SpawnEntry {
     pub enemy_type: EnemyType,
     pub health_multiplier: f32,
     pub speed_multiplier: f32,
+    pub boss_trait: Option<BossTrait>,
 }
 
 pub struct WaveConfig {
@@ -28,4 +36,5 @@ pub struct WaveEnemy {
     pub count: u32,
     pub health_multiplier: f32,
     pub speed_multiplier: f32,
+    pub boss_trait: Option<BossTrait>,
 }
