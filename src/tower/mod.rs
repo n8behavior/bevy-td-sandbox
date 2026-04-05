@@ -95,6 +95,7 @@ impl Plugin for TowerPlugin {
                 types::ExplosivePlugin,
                 types::RailgunPlugin,
                 types::ScrapMagnetPlugin,
+                types::ChainLightningPlugin,
             ))
             .add_systems(PostStartup, sort_blueprints)
             .add_systems(OnEnter(GameState::Playing), upgrade::setup_upgrade_panel)
@@ -132,6 +133,7 @@ impl Plugin for TowerPlugin {
                     systems::turret_state_machine,
                     systems::slow_aura,
                     systems::magnetic_pull_enemies,
+                    systems::chain_lightning_fire,
                 )
                     .run_if(in_state(GameState::Playing))
                     .run_if(in_state(PlayPhase::Defending)),
@@ -141,6 +143,7 @@ impl Plugin for TowerPlugin {
                 (
                     systems::rotate_towers_to_target,
                     systems::scrap_magnet_collect,
+                    systems::animate_lightning_arcs,
                 )
                     .run_if(in_state(GameState::Playing)),
             );

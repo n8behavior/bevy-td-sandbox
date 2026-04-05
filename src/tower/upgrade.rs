@@ -26,6 +26,7 @@ const RANGE_MULT: [f32; 3] = [1.0, 1.1, 1.2];
 const COOLDOWN_MULT: [f32; 3] = [1.0, 0.85, 0.7];
 const AOE_RADIUS_MULT: [f32; 3] = [1.0, 1.15, 1.3];
 const SLOW_MULT: [f32; 3] = [1.0, 0.85, 0.7];
+const ARC_RANGE_MULT: [f32; 3] = [1.0, 1.333, 1.667];
 
 const TIER_COLOR_BOOST: [f32; 3] = [0.0, 0.15, 0.3];
 
@@ -146,6 +147,9 @@ pub fn apply_upgrade(
             Option<&mut SlowOnHit>,
             Option<&RangeRingConfig>,
             Option<&AuraRingConfig>,
+            Option<&mut ChainLightning>,
+            Option<&BaseArcRange>,
+            Option<&mut ChainCooldown>,
         ),
         (With<Tower>, Without<Placing>),
     >,
@@ -170,6 +174,9 @@ pub fn apply_upgrade(
         slow,
         range_ring,
         aura_ring,
+        chain_lightning,
+        base_arc_range,
+        chain_cooldown,
     )) = towers.get_mut(entity)
     else {
         return;
@@ -206,6 +213,15 @@ pub fn apply_upgrade(
     }
     if let Some(mut slow) = slow {
         slow.factor = base.slow_factor * SLOW_MULT[t];
+    }
+    if let Some(mut chain) = chain_lightning
+        && let Some(base_arc) = base_arc_range
+    {
+        chain.arc_range = base_arc.0 * ARC_RANGE_MULT[t];
+    }
+    if let Some(mut cc) = chain_cooldown {
+        let new_dur = base.cooldown_secs * COOLDOWN_MULT[t];
+        cc.timer.set_duration(Duration::from_secs_f32(new_dur));
     }
 
     // Despawn old ring children before re-inserting configs.
@@ -348,6 +364,9 @@ pub fn update_upgrade_panel(
             Option<&TurretState>,
             Option<&AoEOnHit>,
             Option<&SlowOnHit>,
+            Option<&ChainLightning>,
+            Option<&ChainCooldown>,
+            Option<&BaseArcRange>,
         ),
         (With<Tower>, Without<Placing>),
     >,
@@ -373,7 +392,9 @@ pub fn update_upgrade_panel(
         return;
     };
 
-    let Ok((name, tier, stats, cost, base, turret, aoe, slow)) = towers.get(entity) else {
+    let Ok((name, tier, stats, cost, base, turret, aoe, slow, chain, chain_cd, base_arc)) =
+        towers.get(entity)
+    else {
         *vis = Visibility::Hidden;
         return;
     };
@@ -449,6 +470,28 @@ pub fn update_upgrade_panel(
             ));
         }
 
+        if let Some(chain) = chain {
+            parent.spawn((
+                Text::new(format!("ARC: {:.0}", chain.arc_range)),
+                TextColor(STAT_COLOR),
+                TextFont {
+                    font_size: 13.0,
+                    ..default()
+                },
+            ));
+        }
+
+        if let Some(cc) = chain_cd {
+            parent.spawn((
+                Text::new(format!("FIRE RATE: {:.2}s", cc.timer.duration().as_secs_f32())),
+                TextColor(STAT_COLOR),
+                TextFont {
+                    font_size: 13.0,
+                    ..default()
+                },
+            ));
+        }
+
         // Upgrade or max tier
         if tier.0 < MAX_TIER {
             let ucost = upgrade_cost(base.cost, tier.0);
@@ -456,8 +499,14 @@ pub fn update_upgrade_panel(
             let next_dmg = base.damage * DAMAGE_MULT[t];
             let next_rng = base.range * RANGE_MULT[t];
 
+            let mut next_text = format!("\nNext: DMG {:.0}  RNG {:.0}", next_dmg, next_rng);
+            if let Some(ba) = base_arc {
+                let next_arc = ba.0 * ARC_RANGE_MULT[t];
+                next_text.push_str(&format!("  ARC {:.0}", next_arc));
+            }
+
             parent.spawn((
-                Text::new(format!("\nNext: DMG {:.0}  RNG {:.0}", next_dmg, next_rng)),
+                Text::new(next_text),
                 TextColor(Color::srgb(0.8, 0.75, 0.4)),
                 TextFont {
                     font_size: 13.0,

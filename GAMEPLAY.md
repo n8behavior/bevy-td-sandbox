@@ -19,7 +19,7 @@ There are **20 waves** of increasing difficulty.
 
 | Input | Action |
 |-------|--------|
-| **1-5** | Select tower type |
+| **1-6** | Select tower type |
 | **Left Click** | Place selected tower / Inspect placed tower |
 | **Right Click** | Sell tower (60% refund) |
 | **U** | Upgrade inspected tower |
@@ -40,10 +40,13 @@ Towers block enemy pathing (except Tar Pit), so placement is how you build your 
 | 3 | **Explosive** | 125 | 25 | 100 | 3.3s | **AOE** — 70-unit blast radius |
 | 4 | **Railgun** | 150 | 50 | 160 | 5.0s | Long range sniper |
 | 5 | **Scrap Magnet** | 100 | 0 | 90 | Aura | **Pulls enemies + slows 50%** |
+| 6 | **Chain Lightning** | 125 | 20 | 90 | 2.0s | **Chain** — arcs between enemies, 70% falloff |
 
 **Tar Pit** is unique — it doesn't block pathing, so you can place it directly on enemy routes.
 
 **Scrap Magnet** deals no damage but pulls enemies toward it and has the widest scrap collection range (90 units vs 30 for other towers).
+
+**Chain Lightning** arcs between clustered enemies — each bounce does 70% of the previous hit's damage. Arc range increases with upgrades (60 → 80 → 100 units).
 
 All towers automatically collect nearby scrap drops.
 
