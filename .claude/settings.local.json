@@ -37,7 +37,9 @@
       "Bash(rustup target:*)",
       "Bash(rustc --version)",
       "Bash(rustup toolchain:*)",
-      "Bash(RUSTFLAGS='--cfg getrandom_backend=\"wasm_js\"' cargo check:*)"
+      "Bash(RUSTFLAGS='--cfg getrandom_backend=\"wasm_js\"' cargo check:*)",
+      "Bash(gh label:*)",
+      "Bash(gh issue:*)"
     ]
   }
 }
