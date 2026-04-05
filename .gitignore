@@ -1,4 +1,5 @@
 /target
 GAMEPLAY.html
+.cargo/config.toml
 .claude/settings.local.json
 .claude/worktrees/
