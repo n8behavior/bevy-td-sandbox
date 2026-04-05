@@ -18,7 +18,7 @@ impl Plugin for WavePlugin {
         )
         .add_systems(
             OnEnter(PlayPhase::Defending),
-            systems::start_wave.run_if(is_classic),
+            (systems::start_wave, systems::play_wave_start_sound).run_if(is_classic),
         )
         .add_systems(
             FixedUpdate,

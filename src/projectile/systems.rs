@@ -4,6 +4,7 @@ use bevy::sprite_render::MeshMaterial2d;
 
 use crate::camera::components::ScreenShake;
 use crate::enemy::components::{AoEBurst, Armor, DamageFlash, Dead, Enemy, Health, SlowEffect};
+use crate::particles::systems::spawn_impact_particles;
 use crate::shader::{CircleMaterial, CircleMesh};
 
 use super::components::*;
@@ -107,6 +108,12 @@ pub fn projectile_hit_detection(
                 original_color: sprite.color,
             });
         }
+
+        spawn_impact_particles(
+            &mut commands,
+            hit.hit_pos.truncate(),
+            Color::srgba(1.0, 0.95, 0.6, 0.9),
+        );
 
         if let Some((factor, duration)) = hit.slow {
             commands.entity(hit.target).insert(SlowEffect {

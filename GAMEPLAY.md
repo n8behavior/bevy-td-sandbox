@@ -177,3 +177,13 @@ When you die, a stats screen shows:
 - **Towers placed** and **towers sold**
 
 Stats are also tracked in Classic mode.
+
+## Audio & Visual Feedback
+
+The game provides audio and visual cues for key events:
+
+**Sound Effects** — Each tower type has a distinct firing sound. Enemy deaths, scrap drops, and scrap collection all have audio cues. Boss spawns are announced with a low rumble, waves start with an alert tone, and game over plays a defeat sting.
+
+**Screen Shake** — Explosive tower hits cause a brief camera shake. Boss deaths trigger a stronger, longer shake.
+
+**Particle Effects** — Projectile impacts produce a burst of small sparks at the hit position. Enemy deaths emit a color-matched particle burst. Scrap drops are accompanied by a sparkle effect.

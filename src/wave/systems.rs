@@ -3,6 +3,8 @@ use bevy_northstar::prelude::*;
 use rand::prelude::IndexedRandom;
 use rand::seq::SliceRandom;
 
+use crate::audio::resources::SoundAssets;
+use crate::audio::systems::play_sound;
 use crate::common::constants::GridConfig;
 use crate::economy::components::ScrapDrop;
 use crate::enemy::components::{Dead, Enemy, EnemyType, StolenScrap};
@@ -52,6 +54,7 @@ pub fn spawn_enemies(
     grid_query: Query<Entity, With<OrdinalGrid>>,
     edge_cells: Res<EdgeCells>,
     pile_state: Res<PileState>,
+    sounds: Res<SoundAssets>,
 ) {
     let Ok(grid_entity) = grid_query.single() else {
         return;
@@ -75,6 +78,10 @@ pub fn spawn_enemies(
     let mut rng = rand::rng();
     let spawn_pos = *edge_cells.0.choose(&mut rng).unwrap();
     let goal_pos = nearest_pile_cell(spawn_pos, &pile_state);
+
+    if entry.boss_trait.is_some() {
+        play_sound(&mut commands, &sounds.boss_spawn, 0.6);
+    }
 
     spawn_enemy(
         &mut commands,
@@ -102,6 +109,10 @@ pub fn check_wave_complete(
     }
 }
 
+pub fn play_wave_start_sound(mut commands: Commands, sounds: Res<SoundAssets>) {
+    play_sound(&mut commands, &sounds.wave_start, 0.5);
+}
+
 pub fn handle_start_wave_input(
     keyboard: Res<ButtonInput<KeyCode>>,
     mut next_phase: ResMut<NextState<PlayPhase>>,
@@ -115,12 +126,14 @@ pub fn handle_start_wave_input(
 /// no fleeing enemies carrying recoverable scrap, and no living enemies
 /// that could still be killed for loot.
 pub fn check_game_over(
+    mut commands: Commands,
     pile_scrap: Res<PileScrap>,
     drops: Query<(), With<ScrapDrop>>,
     enemies: Query<(), (With<Enemy>, Without<Dead>)>,
     stolen: Query<&StolenScrap, (With<Enemy>, Without<Dead>)>,
     wave_mgr: Res<WaveManager>,
     mut next_state: ResMut<NextState<GameState>>,
+    sounds: Res<SoundAssets>,
 ) {
     if pile_scrap.amount > 0 {
         return;
@@ -135,6 +148,7 @@ pub fn check_game_over(
     if !enemies.is_empty() || !wave_mgr.spawn_queue.is_empty() {
         return;
     }
+    play_sound(&mut commands, &sounds.game_over, 0.6);
     next_state.set(GameState::GameOver);
 }
 

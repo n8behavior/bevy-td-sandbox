@@ -4,12 +4,14 @@ use bevy::prelude::*;
 use bevy::window::{MonitorSelection, WindowMode};
 use bevy_northstar::prelude::*;
 
+mod audio;
 mod camera;
 mod common;
 mod economy;
 mod endless;
 mod enemy;
 mod grid;
+mod particles;
 mod pathfinding;
 mod pile;
 mod projectile;
@@ -21,11 +23,13 @@ mod tower;
 mod ui;
 mod wave;
 
+use audio::GameAudioPlugin;
 use camera::CameraPlugin;
 use economy::EconomyPlugin;
 use endless::EndlessPlugin;
 use enemy::EnemyPlugin;
 use grid::GridPlugin;
+use particles::ParticlesPlugin;
 use pathfinding::PathfindingPlugin;
 use pile::PilePlugin;
 use projectile::ProjectilePlugin;
@@ -63,6 +67,7 @@ fn main() {
         .add_sub_state::<states::PlayPhase>()
         .add_plugins((
             ShaderPlugin,
+            GameAudioPlugin,
             CameraPlugin,
             GridPlugin,
             PilePlugin,
@@ -77,5 +82,6 @@ fn main() {
             StatsPlugin,
             UIPlugin,
         ))
+        .add_plugins(ParticlesPlugin)
         .run();
 }

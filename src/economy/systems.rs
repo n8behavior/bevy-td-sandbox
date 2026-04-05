@@ -1,15 +1,18 @@
 use bevy::prelude::*;
 use rand::Rng;
 
+use crate::audio::resources::SoundAssets;
+use crate::audio::systems::play_sound;
 use crate::common::constants::*;
 use crate::enemy::components::SpawnAnimation;
 use crate::enemy::systems::EnemyDied;
+use crate::particles::systems::spawn_scrap_sparkle;
 
 use super::components::ScrapDrop;
 
 const SCRAP_COLOR: Color = Color::srgb(1.0, 0.85, 0.1);
 
-pub fn on_enemy_died(trigger: On<EnemyDied>, mut commands: Commands) {
+pub fn on_enemy_died(trigger: On<EnemyDied>, mut commands: Commands, sounds: Res<SoundAssets>) {
     let event = &*trigger;
     let mut rng = rand::rng();
 
@@ -39,6 +42,9 @@ pub fn on_enemy_died(trigger: On<EnemyDied>, mut commands: Commands) {
             Sprite::from_color(SCRAP_COLOR.with_alpha(0.15), Vec2::splat(16.0)),
             Transform::from_translation(Vec3::new(0.0, 0.0, -0.1)),
         ));
+
+    play_sound(&mut commands, &sounds.scrap_drop, 0.25);
+    spawn_scrap_sparkle(&mut commands, pos);
 }
 
 /// Slowly rotate scrap drops for visual flair (diamond ↔ square oscillation).

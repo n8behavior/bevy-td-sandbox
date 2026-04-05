@@ -4,8 +4,12 @@ use rand::Rng;
 
 use bevy::sprite_render::MeshMaterial2d;
 
+use crate::audio::resources::SoundAssets;
+use crate::audio::systems::play_sound;
+use crate::camera::components::ScreenShake;
 use crate::common::constants::{GridConfig, TILE_SIZE};
 use crate::grid::systems::{grid_to_world, grid_to_world_cfg, world_to_grid};
+use crate::particles::systems::spawn_death_particles;
 use crate::pile::resources::{EdgeCells, PileScrap, PileState};
 use crate::pile::systems::{nearest_edge_cell, nearest_pile_cell};
 use crate::shader::CircleMaterial;
@@ -258,24 +262,39 @@ pub fn check_enemy_death(
             &Health,
             &Transform,
             &LootValue,
+            &Sprite,
             &EnemyType,
             Option<&StolenScrap>,
             Option<&SplitsOnDeath>,
         ),
         (With<Enemy>, Without<Dead>, Without<Dying>),
     >,
+    sounds: Res<SoundAssets>,
+    mut shake: ResMut<ScreenShake>,
 ) {
-    for (entity, health, transform, loot, enemy_type, stolen, splits) in &enemies {
+    for (entity, health, transform, loot, sprite, enemy_type, stolen, splits) in &enemies {
         if health.current <= 0.0 {
             let stolen_amount = stolen.map_or(0, |s| s.0);
             let split_count = splits.map_or(0, |s| s.count);
+            let position = transform.translation.truncate();
             commands.trigger(EnemyDied {
-                position: transform.translation.truncate(),
+                position,
                 loot_value: loot.0,
                 stolen_scrap: stolen_amount,
                 splits: split_count,
                 enemy_type: *enemy_type,
             });
+
+            play_sound(&mut commands, &sounds.enemy_death, 0.4);
+            spawn_death_particles(&mut commands, position, sprite.color);
+
+            // Boss death: stronger screen shake.
+            if matches!(*enemy_type, EnemyType::Boss) {
+                shake.intensity = 6.0;
+                shake.timer = Timer::from_seconds(0.5, TimerMode::Once);
+                shake.decay = 0.03;
+            }
+
             commands.entity(entity).insert((
                 Dying,
                 DeathAnimation {

@@ -1,5 +1,7 @@
 use bevy::prelude::*;
 
+use crate::audio::resources::SoundAssets;
+use crate::audio::systems::play_sound;
 use crate::common::constants::*;
 use crate::economy::components::ScrapDrop;
 use crate::enemy::components::{DamageFlash, Dead, Dying, Enemy, Health, SlowEffect};
@@ -9,6 +11,9 @@ use crate::projectile::components::{AoEPayload, Projectile, TrailEmitter};
 use crate::stats::resources::RunStats;
 
 use super::components::*;
+use super::types::explosive::Explosive;
+use super::types::railgun::Railgun;
+use super::types::scrap_gun::ScrapGun;
 use super::types::scrap_magnet::ScrapMagnet;
 
 // ---------------------------------------------------------------------------
@@ -126,6 +131,9 @@ pub fn turret_state_machine(
             &ProjectileVisuals,
             Option<&AoEOnHit>,
             Option<&TargetingMode>,
+            Option<&ScrapGun>,
+            Option<&Explosive>,
+            Option<&Railgun>,
         ),
         (With<Tower>, Without<Placing>),
     >,
@@ -133,9 +141,12 @@ pub fn turret_state_machine(
     time: Res<Time>,
     pile_state: Res<PileState>,
     config: Res<GridConfig>,
+    sounds: Res<SoundAssets>,
 ) {
     let pile_center_world = grid_to_world_cfg(pile_state.center, &config);
-    for (tower_tf, stats, mut state, aim_tol, visuals, aoe, targeting) in &mut towers {
+    for (tower_tf, stats, mut state, aim_tol, visuals, aoe, targeting, is_scrapgun, is_explosive, is_railgun) in
+        &mut towers
+    {
         let range = stats.range;
         let tower_pos = tower_tf.translation.truncate();
         let mode = targeting.copied().unwrap_or_default();
@@ -180,6 +191,14 @@ pub fn turret_state_machine(
                         // FIRE!
                         spawn_projectile(&mut commands, visuals, tower_tf, stats, target, aoe);
                         state.cooldown.reset();
+
+                        if is_scrapgun.is_some() {
+                            play_sound(&mut commands, &sounds.tower_scrapgun, 0.3);
+                        } else if is_explosive.is_some() {
+                            play_sound(&mut commands, &sounds.tower_explosive, 0.4);
+                        } else if is_railgun.is_some() {
+                            play_sound(&mut commands, &sounds.tower_railgun, 0.3);
+                        }
                     }
                 }
             }
@@ -271,6 +290,7 @@ pub fn scrap_magnet_collect(
     mut commands: Commands,
     time: Res<Time>,
     mut stats: Option<ResMut<RunStats>>,
+    sounds: Res<SoundAssets>,
 ) {
     for (entity, drop, mut drop_tf) in &mut drops {
         let drop_pos = drop_tf.translation.truncate();
@@ -291,6 +311,7 @@ pub fn scrap_magnet_collect(
                 if let Some(stats) = stats.as_mut() {
                     stats.scrap_collected += drop.value;
                 }
+                play_sound(&mut commands, &sounds.scrap_collected, 0.2);
                 commands.entity(entity).despawn();
             } else {
                 let direction = (col_pos - drop_pos).normalize();
@@ -351,6 +372,7 @@ pub fn chain_lightning_fire(
     time: Res<Time>,
     pile_state: Res<PileState>,
     config: Res<GridConfig>,
+    sounds: Res<SoundAssets>,
 ) {
     let pile_center_world = grid_to_world_cfg(pile_state.center, &config);
     for (tower_tf, stats, chain, mut cooldown, targeting) in &mut towers {
@@ -369,6 +391,7 @@ pub fn chain_lightning_fire(
         };
 
         cooldown.timer.reset();
+        play_sound(&mut commands, &sounds.tower_chain_lightning, 0.3);
 
         // Build chain (read-only pass via .iter() / .get()).
         let mut chain_targets: Vec<(Entity, Vec2, f32)> = Vec::new();
