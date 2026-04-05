@@ -121,3 +121,132 @@ pub fn nearest_edge_cell(pos: UVec3, edge_cells: &[UVec3]) -> UVec3 {
         .copied()
         .unwrap_or(pos)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashSet;
+
+    // -----------------------------------------------------------------------
+    // pile_radius
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn pile_radius_zero_scrap_returns_zero() {
+        assert_eq!(pile_radius(0), 0.0);
+    }
+
+    #[test]
+    fn pile_radius_known_value() {
+        let r = pile_radius(200);
+        // r = sqrt(200 / (pi * 2000)) ≈ 0.1784
+        assert!((r - 0.1784).abs() < 0.001, "got {r}");
+    }
+
+    #[test]
+    fn pile_radius_monotonically_increasing() {
+        let values: Vec<u32> = vec![0, 10, 100, 500, 1000, 5000, 50000];
+        let radii: Vec<f32> = values.iter().map(|&s| pile_radius(s)).collect();
+        for w in radii.windows(2) {
+            assert!(w[1] >= w[0], "radius should increase: {} >= {}", w[1], w[0]);
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // compute_pile_cells
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn compute_pile_cells_radius_zero_returns_center_only() {
+        // Radius 0 still includes the center cell itself (0*0 + 0*0 <= 0)
+        let cells = compute_pile_cells(UVec3::new(5, 5, 0), 0.0, 10, 10);
+        assert_eq!(cells.len(), 1);
+        assert!(cells.contains(&UVec3::new(5, 5, 0)));
+    }
+
+    #[test]
+    fn compute_pile_cells_small_radius_returns_center() {
+        let cells = compute_pile_cells(UVec3::new(5, 5, 0), 0.5, 10, 10);
+        assert!(cells.contains(&UVec3::new(5, 5, 0)));
+        assert_eq!(cells.len(), 1);
+    }
+
+    #[test]
+    fn compute_pile_cells_grows_with_radius() {
+        let small = compute_pile_cells(UVec3::new(10, 10, 0), 1.0, 20, 20);
+        let large = compute_pile_cells(UVec3::new(10, 10, 0), 3.0, 20, 20);
+        assert!(large.len() > small.len());
+    }
+
+    #[test]
+    fn compute_pile_cells_clamps_at_grid_boundaries() {
+        // Center at corner — cells should not go negative
+        let cells = compute_pile_cells(UVec3::new(0, 0, 0), 3.0, 10, 10);
+        for cell in &cells {
+            assert!(cell.x < 10);
+            assert!(cell.y < 10);
+        }
+    }
+
+    #[test]
+    fn compute_pile_cells_all_within_bounds() {
+        let cells = compute_pile_cells(UVec3::new(5, 5, 0), 4.0, 8, 8);
+        for cell in &cells {
+            assert!(cell.x < 8, "x={} out of bounds", cell.x);
+            assert!(cell.y < 8, "y={} out of bounds", cell.y);
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // nearest_pile_cell
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn nearest_pile_cell_returns_closest() {
+        let mut cells = HashSet::new();
+        cells.insert(UVec3::new(0, 0, 0));
+        cells.insert(UVec3::new(10, 10, 0));
+        cells.insert(UVec3::new(5, 5, 0));
+        let state = PileState {
+            cells,
+            center: UVec3::new(5, 5, 0),
+            radius_tiles: 5.0,
+            last_radius_int: 5,
+        };
+        let result = nearest_pile_cell(UVec3::new(4, 4, 0), &state);
+        assert_eq!(result, UVec3::new(5, 5, 0));
+    }
+
+    #[test]
+    fn nearest_pile_cell_empty_returns_center() {
+        let state = PileState {
+            cells: HashSet::new(),
+            center: UVec3::new(20, 16, 0),
+            radius_tiles: 0.0,
+            last_radius_int: 0,
+        };
+        let result = nearest_pile_cell(UVec3::new(0, 0, 0), &state);
+        assert_eq!(result, UVec3::new(20, 16, 0));
+    }
+
+    // -----------------------------------------------------------------------
+    // nearest_edge_cell
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn nearest_edge_cell_returns_closest() {
+        let edges = vec![
+            UVec3::new(0, 0, 0),
+            UVec3::new(39, 0, 0),
+            UVec3::new(0, 31, 0),
+        ];
+        let result = nearest_edge_cell(UVec3::new(38, 1, 0), &edges);
+        assert_eq!(result, UVec3::new(39, 0, 0));
+    }
+
+    #[test]
+    fn nearest_edge_cell_empty_returns_pos() {
+        let result = nearest_edge_cell(UVec3::new(5, 5, 0), &[]);
+        assert_eq!(result, UVec3::new(5, 5, 0));
+    }
+}

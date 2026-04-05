@@ -24,7 +24,7 @@ use super::upgrade::degradation_color;
 // ---------------------------------------------------------------------------
 
 /// Compute a targeting score for an enemy. Lower score = higher priority.
-fn targeting_score(
+pub(crate) fn targeting_score(
     mode: TargetingMode,
     dist_to_tower: f32,
     health_current: f32,
@@ -40,7 +40,7 @@ fn targeting_score(
 }
 
 /// Find the best enemy within range according to the given targeting mode.
-fn find_best_target(
+pub(crate) fn find_best_target(
     enemies: &Query<(Entity, &Transform, &Health), (With<Enemy>, Without<Dead>, Without<Dying>)>,
     tower_pos: Vec2,
     range: f32,
@@ -62,7 +62,7 @@ fn find_best_target(
 }
 
 /// Check whether the tower's rotation is within aim tolerance of a target.
-fn is_aimed_at(
+pub(crate) fn is_aimed_at(
     tower_tf: &Transform,
     target_tf: &Transform,
     tower_pos: Vec2,
@@ -74,7 +74,7 @@ fn is_aimed_at(
 }
 
 /// Check whether a target entity is still alive and in range.
-fn target_valid(
+pub(crate) fn target_valid(
     entity: Entity,
     enemies: &Query<(Entity, &Transform, &Health), (With<Enemy>, Without<Dead>, Without<Dying>)>,
     tower_pos: Vec2,
@@ -620,5 +620,61 @@ pub fn update_tower_degradation_visual(
 ) {
     for (health, base, tier, mut sprite) in &mut towers {
         sprite.color = degradation_color(base.color, tier.0, health);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::tower::components::TargetingMode;
+
+    #[test]
+    fn targeting_score_closest_returns_distance() {
+        let score = targeting_score(TargetingMode::Closest, 42.0, 100.0, Vec2::ZERO, Vec2::ZERO);
+        assert_eq!(score, 42.0);
+    }
+
+    #[test]
+    fn targeting_score_lowest_hp_returns_health() {
+        let score = targeting_score(TargetingMode::LowestHp, 10.0, 55.0, Vec2::ZERO, Vec2::ZERO);
+        assert_eq!(score, 55.0);
+    }
+
+    #[test]
+    fn targeting_score_highest_hp_returns_negative_health() {
+        let score = targeting_score(TargetingMode::HighestHp, 10.0, 55.0, Vec2::ZERO, Vec2::ZERO);
+        assert_eq!(score, -55.0);
+    }
+
+    #[test]
+    fn targeting_score_furthest_along_path() {
+        let pile_center = Vec2::new(100.0, 100.0);
+        let close_to_pile = Vec2::new(95.0, 95.0);
+        let far_from_pile = Vec2::new(10.0, 10.0);
+
+        let score_close = targeting_score(
+            TargetingMode::FurthestAlongPath,
+            0.0,
+            0.0,
+            close_to_pile,
+            pile_center,
+        );
+        let score_far = targeting_score(
+            TargetingMode::FurthestAlongPath,
+            0.0,
+            0.0,
+            far_from_pile,
+            pile_center,
+        );
+        // Closer to pile = lower score = higher priority
+        assert!(score_close < score_far);
+    }
+
+    #[test]
+    fn targeting_closest_selects_nearest() {
+        // With Closest mode, the enemy with smallest distance should have lowest score
+        let d1 = targeting_score(TargetingMode::Closest, 10.0, 100.0, Vec2::ZERO, Vec2::ZERO);
+        let d2 = targeting_score(TargetingMode::Closest, 50.0, 100.0, Vec2::ZERO, Vec2::ZERO);
+        assert!(d1 < d2);
     }
 }

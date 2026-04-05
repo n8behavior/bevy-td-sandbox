@@ -16,10 +16,7 @@ impl Plugin for EnemyPlugin {
                     (
                         systems::reset_speed,
                         systems::apply_slow_effects,
-                        (
-                            systems::enemy_movement,
-                            systems::search_wander_movement,
-                        ),
+                        (systems::enemy_movement, systems::search_wander_movement),
                     )
                         .chain(),
                     systems::boss_regeneration,

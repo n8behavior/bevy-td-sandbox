@@ -137,3 +137,54 @@ pub fn world_to_grid(pos: Vec2, config: &GridConfig) -> Option<IVec2> {
         None
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn cfg() -> GridConfig {
+        GridConfig {
+            width: 40,
+            height: 32,
+            pixel_scale: 1,
+        }
+    }
+
+    #[test]
+    fn grid_world_round_trip() {
+        let config = cfg();
+        for x in [0, 1, 10, 20, 39] {
+            for y in [0, 1, 10, 16, 31] {
+                let coord = UVec3::new(x, y, 0);
+                let world = grid_to_world_cfg(coord, &config);
+                let back = world_to_grid(world, &config).expect("should be in bounds");
+                assert_eq!(
+                    back,
+                    IVec2::new(x as i32, y as i32),
+                    "round trip failed for ({x}, {y})"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn world_to_grid_out_of_bounds_returns_none() {
+        let config = cfg();
+        // Far outside the grid
+        assert!(world_to_grid(Vec2::new(10000.0, 10000.0), &config).is_none());
+        assert!(world_to_grid(Vec2::new(-10000.0, -10000.0), &config).is_none());
+    }
+
+    #[test]
+    fn grid_to_world_corner_cells() {
+        let config = cfg();
+        let origin = grid_to_world_cfg(UVec3::new(0, 0, 0), &config);
+        let far = grid_to_world_cfg(UVec3::new(39, 31, 0), &config);
+        // Origin cell should be in negative quadrant
+        assert!(origin.x < 0.0);
+        assert!(origin.y < 0.0);
+        // Far corner should be in positive quadrant
+        assert!(far.x > 0.0);
+        assert!(far.y > 0.0);
+    }
+}

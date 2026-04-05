@@ -128,3 +128,43 @@ impl GridConfig {
         UVec3::new(self.width / 2, self.height / 2, 0)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn from_window_produces_chunk_aligned_dimensions() {
+        let config = GridConfig::from_window(1280.0, 720.0);
+        assert_eq!(config.width % CHUNK_SIZE, 0, "width not chunk-aligned");
+        assert_eq!(config.height % CHUNK_SIZE, 0, "height not chunk-aligned");
+    }
+
+    #[test]
+    fn from_window_minimum_height() {
+        // Even a small window should produce at least MIN_GRID_HEIGHT tiles
+        // (rounded down to chunk boundary)
+        let config = GridConfig::from_window(800.0, 600.0);
+        assert!(
+            config.height >= MIN_GRID_HEIGHT / CHUNK_SIZE * CHUNK_SIZE,
+            "height {} too small",
+            config.height
+        );
+    }
+
+    #[test]
+    fn from_window_pixel_scale_at_least_one() {
+        let config = GridConfig::from_window(320.0, 240.0);
+        assert!(config.pixel_scale >= 1);
+    }
+
+    #[test]
+    fn center_returns_midpoint() {
+        let config = GridConfig {
+            width: 40,
+            height: 32,
+            pixel_scale: 1,
+        };
+        assert_eq!(config.center(), UVec3::new(20, 16, 0));
+    }
+}

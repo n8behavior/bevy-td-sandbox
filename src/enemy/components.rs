@@ -177,3 +177,55 @@ pub struct BruteAttack {
     pub cooldown: Timer,
     pub damage: f32,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const ALL_TYPES: [EnemyType; 4] = [
+        EnemyType::Shambler,
+        EnemyType::Runner,
+        EnemyType::Brute,
+        EnemyType::Boss,
+    ];
+
+    #[test]
+    fn all_types_have_positive_stats() {
+        for ty in &ALL_TYPES {
+            assert!(ty.base_health() > 0.0, "{ty:?} health");
+            assert!(ty.base_speed() > 0.0, "{ty:?} speed");
+            assert!(ty.loot_value() > 0, "{ty:?} loot");
+            assert!(ty.size() > 0.0, "{ty:?} size");
+        }
+    }
+
+    #[test]
+    fn runner_faster_than_shambler() {
+        assert!(EnemyType::Runner.base_speed() > EnemyType::Shambler.base_speed());
+    }
+
+    #[test]
+    fn boss_has_highest_health() {
+        let boss_hp = EnemyType::Boss.base_health();
+        for ty in &ALL_TYPES {
+            assert!(boss_hp >= ty.base_health(), "{ty:?} has more HP than Boss");
+        }
+    }
+
+    #[test]
+    fn boss_has_highest_loot() {
+        let boss_loot = EnemyType::Boss.loot_value();
+        for ty in &ALL_TYPES {
+            assert!(
+                boss_loot >= ty.loot_value(),
+                "{ty:?} has more loot than Boss"
+            );
+        }
+    }
+
+    #[test]
+    fn brute_has_second_highest_loot() {
+        assert!(EnemyType::Brute.loot_value() > EnemyType::Shambler.loot_value());
+        assert!(EnemyType::Brute.loot_value() > EnemyType::Runner.loot_value());
+    }
+}

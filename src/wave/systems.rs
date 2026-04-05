@@ -7,7 +7,7 @@ use crate::audio::resources::SoundAssets;
 use crate::audio::systems::play_sound;
 use crate::common::constants::GridConfig;
 use crate::economy::components::ScrapDrop;
-use crate::enemy::components::{Dead, Enemy, EnemyType, StolenScrap};
+use crate::enemy::components::{Dead, Enemy, EnemyType};
 use crate::enemy::systems::spawn_enemy;
 use crate::pile::resources::{EdgeCells, PileScrap, PileState};
 use crate::pile::systems::nearest_pile_cell;
@@ -122,16 +122,15 @@ pub fn handle_start_wave_input(
     }
 }
 
-/// Game over only when truly bankrupt: pile empty, no scrap on ground,
-/// no fleeing enemies carrying recoverable scrap, and no living enemies
-/// that could still be killed for loot.
+/// Game over when truly bankrupt: pile empty and no scrap on the ground.
+/// Stolen scrap is already subtracted from the pile at steal time; if the
+/// thief is killed the loot reappears as a ScrapDrop (caught by the drops
+/// check). Alive enemies are irrelevant — if there's zero scrap anywhere
+/// in the economy, recovery is impossible.
 pub fn check_game_over(
     mut commands: Commands,
     pile_scrap: Res<PileScrap>,
     drops: Query<(), With<ScrapDrop>>,
-    enemies: Query<(), (With<Enemy>, Without<Dead>)>,
-    stolen: Query<&StolenScrap, (With<Enemy>, Without<Dead>)>,
-    wave_mgr: Res<WaveManager>,
     mut next_state: ResMut<NextState<GameState>>,
     sounds: Res<SoundAssets>,
 ) {
@@ -139,13 +138,6 @@ pub fn check_game_over(
         return;
     }
     if !drops.is_empty() {
-        return;
-    }
-    if stolen.iter().any(|s| s.0 > 0) {
-        return;
-    }
-    // Enemies alive or queued to spawn can still be killed for loot.
-    if !enemies.is_empty() || !wave_mgr.spawn_queue.is_empty() {
         return;
     }
     play_sound(&mut commands, &sounds.game_over, 0.6);
@@ -221,4 +213,164 @@ pub fn generate_waves() -> Vec<WaveConfig> {
     }
 
     waves
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn generate_waves_produces_twenty() {
+        let waves = generate_waves();
+        assert_eq!(waves.len(), 20);
+    }
+
+    #[test]
+    fn boss_wave_every_fifth() {
+        let waves = generate_waves();
+        for (i, wave) in waves.iter().enumerate() {
+            let wave_num = i + 1;
+            if wave_num % 5 == 0 {
+                assert_eq!(
+                    wave.enemies.len(),
+                    1,
+                    "wave {wave_num} should have 1 enemy group"
+                );
+                assert_eq!(
+                    wave.enemies[0].enemy_type,
+                    EnemyType::Boss,
+                    "wave {wave_num} should be a boss wave"
+                );
+                assert_eq!(wave.enemies[0].count, 1, "boss wave should have 1 boss");
+                assert!(
+                    wave.enemies[0].boss_trait.is_some(),
+                    "boss should have a trait"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn non_boss_waves_have_shamblers() {
+        let waves = generate_waves();
+        for (i, wave) in waves.iter().enumerate() {
+            let wave_num = i + 1;
+            if wave_num % 5 != 0 {
+                assert!(
+                    wave.enemies
+                        .iter()
+                        .any(|e| e.enemy_type == EnemyType::Shambler),
+                    "wave {wave_num} should have shamblers"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn runners_appear_from_wave_3() {
+        let waves = generate_waves();
+        // Wave 2 (index 1) should NOT have runners (unless it's a boss wave)
+        let wave2 = &waves[1];
+        assert!(
+            !wave2
+                .enemies
+                .iter()
+                .any(|e| e.enemy_type == EnemyType::Runner),
+            "wave 2 should not have runners"
+        );
+        // Wave 3 (index 2) should have runners
+        let wave3 = &waves[2];
+        assert!(
+            wave3
+                .enemies
+                .iter()
+                .any(|e| e.enemy_type == EnemyType::Runner),
+            "wave 3 should have runners"
+        );
+    }
+
+    #[test]
+    fn brutes_appear_from_wave_6() {
+        let waves = generate_waves();
+        // Wave 4 (index 3) should NOT have brutes
+        let wave4 = &waves[3];
+        assert!(
+            !wave4
+                .enemies
+                .iter()
+                .any(|e| e.enemy_type == EnemyType::Brute),
+            "wave 4 should not have brutes"
+        );
+        // Wave 6 (index 5) should have brutes
+        let wave6 = &waves[5];
+        assert!(
+            wave6
+                .enemies
+                .iter()
+                .any(|e| e.enemy_type == EnemyType::Brute),
+            "wave 6 should have brutes"
+        );
+    }
+
+    #[test]
+    fn health_multiplier_scales_correctly() {
+        let waves = generate_waves();
+        for (i, wave) in waves.iter().enumerate() {
+            let expected = 1.0 + (i as f32 * 0.15);
+            for enemy in &wave.enemies {
+                assert!(
+                    (enemy.health_multiplier - expected).abs() < 0.001,
+                    "wave {} health mult: got {}, expected {}",
+                    i + 1,
+                    enemy.health_multiplier,
+                    expected
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn speed_multiplier_scales_correctly() {
+        let waves = generate_waves();
+        for (i, wave) in waves.iter().enumerate() {
+            let expected = 1.0 + (i as f32 * 0.05);
+            for enemy in &wave.enemies {
+                assert!(
+                    (enemy.speed_multiplier - expected).abs() < 0.001,
+                    "wave {} speed mult: got {}, expected {}",
+                    i + 1,
+                    enemy.speed_multiplier,
+                    expected
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn spawn_interval_decreases_and_clamps() {
+        let waves = generate_waves();
+        // First non-boss wave should have interval 1.5
+        assert!((waves[0].spawn_interval - 1.5).abs() < 0.001);
+        // Last non-boss wave's interval should be clamped at 0.3
+        let last_non_boss = waves
+            .iter()
+            .enumerate()
+            .rfind(|(i, _)| (i + 1) % 5 != 0)
+            .unwrap()
+            .1;
+        assert!(
+            last_non_boss.spawn_interval >= 0.3 - 0.001,
+            "spawn interval should be clamped at 0.3, got {}",
+            last_non_boss.spawn_interval
+        );
+    }
+
+    #[test]
+    fn all_waves_have_nonzero_enemies() {
+        let waves = generate_waves();
+        for (i, wave) in waves.iter().enumerate() {
+            let total: u32 = wave.enemies.iter().map(|e| e.count).sum();
+            assert!(total > 0, "wave {} has no enemies", i + 1);
+        }
+    }
 }

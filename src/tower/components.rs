@@ -345,3 +345,88 @@ pub struct MagnetAuraConfig {
 /// during tower stat upgrades.
 #[derive(Component)]
 pub struct MagnetAura;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn effectiveness_full_health() {
+        let h = TowerHealth {
+            current: 100.0,
+            max: 100.0,
+        };
+        assert_eq!(h.effectiveness(), 1.0);
+    }
+
+    #[test]
+    fn effectiveness_above_half() {
+        let h = TowerHealth {
+            current: 51.0,
+            max: 100.0,
+        };
+        assert_eq!(h.effectiveness(), 1.0);
+    }
+
+    #[test]
+    fn effectiveness_at_half() {
+        let h = TowerHealth {
+            current: 50.0,
+            max: 100.0,
+        };
+        // 50% is not > 50%, so falls to 0.75
+        assert_eq!(h.effectiveness(), 0.75);
+    }
+
+    #[test]
+    fn effectiveness_above_quarter() {
+        let h = TowerHealth {
+            current: 26.0,
+            max: 100.0,
+        };
+        assert_eq!(h.effectiveness(), 0.75);
+    }
+
+    #[test]
+    fn effectiveness_at_quarter() {
+        let h = TowerHealth {
+            current: 25.0,
+            max: 100.0,
+        };
+        // 25% is not > 25%, so falls to 0.5
+        assert_eq!(h.effectiveness(), 0.5);
+    }
+
+    #[test]
+    fn effectiveness_low_health() {
+        let h = TowerHealth {
+            current: 1.0,
+            max: 100.0,
+        };
+        assert_eq!(h.effectiveness(), 0.5);
+    }
+
+    #[test]
+    fn effectiveness_zero_health() {
+        let h = TowerHealth {
+            current: 0.0,
+            max: 100.0,
+        };
+        assert_eq!(h.effectiveness(), 0.0);
+    }
+
+    #[test]
+    fn fraction_clamped() {
+        let over = TowerHealth {
+            current: 150.0,
+            max: 100.0,
+        };
+        assert_eq!(over.fraction(), 1.0);
+
+        let under = TowerHealth {
+            current: -10.0,
+            max: 100.0,
+        };
+        assert_eq!(under.fraction(), 0.0);
+    }
+}
