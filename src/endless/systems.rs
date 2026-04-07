@@ -5,7 +5,7 @@ use rand::prelude::IndexedRandom;
 
 use crate::common::constants::GridConfig;
 use crate::economy::components::ScrapDrop;
-use crate::enemy::components::{Dead, Enemy, EnemyType, StolenScrap};
+use crate::enemy::components::{Enemy, EnemyState, EnemyType, StolenScrap};
 use crate::enemy::systems::spawn_enemy;
 use crate::pile::resources::{EdgeCells, PileScrap, PileState};
 use crate::pile::systems::nearest_pile_cell;
@@ -133,8 +133,7 @@ fn pick_enemy_type(elapsed: f32, rng: &mut impl Rng) -> (EnemyType, Option<BossT
 pub fn endless_check_game_over(
     pile_scrap: Res<PileScrap>,
     drops: Query<(), With<ScrapDrop>>,
-    enemies: Query<(), (With<Enemy>, Without<Dead>)>,
-    stolen: Query<&StolenScrap, (With<Enemy>, Without<Dead>)>,
+    enemies: Query<(&EnemyState, Option<&StolenScrap>), With<Enemy>>,
     mut next_state: ResMut<NextState<GameState>>,
 ) {
     if pile_scrap.amount > 0 {
@@ -143,11 +142,13 @@ pub fn endless_check_game_over(
     if !drops.is_empty() {
         return;
     }
-    if stolen.iter().any(|s| s.0 > 0) {
-        return;
-    }
-    if !enemies.is_empty() {
-        return;
+    for (state, stolen) in &enemies {
+        if stolen.is_some_and(|s| s.0 > 0) {
+            return;
+        }
+        if state.is_alive() {
+            return;
+        }
     }
     next_state.set(GameState::GameOver);
 }

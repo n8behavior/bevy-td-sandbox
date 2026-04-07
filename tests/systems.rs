@@ -119,7 +119,7 @@ fn check_wave_complete_does_not_transition_with_enemies() {
     });
 
     // Spawn an alive enemy.
-    app.world_mut().spawn(Enemy);
+    app.world_mut().spawn((Enemy, EnemyState::Approaching));
 
     app.add_systems(
         Update,
@@ -231,7 +231,7 @@ fn check_game_over_triggers_when_truly_bankrupt() {
 fn check_game_over_no_trigger_with_active_enemies() {
     let mut app = game_over_app(0);
     // Active enemy (approaching, not wandering) — could be killed for loot.
-    app.world_mut().spawn((Enemy, EnemyPhase::Approaching));
+    app.world_mut().spawn((Enemy, EnemyState::Approaching));
     app.update();
     app.update();
     assert_eq!(game_state(&app), GameState::Playing);
@@ -242,7 +242,7 @@ fn check_game_over_no_trigger_with_stolen_scrap() {
     let mut app = game_over_app(0);
     // Fleeing enemy carrying stolen scrap — recoverable if killed.
     app.world_mut()
-        .spawn((Enemy, EnemyPhase::Fleeing, StolenScrap(50)));
+        .spawn((Enemy, EnemyState::Fleeing, StolenScrap(50)));
     app.update();
     app.update();
     assert_eq!(game_state(&app), GameState::Playing);
@@ -284,7 +284,7 @@ fn check_game_over_no_trigger_with_drops_on_ground() {
 #[test]
 fn check_game_over_triggers_with_only_dying_enemies() {
     let mut app = game_over_app(0);
-    app.world_mut().spawn((Enemy, Dying));
+    app.world_mut().spawn((Enemy, EnemyState::Dying));
     app.update();
     app.update();
     assert_eq!(game_state(&app), GameState::GameOver);
@@ -296,14 +296,14 @@ fn check_game_over_triggers_with_wandering_and_dying_enemies() {
     let mut app = game_over_app(0);
     app.world_mut().spawn((
         Enemy,
-        EnemyPhase::Approaching,
+        EnemyState::Wandering,
         SearchWander {
             target: Vec2::ZERO,
             timer: Timer::from_seconds(2.0, TimerMode::Once),
         },
         Transform::default(),
     ));
-    app.world_mut().spawn((Enemy, Dying));
+    app.world_mut().spawn((Enemy, EnemyState::Dying));
     app.update();
     app.update();
     assert_eq!(game_state(&app), GameState::GameOver);
@@ -313,7 +313,7 @@ fn check_game_over_triggers_with_wandering_and_dying_enemies() {
 #[test]
 fn check_game_over_triggers_with_only_dead_enemies() {
     let mut app = game_over_app(0);
-    app.world_mut().spawn((Enemy, Dead));
+    app.world_mut().spawn((Enemy, EnemyState::Dead));
     app.update();
     app.update();
     assert_eq!(game_state(&app), GameState::GameOver);
@@ -324,7 +324,7 @@ fn check_game_over_triggers_with_only_dead_enemies() {
 fn check_game_over_triggers_with_zero_stolen_scrap() {
     let mut app = game_over_app(0);
     app.world_mut()
-        .spawn((Enemy, EnemyPhase::Fleeing, StolenScrap(0)));
+        .spawn((Enemy, EnemyState::Fleeing, StolenScrap(0)));
     // Enemy is active (fleeing, not wandering) so it blocks game over —
     // but it has 0 stolen scrap, so the stolen check shouldn't block.
     // However the active_enemies check WILL block because it's fleeing.
@@ -345,6 +345,7 @@ fn slow_aura_affects_enemies_in_range() {
     // Spawn aura tower at origin with range 100.
     app.world_mut().spawn((
         Tower,
+        TowerState::Active,
         Transform::from_translation(Vec3::ZERO),
         TowerStats {
             damage: 0.0,
@@ -361,6 +362,7 @@ fn slow_aura_affects_enemies_in_range() {
         .world_mut()
         .spawn((
             Enemy,
+            EnemyState::Approaching,
             Transform::from_translation(Vec3::new(50.0, 0.0, 0.0)),
         ))
         .id();
@@ -370,6 +372,7 @@ fn slow_aura_affects_enemies_in_range() {
         .world_mut()
         .spawn((
             Enemy,
+            EnemyState::Approaching,
             Transform::from_translation(Vec3::new(200.0, 0.0, 0.0)),
         ))
         .id();
@@ -393,6 +396,7 @@ fn slow_aura_stronger_at_center() {
 
     app.world_mut().spawn((
         Tower,
+        TowerState::Active,
         Transform::from_translation(Vec3::ZERO),
         TowerStats {
             damage: 0.0,
@@ -408,6 +412,7 @@ fn slow_aura_stronger_at_center() {
         .world_mut()
         .spawn((
             Enemy,
+            EnemyState::Approaching,
             Transform::from_translation(Vec3::new(10.0, 0.0, 0.0)),
         ))
         .id();
@@ -416,6 +421,7 @@ fn slow_aura_stronger_at_center() {
         .world_mut()
         .spawn((
             Enemy,
+            EnemyState::Approaching,
             Transform::from_translation(Vec3::new(90.0, 0.0, 0.0)),
         ))
         .id();
@@ -451,6 +457,7 @@ fn find_best_target_closest_mode() {
     // Tower at origin.
     app.world_mut().spawn((
         Tower,
+        TowerState::Active,
         Transform::from_translation(Vec3::ZERO),
         TowerStats {
             damage: 10.0,
@@ -475,6 +482,7 @@ fn find_best_target_closest_mode() {
         .world_mut()
         .spawn((
             Enemy,
+            EnemyState::Approaching,
             Health {
                 current: 100.0,
                 max: 100.0,
@@ -486,6 +494,7 @@ fn find_best_target_closest_mode() {
     // Far enemy.
     app.world_mut().spawn((
         Enemy,
+        EnemyState::Approaching,
         Health {
             current: 100.0,
             max: 100.0,
@@ -526,7 +535,7 @@ fn game_over_triggers_with_wandering_enemies_on_empty_pile() {
     // No towers exist to kill them. This is the deadlock scenario from #10.
     app.world_mut().spawn((
         Enemy,
-        EnemyPhase::Approaching,
+        EnemyState::Wandering,
         SearchWander {
             target: Vec2::new(10.0, 10.0),
             timer: Timer::from_seconds(2.0, TimerMode::Once),
@@ -535,7 +544,7 @@ fn game_over_triggers_with_wandering_enemies_on_empty_pile() {
     ));
     app.world_mut().spawn((
         Enemy,
-        EnemyPhase::Approaching,
+        EnemyState::Wandering,
         SearchWander {
             target: Vec2::new(-5.0, 3.0),
             timer: Timer::from_seconds(1.5, TimerMode::Once),

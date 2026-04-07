@@ -88,24 +88,13 @@ pub struct SlowEffect {
 #[derive(Component)]
 pub struct LootValue(pub u32);
 
-/// Marker for entities pending despawn. All systems must use `Without<Dead>`
-/// in queries to avoid operating on doomed entities. Actual despawn happens
-/// in `cleanup_dead` which runs last.
-#[derive(Component)]
-pub struct Dead;
-
 /// Scale-up animation on spawn (enemies & towers).
 #[derive(Component)]
 pub struct SpawnAnimation {
     pub timer: Timer,
 }
 
-/// Marker for entities playing a death animation. Game logic should exclude
-/// these via `Without<Dying>` so they aren't targeted or moved.
-#[derive(Component)]
-pub struct Dying;
-
-/// Shrink + fade death animation. Inserts `Dead` when complete.
+/// Shrink + fade death animation. Sets `EnemyState::Dead` when complete.
 #[derive(Component)]
 pub struct DeathAnimation {
     pub timer: Timer,
@@ -129,12 +118,24 @@ pub struct AoEBurst {
     pub max_radius: f32,
 }
 
-/// Tracks whether an enemy is approaching the pile or fleeing with stolen scrap.
-#[derive(Component, Default, PartialEq, Eq, Debug)]
-pub enum EnemyPhase {
+/// Unified state for enemy lifecycle: navigation, scavenging, and death.
+#[derive(Component, Default, PartialEq, Eq, Debug, Clone, Copy)]
+pub enum EnemyState {
     #[default]
     Approaching,
+    Wandering,
     Fleeing,
+    Dying,
+    Dead,
+}
+
+impl EnemyState {
+    pub fn is_alive(&self) -> bool {
+        matches!(self, Self::Approaching | Self::Wandering | Self::Fleeing)
+    }
+    pub fn is_active(&self) -> bool {
+        matches!(self, Self::Approaching | Self::Fleeing)
+    }
 }
 
 /// Scrap stolen from the pile that the enemy is carrying.
@@ -227,5 +228,28 @@ mod tests {
     fn brute_has_second_highest_loot() {
         assert!(EnemyType::Brute.loot_value() > EnemyType::Shambler.loot_value());
         assert!(EnemyType::Brute.loot_value() > EnemyType::Runner.loot_value());
+    }
+
+    #[test]
+    fn enemy_state_is_alive() {
+        assert!(EnemyState::Approaching.is_alive());
+        assert!(EnemyState::Wandering.is_alive());
+        assert!(EnemyState::Fleeing.is_alive());
+        assert!(!EnemyState::Dying.is_alive());
+        assert!(!EnemyState::Dead.is_alive());
+    }
+
+    #[test]
+    fn enemy_state_is_active() {
+        assert!(EnemyState::Approaching.is_active());
+        assert!(!EnemyState::Wandering.is_active());
+        assert!(EnemyState::Fleeing.is_active());
+        assert!(!EnemyState::Dying.is_active());
+        assert!(!EnemyState::Dead.is_active());
+    }
+
+    #[test]
+    fn enemy_state_default_is_approaching() {
+        assert_eq!(EnemyState::default(), EnemyState::Approaching);
     }
 }

@@ -8,6 +8,26 @@ use bevy::prelude::*;
 #[derive(Component)]
 pub struct Tower;
 
+/// Tower lifecycle state.
+#[derive(Component, Default, PartialEq, Eq, Debug, Clone, Copy)]
+pub enum TowerState {
+    #[default]
+    Placing, // being positioned by player, not committed
+    Active, // placed and functional
+    Rubble, // destroyed, non-functional but still impassable
+}
+
+impl TowerState {
+    /// Tower is placed and operational (not placing, not rubble).
+    pub fn is_operational(&self) -> bool {
+        matches!(self, Self::Active)
+    }
+    /// Tower exists on the grid (not in placement preview).
+    pub fn is_placed(&self) -> bool {
+        matches!(self, Self::Active | Self::Rubble)
+    }
+}
+
 /// Per-tower targeting priority. Only present on towers with active targeting
 /// (turret towers and chain lightning). Aura towers (TarPit, Magnet) don't get this.
 #[derive(Component, Default, Clone, Copy, PartialEq, Eq, Debug)]
@@ -56,10 +76,6 @@ pub struct TargetingModeLabel;
 // ---------------------------------------------------------------------------
 // Placement state
 // ---------------------------------------------------------------------------
-
-/// Tower is being positioned by the player — not yet committed to the grid.
-#[derive(Component)]
-pub struct Placing;
 
 /// Whether the tower's current placement position is valid.
 #[derive(Component)]
@@ -140,10 +156,6 @@ impl TowerHealth {
         (self.current / self.max).clamp(0.0, 1.0)
     }
 }
-
-/// Marker for towers destroyed to rubble. Non-functional but still impassable.
-#[derive(Component)]
-pub struct TowerRubble;
 
 #[derive(Component, Clone)]
 pub struct TowerStats {
@@ -428,5 +440,19 @@ mod tests {
             max: 100.0,
         };
         assert_eq!(under.fraction(), 0.0);
+    }
+
+    #[test]
+    fn tower_state_is_operational() {
+        assert!(!TowerState::Placing.is_operational());
+        assert!(TowerState::Active.is_operational());
+        assert!(!TowerState::Rubble.is_operational());
+    }
+
+    #[test]
+    fn tower_state_is_placed() {
+        assert!(!TowerState::Placing.is_placed());
+        assert!(TowerState::Active.is_placed());
+        assert!(TowerState::Rubble.is_placed());
     }
 }

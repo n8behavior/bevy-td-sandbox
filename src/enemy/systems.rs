@@ -16,7 +16,7 @@ use crate::shader::CircleMaterial;
 
 use crate::common::constants::{BRUTE_ATTACK_COOLDOWN, BRUTE_ATTACK_DAMAGE, BRUTE_ATTACK_RANGE};
 use crate::tower::components::{
-    BaseStats, BlocksNav, Placing, Tower, TowerHealth, TowerRubble, TowerTier, UpgradeFlash,
+    BaseStats, BlocksNav, Tower, TowerHealth, TowerState, TowerTier, UpgradeFlash,
 };
 use crate::tower::upgrade::degradation_color;
 use crate::wave::resources::BossTrait;
@@ -44,23 +44,24 @@ pub struct HealthBar {
 }
 
 pub fn enemy_movement(
-    mut query: Query<
-        (
-            Entity,
-            &mut AgentPos,
-            &NextPos,
-            &mut Transform,
-            &MoveSpeed,
-            Option<&mut WanderOffset>,
-        ),
-        (Without<Dead>, Without<Dying>),
-    >,
+    mut query: Query<(
+        Entity,
+        &mut AgentPos,
+        &NextPos,
+        &mut Transform,
+        &MoveSpeed,
+        &EnemyState,
+        Option<&mut WanderOffset>,
+    )>,
     mut commands: Commands,
     time: Res<Time>,
     config: Res<GridConfig>,
 ) {
     let mut rng = rand::rng();
-    for (entity, mut agent_pos, next_pos, mut transform, speed, wander) in &mut query {
+    for (entity, mut agent_pos, next_pos, mut transform, speed, state, wander) in &mut query {
+        if !state.is_alive() || *state == EnemyState::Wandering {
+            continue;
+        }
         let wander_vec = wander.as_deref().map_or(Vec2::ZERO, |w| w.0);
         let target_world = (grid_to_world(next_pos.0, &config) + wander_vec).extend(1.0);
         let current = transform.translation;
@@ -112,28 +113,28 @@ pub fn enemy_movement(
 /// If the pile is empty, enemies wander on the pile searching for scrap.
 pub fn enemy_reached_pile(
     mut commands: Commands,
-    enemies: Query<
+    mut enemies: Query<
         (
             Entity,
             &AgentPos,
             &LootValue,
-            &EnemyPhase,
+            &mut EnemyState,
             &Transform,
             Option<&SearchWander>,
             Option<&NextPos>,
             Option<&Pathfind>,
             Option<&Path>,
         ),
-        (With<Enemy>, Without<Dead>, Without<Dying>),
+        With<Enemy>,
     >,
     mut pile_scrap: ResMut<PileScrap>,
     edge_cells: Res<EdgeCells>,
 ) {
     let mut rng = rand::rng();
-    for (entity, agent_pos, loot, phase, transform, search, next_pos, pathfind_req, path) in
-        &enemies
+    for (entity, agent_pos, loot, mut state, transform, search, next_pos, pathfind_req, path) in
+        &mut enemies
     {
-        if *phase != EnemyPhase::Approaching {
+        if *state != EnemyState::Approaching {
             continue;
         }
         // Enemy is still navigating toward the pile.
@@ -147,6 +148,7 @@ pub fn enemy_reached_pile(
         // Nothing to steal — start wandering if not already.
         if pile_scrap.amount == 0 {
             if search.is_none() {
+                *state = EnemyState::Wandering;
                 let pos = transform.translation.truncate();
                 commands.entity(entity).insert(SearchWander {
                     target: random_wander_target(&mut rng, pos),
@@ -161,8 +163,8 @@ pub fn enemy_reached_pile(
 
         let flee_target = nearest_edge_cell(agent_pos.0, &edge_cells.0);
 
+        *state = EnemyState::Fleeing;
         commands.entity(entity).insert((
-            EnemyPhase::Fleeing,
             StolenScrap(steal_amount),
             Pathfind::new(flee_target).mode(PathfindMode::Waypoints),
         ));
@@ -179,14 +181,14 @@ pub fn enemy_reached_pile(
 
 /// Wander movement for enemies searching an empty pile.
 pub fn search_wander_movement(
-    mut query: Query<
-        (&mut Transform, &MoveSpeed, &mut SearchWander),
-        (With<Enemy>, Without<Dead>, Without<Dying>),
-    >,
+    mut query: Query<(&mut Transform, &MoveSpeed, &mut SearchWander, &EnemyState), With<Enemy>>,
     time: Res<Time>,
 ) {
     let mut rng = rand::rng();
-    for (mut transform, speed, mut search) in &mut query {
+    for (mut transform, speed, mut search, state) in &mut query {
+        if *state != EnemyState::Wandering {
+            continue;
+        }
         search.timer.tick(time.delta());
 
         let pos = transform.translation.truncate();
@@ -230,11 +232,11 @@ fn random_wander_target(rng: &mut impl Rng, center: Vec2) -> Vec2 {
 /// Fleeing enemies that reach the map edge escape with stolen scrap.
 pub fn enemy_escaped(
     mut commands: Commands,
-    enemies: Query<(Entity, &EnemyPhase, &Transform), (With<Enemy>, Without<Dead>, Without<Dying>)>,
+    mut enemies: Query<(Entity, &mut EnemyState, &Transform), With<Enemy>>,
     config: Res<GridConfig>,
 ) {
-    for (entity, phase, transform) in &enemies {
-        if *phase != EnemyPhase::Fleeing {
+    for (entity, mut state, transform) in &mut enemies {
+        if *state != EnemyState::Fleeing {
             continue;
         }
         let pos = transform.translation.truncate();
@@ -249,19 +251,17 @@ pub fn enemy_escaped(
             continue;
         }
         // Stolen scrap is permanently lost — already subtracted from pile.
-        commands.entity(entity).insert((
-            Dying,
-            DeathAnimation {
-                timer: Timer::from_seconds(0.3, TimerMode::Once),
-            },
-        ));
+        *state = EnemyState::Dying;
+        commands.entity(entity).insert(DeathAnimation {
+            timer: Timer::from_seconds(0.3, TimerMode::Once),
+        });
     }
 }
 
 /// Mark enemies with zero health as Dying, trigger loot event.
 pub fn check_enemy_death(
     mut commands: Commands,
-    enemies: Query<
+    mut enemies: Query<
         (
             Entity,
             &Health,
@@ -269,15 +269,21 @@ pub fn check_enemy_death(
             &LootValue,
             &Sprite,
             &EnemyType,
+            &mut EnemyState,
             Option<&StolenScrap>,
             Option<&SplitsOnDeath>,
         ),
-        (With<Enemy>, Without<Dead>, Without<Dying>),
+        With<Enemy>,
     >,
     sounds: Res<SoundAssets>,
     mut shake: ResMut<ScreenShake>,
 ) {
-    for (entity, health, transform, loot, sprite, enemy_type, stolen, splits) in &enemies {
+    for (entity, health, transform, loot, sprite, enemy_type, mut state, stolen, splits) in
+        &mut enemies
+    {
+        if !state.is_alive() {
+            continue;
+        }
         if health.current <= 0.0 {
             let stolen_amount = stolen.map_or(0, |s| s.0);
             let split_count = splits.map_or(0, |s| s.count);
@@ -300,29 +306,33 @@ pub fn check_enemy_death(
                 shake.decay = 0.03;
             }
 
-            commands.entity(entity).insert((
-                Dying,
-                DeathAnimation {
-                    timer: Timer::from_seconds(0.3, TimerMode::Once),
-                },
-            ));
+            *state = EnemyState::Dying;
+            commands.entity(entity).insert(DeathAnimation {
+                timer: Timer::from_seconds(0.3, TimerMode::Once),
+            });
         }
     }
 }
 
 /// Reset all enemy speeds to base each tick, before slow effects re-apply.
-pub fn reset_speed(mut query: Query<&mut MoveSpeed, (With<Enemy>, Without<Dead>, Without<Dying>)>) {
-    for mut speed in &mut query {
+pub fn reset_speed(mut query: Query<(&mut MoveSpeed, &EnemyState), With<Enemy>>) {
+    for (mut speed, state) in &mut query {
+        if !state.is_alive() {
+            continue;
+        }
         speed.current = speed.base;
     }
 }
 
 pub fn apply_slow_effects(
     mut commands: Commands,
-    mut query: Query<(Entity, &mut MoveSpeed, &mut SlowEffect), Without<Dead>>,
+    mut query: Query<(Entity, &mut MoveSpeed, &mut SlowEffect, &EnemyState)>,
     time: Res<Time>,
 ) {
-    for (entity, mut speed, mut slow) in &mut query {
+    for (entity, mut speed, mut slow, state) in &mut query {
+        if !state.is_alive() {
+            continue;
+        }
         slow.remaining.tick(time.delta());
         speed.current = speed.base * slow.factor;
         if slow.remaining.is_finished() {
@@ -333,10 +343,13 @@ pub fn apply_slow_effects(
 }
 
 pub fn update_health_bars(
-    enemies: Query<(&Health, &Transform, &Children), (With<Enemy>, Without<Dead>)>,
+    enemies: Query<(&Health, &Transform, &Children, &EnemyState), (With<Enemy>,)>,
     mut bars: Query<(&HealthBar, &mut Sprite, &mut Transform), Without<Enemy>>,
 ) {
-    for (health, enemy_tf, children) in &enemies {
+    for (health, enemy_tf, children, state) in &enemies {
+        if *state == EnemyState::Dead {
+            continue;
+        }
         for child in children.iter() {
             if let Ok((bar, mut sprite, mut bar_tf)) = bars.get_mut(child) {
                 let frac = (health.current / health.max).clamp(0.0, 1.0);
@@ -361,9 +374,11 @@ pub fn update_health_bars(
 }
 
 /// Actually despawn all Dead entities. Runs last in the frame.
-pub fn cleanup_dead(mut commands: Commands, dead: Query<Entity, With<Dead>>) {
-    for entity in &dead {
-        commands.entity(entity).despawn();
+pub fn cleanup_dead(mut commands: Commands, dead: Query<(Entity, &EnemyState), With<Enemy>>) {
+    for (entity, state) in &dead {
+        if *state == EnemyState::Dead {
+            commands.entity(entity).despawn();
+        }
     }
 }
 
@@ -386,13 +401,19 @@ pub fn animate_spawn(
     }
 }
 
-/// Shrink + fade death animation. Inserts `Dead` when complete.
+/// Shrink + fade death animation. Sets `EnemyState::Dead` when complete.
 pub fn animate_death(
     mut commands: Commands,
-    mut query: Query<(Entity, &mut DeathAnimation, &mut Transform, &mut Sprite)>,
+    mut query: Query<(
+        Entity,
+        &mut DeathAnimation,
+        &mut Transform,
+        &mut Sprite,
+        Option<&mut EnemyState>,
+    )>,
     time: Res<Time>,
 ) {
-    for (entity, mut anim, mut transform, mut sprite) in &mut query {
+    for (entity, mut anim, mut transform, mut sprite, enemy_state) in &mut query {
         anim.timer.tick(time.delta());
         let t = anim.timer.fraction();
         // Shrink and fade out.
@@ -400,7 +421,11 @@ pub fn animate_death(
         transform.scale = Vec3::splat(scale);
         sprite.color = sprite.color.with_alpha(1.0 - t);
         if anim.timer.is_finished() {
-            commands.entity(entity).insert(Dead);
+            if let Some(mut state) = enemy_state {
+                *state = EnemyState::Dead;
+            } else {
+                commands.entity(entity).despawn();
+            }
         }
     }
 }
@@ -469,7 +494,7 @@ pub fn spawn_enemy(
         .spawn((
             Enemy,
             enemy_type,
-            EnemyPhase::Approaching,
+            EnemyState::Approaching,
             Health {
                 current: health,
                 max: health,
@@ -528,10 +553,13 @@ pub fn spawn_enemy(
 
 /// Boss regeneration: heal over time.
 pub fn boss_regeneration(
-    mut query: Query<(&Regeneration, &mut Health), (With<Enemy>, Without<Dead>, Without<Dying>)>,
+    mut query: Query<(&Regeneration, &mut Health, &EnemyState), With<Enemy>>,
     time: Res<Time>,
 ) {
-    for (regen, mut health) in &mut query {
+    for (regen, mut health, state) in &mut query {
+        if !state.is_alive() {
+            continue;
+        }
         health.current = (health.current + regen.rate * time.delta_secs()).min(health.max);
     }
 }
@@ -580,10 +608,7 @@ pub fn on_boss_split(
 
 /// Brutes attack adjacent impassable towers, dealing damage over time.
 pub fn brute_attack_towers(
-    mut brutes: Query<
-        (&Transform, &mut BruteAttack),
-        (With<Enemy>, Without<Dead>, Without<Dying>, Without<Tower>),
-    >,
+    mut brutes: Query<(&Transform, &mut BruteAttack, &EnemyState), (With<Enemy>, Without<Tower>)>,
     mut towers: Query<
         (
             Entity,
@@ -592,20 +617,18 @@ pub fn brute_attack_towers(
             &BaseStats,
             &TowerTier,
             &mut Sprite,
+            &mut TowerState,
         ),
-        (
-            With<Tower>,
-            With<BlocksNav>,
-            Without<Placing>,
-            Without<TowerRubble>,
-            Without<Enemy>,
-        ),
+        (With<Tower>, With<BlocksNav>, Without<Enemy>),
     >,
     mut commands: Commands,
     time: Res<Time>,
     sounds: Res<SoundAssets>,
 ) {
-    for (brute_tf, mut attack) in &mut brutes {
+    for (brute_tf, mut attack, state) in &mut brutes {
+        if !state.is_alive() {
+            continue;
+        }
         attack.cooldown.tick(time.delta());
         if !attack.cooldown.is_finished() {
             continue;
@@ -615,7 +638,10 @@ pub fn brute_attack_towers(
 
         // Find nearest tower in attack range.
         let mut best: Option<(Entity, f32)> = None;
-        for (entity, tower_tf, _, _, _, _) in &towers {
+        for (entity, tower_tf, _, _, _, _, tower_state) in &towers {
+            if !tower_state.is_operational() {
+                continue;
+            }
             let dist = brute_pos.distance(tower_tf.translation.truncate());
             if dist <= BRUTE_ATTACK_RANGE && best.is_none_or(|(_, d)| dist < d) {
                 best = Some((entity, dist));
@@ -628,7 +654,9 @@ pub fn brute_attack_towers(
 
         attack.cooldown.reset();
 
-        if let Ok((entity, _, mut health, base, tier, mut sprite)) = towers.get_mut(target_entity) {
+        if let Ok((entity, _, mut health, base, tier, mut sprite, mut tower_state)) =
+            towers.get_mut(target_entity)
+        {
             health.current = (health.current - attack.damage).max(0.0);
 
             play_sound(&mut commands, &sounds.brute_attack, 0.3);
@@ -641,9 +669,29 @@ pub fn brute_attack_towers(
             });
 
             if health.current <= 0.0 {
-                commands.entity(entity).insert(TowerRubble);
+                *tower_state = TowerState::Rubble;
                 play_sound(&mut commands, &sounds.tower_destroyed, 0.5);
             }
         }
+    }
+}
+
+/// Wake wandering enemies when scrap is added back to the pile.
+pub fn wake_wandering_enemies(
+    mut commands: Commands,
+    pile_scrap: Res<PileScrap>,
+    pile_state: Res<PileState>,
+    mut enemies: Query<(Entity, &AgentPos, &mut EnemyState), With<SearchWander>>,
+) {
+    if !pile_scrap.is_changed() || pile_scrap.amount == 0 {
+        return;
+    }
+    for (entity, agent_pos, mut state) in &mut enemies {
+        *state = EnemyState::Approaching;
+        let goal = nearest_pile_cell(agent_pos.0, &pile_state);
+        commands.entity(entity).remove::<SearchWander>();
+        commands
+            .entity(entity)
+            .insert(Pathfind::new(goal).mode(PathfindMode::Waypoints));
     }
 }

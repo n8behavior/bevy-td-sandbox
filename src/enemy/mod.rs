@@ -40,6 +40,7 @@ impl Plugin for EnemyPlugin {
                 systems::animate_death,
                 systems::animate_damage_flash,
                 systems::animate_aoe_burst,
+                systems::wake_wandering_enemies,
             )
                 .run_if(in_state(GameState::Playing)),
         )

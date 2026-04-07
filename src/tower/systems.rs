@@ -6,7 +6,7 @@ use crate::audio::resources::SoundAssets;
 use crate::audio::systems::play_sound;
 use crate::common::constants::*;
 use crate::economy::components::ScrapDrop;
-use crate::enemy::components::{DamageFlash, Dead, Dying, Enemy, Health, SlowEffect};
+use crate::enemy::components::{DamageFlash, Enemy, EnemyState, Health, SlowEffect};
 use crate::grid::systems::grid_to_world_cfg;
 use crate::pile::resources::{PileScrap, PileState};
 use crate::projectile::components::{AoEPayload, Projectile, TrailEmitter};
@@ -41,14 +41,17 @@ pub(crate) fn targeting_score(
 
 /// Find the best enemy within range according to the given targeting mode.
 pub(crate) fn find_best_target(
-    enemies: &Query<(Entity, &Transform, &Health), (With<Enemy>, Without<Dead>, Without<Dying>)>,
+    enemies: &Query<(Entity, &Transform, &Health, &EnemyState), With<Enemy>>,
     tower_pos: Vec2,
     range: f32,
     mode: TargetingMode,
     pile_center_world: Vec2,
 ) -> Option<Entity> {
     let mut best: Option<(Entity, f32)> = None;
-    for (entity, tf, health) in enemies.iter() {
+    for (entity, tf, health, state) in enemies.iter() {
+        if !state.is_alive() {
+            continue;
+        }
         let enemy_pos = tf.translation.truncate();
         let dist = tower_pos.distance(enemy_pos);
         if dist <= range {
@@ -76,13 +79,13 @@ pub(crate) fn is_aimed_at(
 /// Check whether a target entity is still alive and in range.
 pub(crate) fn target_valid(
     entity: Entity,
-    enemies: &Query<(Entity, &Transform, &Health), (With<Enemy>, Without<Dead>, Without<Dying>)>,
+    enemies: &Query<(Entity, &Transform, &Health, &EnemyState), With<Enemy>>,
     tower_pos: Vec2,
     range: f32,
 ) -> bool {
-    enemies
-        .get(entity)
-        .is_ok_and(|(_, tf, _)| tower_pos.distance(tf.translation.truncate()) <= range)
+    enemies.get(entity).is_ok_and(|(_, tf, _, state)| {
+        state.is_alive() && tower_pos.distance(tf.translation.truncate()) <= range
+    })
 }
 
 fn spawn_projectile(
@@ -138,10 +141,11 @@ pub fn turret_state_machine(
             Option<&Explosive>,
             Option<&Railgun>,
             Option<&TowerHealth>,
+            &TowerState,
         ),
-        (With<Tower>, Without<Placing>, Without<TowerRubble>),
+        With<Tower>,
     >,
-    enemies: Query<(Entity, &Transform, &Health), (With<Enemy>, Without<Dead>, Without<Dying>)>,
+    enemies: Query<(Entity, &Transform, &Health, &EnemyState), With<Enemy>>,
     time: Res<Time>,
     pile_state: Res<PileState>,
     config: Res<GridConfig>,
@@ -160,8 +164,12 @@ pub fn turret_state_machine(
         is_explosive,
         is_railgun,
         tower_health,
+        tower_state,
     ) in &mut towers
     {
+        if !tower_state.is_operational() {
+            continue;
+        }
         let eff = tower_health.map_or(1.0, |h| h.effectiveness());
         let range = stats.range;
         let tower_pos = tower_tf.translation.truncate();
@@ -188,7 +196,7 @@ pub fn turret_state_machine(
                         Some(new) => TurretPhase::Acquiring { target: new },
                         None => TurretPhase::Idle,
                     };
-                } else if let Ok((_, target_tf, _)) = enemies.get(target)
+                } else if let Ok((_, target_tf, _, _)) = enemies.get(target)
                     && is_aimed_at(tower_tf, target_tf, tower_pos, aim_tol.0)
                 {
                     state.phase = TurretPhase::Tracking { target };
@@ -201,7 +209,7 @@ pub fn turret_state_machine(
                         Some(new) => TurretPhase::Acquiring { target: new },
                         None => TurretPhase::Idle,
                     };
-                } else if let Ok((_, target_tf, _)) = enemies.get(target) {
+                } else if let Ok((_, target_tf, _, _)) = enemies.get(target) {
                     if !is_aimed_at(tower_tf, target_tf, tower_pos, aim_tol.0) {
                         // Lost aim — back to acquiring.
                         state.phase = TurretPhase::Acquiring { target };
@@ -239,17 +247,29 @@ pub fn turret_state_machine(
 pub fn slow_aura(
     mut commands: Commands,
     aura_towers: Query<
-        (&Transform, &TowerStats, &SlowOnHit, Option<&TowerHealth>),
-        (With<Tower>, Without<Placing>, Without<TowerRubble>),
+        (
+            &Transform,
+            &TowerStats,
+            &SlowOnHit,
+            Option<&TowerHealth>,
+            &TowerState,
+        ),
+        With<Tower>,
     >,
-    enemies: Query<(Entity, &Transform), (With<Enemy>, Without<Dead>, Without<Dying>)>,
+    enemies: Query<(Entity, &Transform, &EnemyState), With<Enemy>>,
 ) {
-    for (tower_tf, stats, slow, tower_health) in aura_towers.iter() {
+    for (tower_tf, stats, slow, tower_health, tower_state) in aura_towers.iter() {
+        if !tower_state.is_operational() {
+            continue;
+        }
         let eff = tower_health.map_or(1.0, |h| h.effectiveness());
         let range = stats.range;
         let tower_pos = tower_tf.translation.truncate();
 
-        for (enemy_entity, enemy_tf) in &enemies {
+        for (enemy_entity, enemy_tf, state) in &enemies {
+            if !state.is_alive() {
+                continue;
+            }
             let dist = tower_pos.distance(enemy_tf.translation.truncate());
             if dist <= range {
                 // Slow proportional to distance: full slow at center, no slow at edge.
@@ -275,11 +295,14 @@ const TOWER_ROTATION_SPEED: f32 = 3.0;
 
 /// Smoothly rotate towers toward their current target (shortest arc).
 pub fn rotate_towers_to_target(
-    mut towers: Query<(&mut Transform, &TurretState), (With<Tower>, Without<Placing>)>,
+    mut towers: Query<(&mut Transform, &TurretState, &TowerState), With<Tower>>,
     targets: Query<&Transform, Without<Tower>>,
     time: Res<Time>,
 ) {
-    for (mut tower_tf, turret_state) in &mut towers {
+    for (mut tower_tf, turret_state, tower_state) in &mut towers {
+        if !tower_state.is_placed() {
+            continue;
+        }
         let target_angle =
             turret_state
                 .target()
@@ -315,10 +338,7 @@ pub fn rotate_towers_to_target(
 /// Pull scrap drops toward the nearest scrap collector in range; auto-collect on contact.
 /// Matches the pile, magnet tower, and mechanical towers with ScrapCollector.
 pub fn scrap_magnet_collect(
-    collectors: Query<
-        (&Transform, &ScrapCollector, Option<&TowerRubble>),
-        (Without<Placing>, Without<ScrapDrop>),
-    >,
+    collectors: Query<(&Transform, &ScrapCollector, Option<&TowerState>), Without<ScrapDrop>>,
     mut drops: Query<(Entity, &ScrapDrop, &mut Transform), Without<ScrapCollector>>,
     mut pile_scrap: ResMut<PileScrap>,
     mut commands: Commands,
@@ -331,8 +351,10 @@ pub fn scrap_magnet_collect(
 
         // Find nearest collector in range.
         let mut best: Option<(Vec2, f32, f32)> = None;
-        for (col_tf, collector, rubble) in &collectors {
-            if rubble.is_some() {
+        for (col_tf, collector, tower_state) in &collectors {
+            // Skip towers that aren't operational (placing or rubble).
+            // Non-tower collectors (pile) have no TowerState and are always valid.
+            if tower_state.is_some_and(|s| !s.is_operational()) {
                 continue;
             }
             let col_pos = col_tf.translation.truncate();
@@ -366,17 +388,17 @@ pub fn scrap_magnet_collect(
 
 /// Find the best initial target for chain lightning within range.
 fn find_chain_target(
-    enemies: &Query<
-        (Entity, &mut Health, &Transform, &Sprite),
-        (With<Enemy>, Without<Dead>, Without<Dying>),
-    >,
+    enemies: &Query<(Entity, &mut Health, &Transform, &Sprite, &EnemyState), With<Enemy>>,
     tower_pos: Vec2,
     range: f32,
     mode: TargetingMode,
     pile_center_world: Vec2,
 ) -> Option<Entity> {
     let mut best: Option<(Entity, f32)> = None;
-    for (entity, health, tf, _) in enemies.iter() {
+    for (entity, health, tf, _, state) in enemies.iter() {
+        if !state.is_alive() {
+            continue;
+        }
         let enemy_pos = tf.translation.truncate();
         let dist = tower_pos.distance(enemy_pos);
         if dist <= range {
@@ -400,20 +422,22 @@ pub fn chain_lightning_fire(
             &mut ChainCooldown,
             Option<&TargetingMode>,
             Option<&TowerHealth>,
+            &TowerState,
         ),
-        (With<Tower>, Without<Placing>, Without<TowerRubble>),
+        With<Tower>,
     >,
-    mut enemies: Query<
-        (Entity, &mut Health, &Transform, &Sprite),
-        (With<Enemy>, Without<Dead>, Without<Dying>),
-    >,
+    mut enemies: Query<(Entity, &mut Health, &Transform, &Sprite, &EnemyState), With<Enemy>>,
     time: Res<Time>,
     pile_state: Res<PileState>,
     config: Res<GridConfig>,
     sounds: Res<SoundAssets>,
 ) {
     let pile_center_world = grid_to_world_cfg(pile_state.center, &config);
-    for (tower_tf, stats, chain, mut cooldown, targeting, tower_health) in &mut towers {
+    for (tower_tf, stats, chain, mut cooldown, targeting, tower_health, tower_state) in &mut towers
+    {
+        if !tower_state.is_operational() {
+            continue;
+        }
         let eff = tower_health.map_or(1.0, |h| h.effectiveness());
         cooldown
             .timer
@@ -439,7 +463,7 @@ pub fn chain_lightning_fire(
         let mut hit_set = vec![first_target];
         let mut current_damage = stats.damage * eff;
 
-        if let Ok((_, _, tf, _)) = enemies.get(first_target) {
+        if let Ok((_, _, tf, _, _)) = enemies.get(first_target) {
             let pos = tf.translation.truncate();
             chain_targets.push((first_target, pos, current_damage));
 
@@ -453,8 +477,8 @@ pub fn chain_lightning_fire(
 
                 // Find nearest unhit enemy within arc range.
                 let mut best: Option<(Entity, Vec2, f32)> = None;
-                for (e, _, tf, _) in enemies.iter() {
-                    if hit_set.contains(&e) {
+                for (e, _, tf, _, state) in enemies.iter() {
+                    if !state.is_alive() || hit_set.contains(&e) {
                         continue;
                     }
                     let pos = tf.translation.truncate();
@@ -478,7 +502,7 @@ pub fn chain_lightning_fire(
         let mut prev_pos = tower_pos;
 
         for &(entity, pos, damage) in &chain_targets {
-            if let Ok((_, mut health, _, sprite)) = enemies.get_mut(entity) {
+            if let Ok((_, mut health, _, sprite, _)) = enemies.get_mut(entity) {
                 health.current -= damage;
                 commands.entity(entity).insert(DamageFlash {
                     timer: Timer::from_seconds(0.1, TimerMode::Once),
@@ -532,24 +556,19 @@ pub fn animate_lightning_arcs(
 /// Pull enemies toward dedicated Magnet towers, making them struggle against the field.
 /// Only the Magnet tower type (ScrapMagnet marker) pulls enemies, not all collectors.
 pub fn magnetic_pull_enemies(
-    magnets: Query<
-        (&Transform, &ScrapCollector),
-        (
-            With<ScrapMagnet>,
-            With<Tower>,
-            Without<Placing>,
-            Without<TowerRubble>,
-        ),
-    >,
-    mut enemies: Query<
-        &mut Transform,
-        (With<Enemy>, Without<Dead>, Without<Dying>, Without<Tower>),
-    >,
+    magnets: Query<(&Transform, &ScrapCollector, &TowerState), (With<ScrapMagnet>, With<Tower>)>,
+    mut enemies: Query<(&mut Transform, &EnemyState), (With<Enemy>, Without<Tower>)>,
     time: Res<Time>,
 ) {
-    for mut enemy_tf in &mut enemies {
+    for (mut enemy_tf, state) in &mut enemies {
+        if !state.is_alive() {
+            continue;
+        }
         let enemy_pos = enemy_tf.translation.truncate();
-        for (mag_tf, collector) in &magnets {
+        for (mag_tf, collector, tower_state) in &magnets {
+            if !tower_state.is_operational() {
+                continue;
+            }
             let mag_pos = mag_tf.translation.truncate();
             let dist = mag_pos.distance(enemy_pos);
             if dist <= collector.range && dist > 2.0 {
@@ -571,15 +590,24 @@ pub fn magnetic_pull_enemies(
 pub fn on_tower_becomes_rubble(
     mut commands: Commands,
     mut rubble_towers: Query<
-        (Entity, &Children, &mut Sprite, Option<&mut TurretState>),
-        Added<TowerRubble>,
+        (
+            Entity,
+            &Children,
+            &mut Sprite,
+            Option<&mut TurretState>,
+            &TowerState,
+        ),
+        Changed<TowerState>,
     >,
     range_rings: Query<Entity, With<RangeRing>>,
     aura_visuals: Query<Entity, With<AuraVisual>>,
     magnet_auras: Query<Entity, With<MagnetAura>>,
     sounds: Res<SoundAssets>,
 ) {
-    for (entity, children, mut sprite, turret) in &mut rubble_towers {
+    for (entity, children, mut sprite, turret, state) in &mut rubble_towers {
+        if *state != TowerState::Rubble {
+            continue;
+        }
         sprite.color = RUBBLE_TOWER_COLOR;
 
         if let Some(mut turret) = turret {
@@ -608,17 +636,20 @@ pub fn on_tower_becomes_rubble(
 /// correct color when it finishes).
 pub fn update_tower_degradation_visual(
     mut towers: Query<
-        (&TowerHealth, &BaseStats, &TowerTier, &mut Sprite),
         (
-            With<Tower>,
-            Without<Placing>,
-            Without<TowerRubble>,
-            Without<UpgradeFlash>,
-            Changed<TowerHealth>,
+            &TowerHealth,
+            &BaseStats,
+            &TowerTier,
+            &mut Sprite,
+            &TowerState,
         ),
+        (With<Tower>, Without<UpgradeFlash>, Changed<TowerHealth>),
     >,
 ) {
-    for (health, base, tier, mut sprite) in &mut towers {
+    for (health, base, tier, mut sprite, tower_state) in &mut towers {
+        if !tower_state.is_operational() {
+            continue;
+        }
         sprite.color = degradation_color(base.color, tier.0, health);
     }
 }

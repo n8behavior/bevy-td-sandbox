@@ -67,7 +67,7 @@ pub fn handle_tower_selection(
     let blueprint = &registry.blueprints[idx];
     let mut entity_cmds = commands.spawn((
         Tower,
-        Placing,
+        TowerState::Placing,
         PlacementValid(false),
         Visibility::Hidden,
         Sprite::from_color(
@@ -91,12 +91,13 @@ pub fn update_placing_tower(
             &mut PlacementValid,
             &mut Visibility,
             Option<&BlocksNav>,
+            &TowerState,
         ),
-        With<Placing>,
+        With<Tower>,
     >,
     windows: Query<&Window>,
     cameras: Query<(&Camera, &GlobalTransform)>,
-    existing_towers: Query<&GridCell, (With<Tower>, Without<Placing>)>,
+    existing_towers: Query<(&GridCell, &TowerState), With<Tower>>,
     terrain_cells: Query<&GridCell, With<Terrain>>,
     mut grid_query: Query<&mut OrdinalGrid>,
     pile_state: Res<PileState>,
@@ -105,9 +106,14 @@ pub fn update_placing_tower(
     registry: Res<TowerRegistry>,
     config: Res<GridConfig>,
 ) {
-    let Ok((_, mut transform, mut valid, mut vis, blocks_nav)) = placing.single_mut() else {
+    let Ok((_, mut transform, mut valid, mut vis, blocks_nav, tower_state)) = placing.single_mut()
+    else {
         return;
     };
+
+    if *tower_state != TowerState::Placing {
+        return;
+    }
 
     let Ok(window) = windows.single() else { return };
     let Ok((camera, cam_transform)) = cameras.single() else {
@@ -137,7 +143,9 @@ pub fn update_placing_tower(
         .map(|b| b.cost)
         .unwrap_or(u32::MAX);
 
-    let occupied = existing_towers.iter().any(|c| c.coord == grid_pos);
+    let occupied = existing_towers
+        .iter()
+        .any(|(c, s)| s.is_placed() && c.coord == grid_pos);
     let is_terrain = terrain_cells.iter().any(|c| c.coord == grid_pos);
     let is_pile = pile_state.cells.contains(&cell_uvec);
     let can_afford = pile_scrap.amount >= cost;
@@ -184,13 +192,17 @@ pub fn update_placing_tower(
 
 /// Tint the placing tower green (valid) or red (invalid).
 pub fn tint_placing_tower(
-    mut placing: Query<(&mut Sprite, &PlacementValid), With<Placing>>,
+    mut placing: Query<(&mut Sprite, &PlacementValid, &TowerState), With<Tower>>,
     selected: Res<SelectedTower>,
     registry: Res<TowerRegistry>,
 ) {
-    let Ok((mut sprite, valid)) = placing.single_mut() else {
+    let Ok((mut sprite, valid, tower_state)) = placing.single_mut() else {
         return;
     };
+
+    if *tower_state != TowerState::Placing {
+        return;
+    }
 
     let base_color = selected
         .index
@@ -216,8 +228,9 @@ pub fn confirm_tower_placement(
             &PlacementValid,
             Option<&BlocksNav>,
             &Children,
+            &mut TowerState,
         ),
-        With<Placing>,
+        With<Tower>,
     >,
     range_rings: Query<Entity, With<RangeRing>>,
     mut grid_query: Query<&mut OrdinalGrid>,
@@ -231,9 +244,15 @@ pub fn confirm_tower_placement(
         return;
     }
 
-    let Ok((entity, transform, valid, blocks_nav, children)) = placing.single_mut() else {
+    let Ok((entity, transform, valid, blocks_nav, children, mut tower_state)) =
+        placing.single_mut()
+    else {
         return;
     };
+
+    if *tower_state != TowerState::Placing {
+        return;
+    }
 
     if !valid.0 {
         return;
@@ -267,9 +286,9 @@ pub fn confirm_tower_placement(
         stats.scrap_spent += blueprint.cost;
     }
 
-    // Transition from Placing to placed.
+    // Transition from Placing to Active.
     let snap_pos = grid_to_world(cell_uvec, &config);
-    commands.entity(entity).remove::<Placing>();
+    *tower_state = TowerState::Active;
     commands.entity(entity).remove::<PlacementValid>();
     // Despawn range ring children.
     for child in children.iter() {
@@ -293,7 +312,7 @@ pub fn confirm_tower_placement(
     // Spawn a new placing tower for continued placement (hidden until cursor positions it).
     let mut new_cmds = commands.spawn((
         Tower,
-        Placing,
+        TowerState::Placing,
         PlacementValid(false),
         Visibility::Hidden,
         Sprite::from_color(
@@ -325,8 +344,14 @@ pub fn sell_tower(
     windows: Query<&Window>,
     cameras: Query<(&Camera, &GlobalTransform)>,
     towers: Query<
-        (Entity, &GridCell, &TowerCost, Option<&BlocksNav>),
-        (With<Tower>, Without<Placing>),
+        (
+            Entity,
+            &GridCell,
+            &TowerCost,
+            Option<&BlocksNav>,
+            &TowerState,
+        ),
+        With<Tower>,
     >,
     mut grid_query: Query<&mut OrdinalGrid>,
     mut pile_scrap: ResMut<PileScrap>,
@@ -353,8 +378,9 @@ pub fn sell_tower(
     };
 
     // Find a placed tower at this grid cell.
-    let Some((entity, _, cost, blocks_nav)) =
-        towers.iter().find(|(_, gc, _, _)| gc.coord == grid_pos)
+    let Some((entity, _, cost, blocks_nav, _)) = towers
+        .iter()
+        .find(|(_, gc, _, _, s)| s.is_placed() && gc.coord == grid_pos)
     else {
         return;
     };

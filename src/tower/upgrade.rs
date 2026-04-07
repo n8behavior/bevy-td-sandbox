@@ -128,7 +128,7 @@ pub fn inspect_tower(
     keyboard: Res<ButtonInput<KeyCode>>,
     windows: Query<&Window>,
     cameras: Query<(&Camera, &GlobalTransform)>,
-    towers: Query<(Entity, &GridCell, Option<&TargetingMode>), (With<Tower>, Without<Placing>)>,
+    towers: Query<(Entity, &GridCell, Option<&TargetingMode>, &TowerState), With<Tower>>,
     selected: Res<SelectedTower>,
     mut inspected: ResMut<InspectedTower>,
     mut radial_menu: ResMut<RadialMenuState>,
@@ -176,7 +176,10 @@ pub fn inspect_tower(
         return;
     };
 
-    if let Some((entity, _, targeting)) = towers.iter().find(|(_, gc, _)| gc.coord == grid_pos) {
+    if let Some((entity, _, targeting, _)) = towers
+        .iter()
+        .find(|(_, gc, _, s)| s.is_placed() && gc.coord == grid_pos)
+    {
         if inspected.0 == Some(entity) {
             // Re-click the already-inspected tower: toggle radial menu.
             if radial_menu.tower.is_some() {
@@ -220,8 +223,9 @@ pub fn apply_upgrade(
                 Option<&mut ChainCooldown>,
                 Option<&mut TowerHealth>,
             ),
+            &TowerState,
         ),
-        (With<Tower>, Without<Placing>, Without<TowerRubble>),
+        With<Tower>,
     >,
     range_rings: Query<Entity, With<RangeRing>>,
     aura_visuals: Query<Entity, With<AuraVisual>>,
@@ -244,10 +248,15 @@ pub fn apply_upgrade(
         aoe,
         slow,
         (range_ring, aura_ring, chain_lightning, base_arc_range, chain_cooldown, tower_health),
+        tower_state,
     )) = towers.get_mut(entity)
     else {
         return;
     };
+
+    if !tower_state.is_operational() {
+        return;
+    }
 
     if tier.0 >= MAX_TIER {
         return;
@@ -360,16 +369,14 @@ pub fn apply_upgrade(
 /// Towers WITH `MagnetTier` manage collection range via the magnet system.
 pub fn sync_collector_on_upgrade(
     mut towers: Query<
-        (&TowerStats, &mut ScrapCollector),
-        (
-            With<Tower>,
-            Without<Placing>,
-            Without<MagnetTier>,
-            Changed<TowerTier>,
-        ),
+        (&TowerStats, &mut ScrapCollector, &TowerState),
+        (With<Tower>, Without<MagnetTier>, Changed<TowerTier>),
     >,
 ) {
-    for (stats, mut collector) in &mut towers {
+    for (stats, mut collector, tower_state) in &mut towers {
+        if !tower_state.is_placed() {
+            continue;
+        }
         collector.range = stats.range;
     }
 }
@@ -388,8 +395,9 @@ pub fn apply_magnet_upgrade(
             &Transform,
             &Children,
             Option<&MagnetAuraConfig>,
+            &TowerState,
         ),
-        (With<Tower>, Without<Placing>, Without<TowerRubble>),
+        With<Tower>,
     >,
     magnet_auras: Query<Entity, With<MagnetAura>>,
     mut pile_scrap: ResMut<PileScrap>,
@@ -398,11 +406,23 @@ pub fn apply_magnet_upgrade(
         return;
     }
     let Some(entity) = inspected.0 else { return };
-    let Ok((mut tier, base_range, mut collector, mut cost, transform, children, magnet_aura)) =
-        towers.get_mut(entity)
+    let Ok((
+        mut tier,
+        base_range,
+        mut collector,
+        mut cost,
+        transform,
+        children,
+        magnet_aura,
+        tower_state,
+    )) = towers.get_mut(entity)
     else {
         return;
     };
+
+    if !tower_state.is_operational() {
+        return;
+    }
 
     if tier.0 >= MAX_MAGNET_TIER {
         return;
@@ -470,12 +490,12 @@ pub fn apply_repair(
             &mut Sprite,
             &Transform,
             &Children,
-            Option<&TowerRubble>,
+            &mut TowerState,
             Option<&RangeRingConfig>,
             Option<&AuraRingConfig>,
             Option<&MagnetAuraConfig>,
         ),
-        (With<Tower>, Without<Placing>),
+        With<Tower>,
     >,
     range_rings: Query<Entity, With<RangeRing>>,
     aura_visuals: Query<Entity, With<AuraVisual>>,
@@ -496,7 +516,7 @@ pub fn apply_repair(
         mut sprite,
         transform,
         children,
-        rubble,
+        mut tower_state,
         range_ring,
         aura_ring,
         magnet_aura,
@@ -505,12 +525,16 @@ pub fn apply_repair(
         return;
     };
 
+    if !tower_state.is_placed() {
+        return;
+    }
+
     // No-op if already at full HP.
     if health.current >= health.max {
         return;
     }
 
-    let is_rubble = rubble.is_some();
+    let is_rubble = *tower_state == TowerState::Rubble;
     let fraction = if is_rubble {
         REPAIR_RUBBLE_COST_FRAC
     } else {
@@ -530,7 +554,7 @@ pub fn apply_repair(
     health.current = health.max;
 
     if is_rubble {
-        commands.entity(entity).remove::<TowerRubble>();
+        *tower_state = TowerState::Active;
 
         // Despawn any stale ring children that survived.
         for child in children.iter() {
@@ -695,10 +719,10 @@ pub fn update_upgrade_panel(
                 Option<&ScrapCollector>,
                 Option<&ScrapMagnet>,
                 Option<&TowerHealth>,
-                Option<&TowerRubble>,
             ),
+            &TowerState,
         ),
-        (With<Tower>, Without<Placing>),
+        With<Tower>,
     >,
     tower_health_check: Query<&TowerHealth, (With<Tower>, Changed<TowerHealth>)>,
     mut panel_query: Query<(Entity, &mut Visibility), With<UpgradePanel>>,
@@ -746,13 +770,18 @@ pub fn update_upgrade_panel(
             collector,
             is_scrap_magnet,
             tower_health,
-            tower_rubble,
         ),
+        tower_state,
     )) = towers.get(entity)
     else {
         *vis = Visibility::Hidden;
         return;
     };
+
+    if !tower_state.is_placed() {
+        *vis = Visibility::Hidden;
+        return;
+    }
 
     *vis = Visibility::Inherited;
 
@@ -781,7 +810,7 @@ pub fn update_upgrade_panel(
 
         // Tower HP (only shown for towers with health)
         if let Some(health) = tower_health {
-            let is_rubble = tower_rubble.is_some();
+            let is_rubble = *tower_state == TowerState::Rubble;
             let hp_text = if is_rubble {
                 "HP: RUBBLE".to_string()
             } else {
@@ -889,7 +918,7 @@ pub fn update_upgrade_panel(
         }
 
         // Upgrade or max tier (hidden when rubble — must repair first)
-        if tower_rubble.is_some() {
+        if *tower_state == TowerState::Rubble {
             parent.spawn((
                 Text::new("\nREPAIR REQUIRED"),
                 TextColor(Color::srgb(0.9, 0.3, 0.3)),
@@ -998,7 +1027,7 @@ pub fn update_upgrade_panel(
         if let Some(health) = tower_health
             && health.current < health.max
         {
-            let is_rubble = tower_rubble.is_some();
+            let is_rubble = *tower_state == TowerState::Rubble;
             let frac = if is_rubble {
                 REPAIR_RUBBLE_COST_FRAC
             } else {

@@ -1,7 +1,7 @@
 use crate::common::constants::*;
 use crate::economy::components::ScrapDrop;
 use crate::endless::resources::EndlessSpawner;
-use crate::enemy::components::{Dead, Enemy, StolenScrap};
+use crate::enemy::components::{Enemy, EnemyState, StolenScrap};
 use crate::pile::resources::PileScrap;
 use crate::states::{GameMode, GameState, PlayPhase};
 use crate::wave::resources::WaveManager;
@@ -92,7 +92,7 @@ pub fn update_hud(
     endless_spawner: Option<Res<EndlessSpawner>>,
     phase: Option<Res<State<PlayPhase>>>,
     drops: Query<&ScrapDrop>,
-    stolen: Query<&StolenScrap, (With<Enemy>, Without<Dead>)>,
+    stolen: Query<(&StolenScrap, &EnemyState), With<Enemy>>,
     mut scrap_query: Query<
         &mut Text,
         (
@@ -153,7 +153,11 @@ pub fn update_hud(
         **text = format!("Ground: {}", ground_total);
     }
 
-    let stolen_total: u32 = stolen.iter().map(|s| s.0).sum();
+    let stolen_total: u32 = stolen
+        .iter()
+        .filter(|(_, state)| state.is_alive())
+        .map(|(s, _)| s.0)
+        .sum();
     for mut text in &mut stolen_query {
         **text = format!("Stolen: {}", stolen_total);
     }

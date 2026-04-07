@@ -7,7 +7,7 @@ use crate::audio::resources::SoundAssets;
 use crate::audio::systems::play_sound;
 use crate::common::constants::GridConfig;
 use crate::economy::components::ScrapDrop;
-use crate::enemy::components::{Dead, Dying, Enemy, EnemyType, SearchWander, StolenScrap};
+use crate::enemy::components::{Enemy, EnemyState, EnemyType, StolenScrap};
 use crate::enemy::systems::spawn_enemy;
 use crate::pile::resources::{EdgeCells, PileScrap, PileState};
 use crate::pile::systems::nearest_pile_cell;
@@ -98,12 +98,13 @@ pub fn spawn_enemies(
 
 pub fn check_wave_complete(
     mut wave_mgr: ResMut<WaveManager>,
-    enemies: Query<(), (With<Enemy>, Without<Dead>)>,
+    enemies: Query<&EnemyState, With<Enemy>>,
     drops: Query<(), With<ScrapDrop>>,
     mut next_phase: ResMut<NextState<PlayPhase>>,
 ) {
     // Wave isn't over until all enemies dead AND all ground scrap settled.
-    if wave_mgr.spawn_queue.is_empty() && enemies.is_empty() && drops.is_empty() {
+    let alive_count = enemies.iter().filter(|s| s.is_alive()).count();
+    if wave_mgr.spawn_queue.is_empty() && alive_count == 0 && drops.is_empty() {
         wave_mgr.current_wave += 1;
         next_phase.set(PlayPhase::Building);
     }
@@ -124,21 +125,12 @@ pub fn handle_start_wave_input(
 
 /// Game over when truly bankrupt: no scrap anywhere in the economy and no
 /// active enemies that could be killed for loot. Enemies stuck wandering an
-/// empty pile (`SearchWander`) are ignored — they will never yield scrap.
+/// empty pile are ignored — they will never yield scrap.
 pub fn check_game_over(
     mut commands: Commands,
     pile_scrap: Res<PileScrap>,
     drops: Query<(), With<ScrapDrop>>,
-    stolen: Query<&StolenScrap, (With<Enemy>, Without<Dead>)>,
-    active_enemies: Query<
-        (),
-        (
-            With<Enemy>,
-            Without<Dead>,
-            Without<Dying>,
-            Without<SearchWander>,
-        ),
-    >,
+    enemies: Query<(&EnemyState, Option<&StolenScrap>), With<Enemy>>,
     wave_mgr: Res<WaveManager>,
     mut next_state: ResMut<NextState<GameState>>,
     sounds: Res<SoundAssets>,
@@ -149,12 +141,15 @@ pub fn check_game_over(
     if !drops.is_empty() {
         return;
     }
-    if stolen.iter().any(|s| s.0 > 0) {
-        return;
+    for (state, stolen) in &enemies {
+        if stolen.is_some_and(|s| s.0 > 0) {
+            return;
+        }
+        if state.is_active() {
+            return;
+        }
     }
-    // Only non-wandering enemies (or queued spawns) can yield recoverable
-    // scrap when killed. Wandering enemies are stuck on the empty pile.
-    if !active_enemies.is_empty() || !wave_mgr.spawn_queue.is_empty() {
+    if !wave_mgr.spawn_queue.is_empty() {
         return;
     }
     play_sound(&mut commands, &sounds.game_over, 0.6);
