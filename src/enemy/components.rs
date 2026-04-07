@@ -123,7 +123,6 @@ pub struct AoEBurst {
 pub enum EnemyState {
     #[default]
     Approaching,
-    Wandering,
     Fleeing,
     Dying,
     Dead,
@@ -131,9 +130,6 @@ pub enum EnemyState {
 
 impl EnemyState {
     pub fn is_alive(&self) -> bool {
-        matches!(self, Self::Approaching | Self::Wandering | Self::Fleeing)
-    }
-    pub fn is_active(&self) -> bool {
         matches!(self, Self::Approaching | Self::Fleeing)
     }
 }
@@ -145,13 +141,6 @@ pub struct StolenScrap(pub u32);
 /// Marker for the visual decal on enemies carrying stolen scrap.
 #[derive(Component)]
 pub struct ScrapCarrierDecal;
-
-/// Idle wander state for enemies searching the pile.
-#[derive(Component)]
-pub struct SearchWander {
-    pub target: Vec2,
-    pub timer: Timer,
-}
 
 /// Boss trait: slow HP recovery over time.
 #[derive(Component)]
@@ -233,19 +222,9 @@ mod tests {
     #[test]
     fn enemy_state_is_alive() {
         assert!(EnemyState::Approaching.is_alive());
-        assert!(EnemyState::Wandering.is_alive());
         assert!(EnemyState::Fleeing.is_alive());
         assert!(!EnemyState::Dying.is_alive());
         assert!(!EnemyState::Dead.is_alive());
-    }
-
-    #[test]
-    fn enemy_state_is_active() {
-        assert!(EnemyState::Approaching.is_active());
-        assert!(!EnemyState::Wandering.is_active());
-        assert!(EnemyState::Fleeing.is_active());
-        assert!(!EnemyState::Dying.is_active());
-        assert!(!EnemyState::Dead.is_active());
     }
 
     #[test]

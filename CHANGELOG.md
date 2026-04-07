@@ -1,5 +1,21 @@
 # Changelog
 
+## Unreleased
+
+### Refactors
+
+- **Enemy state machine** — Replaced scattered marker components (`EnemyPhase`, `Dead`, `Dying`) with a unified `EnemyState` enum (Approaching, Fleeing, Dying, Dead). Systems use `is_alive()` helper instead of fragile `Without<>` chains. Eliminated 30+ query filters across 11 files.
+- **Tower state machine** — Replaced `Placing` and `TowerRubble` markers with a `TowerState` enum (Placing, Active, Rubble). Systems use `is_operational()`/`is_placed()` helpers. Eliminated 22 query filters across 6 files.
+- **Removed enemy wandering** — Enemies that reach an empty pile now flee to the edge instead of wandering aimlessly. Removed `SearchWander` component and related systems. Net -159 lines.
+
+### Bug Fixes
+
+- **Fixed game over deadlock** (#10) — Root cause was enemies wandering on an empty pile forever, blocking game over. With wandering removed, every enemy resolves (flees or dies). Game over check: pile=0, no drops, no stolen scrap, no alive enemies, no spawn queue.
+
+### Infrastructure
+
+- **68 tests** (up from 57), covering state machine helpers, game over corner cases, and all existing functionality
+
 ## v0.2.0 — Testing Foundation & Game Over Fix
 
 ### New Features

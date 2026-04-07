@@ -228,9 +228,9 @@ fn check_game_over_triggers_when_truly_bankrupt() {
 }
 
 #[test]
-fn check_game_over_no_trigger_with_active_enemies() {
+fn check_game_over_no_trigger_with_alive_enemies() {
     let mut app = game_over_app(0);
-    // Active enemy (approaching, not wandering) — could be killed for loot.
+    // Alive enemy (approaching) — could be killed for loot.
     app.world_mut().spawn((Enemy, EnemyState::Approaching));
     app.update();
     app.update();
@@ -284,25 +284,6 @@ fn check_game_over_no_trigger_with_drops_on_ground() {
 #[test]
 fn check_game_over_triggers_with_only_dying_enemies() {
     let mut app = game_over_app(0);
-    app.world_mut().spawn((Enemy, EnemyState::Dying));
-    app.update();
-    app.update();
-    assert_eq!(game_state(&app), GameState::GameOver);
-}
-
-/// Mix of wandering and dying enemies — neither should block game over.
-#[test]
-fn check_game_over_triggers_with_wandering_and_dying_enemies() {
-    let mut app = game_over_app(0);
-    app.world_mut().spawn((
-        Enemy,
-        EnemyState::Wandering,
-        SearchWander {
-            target: Vec2::ZERO,
-            timer: Timer::from_seconds(2.0, TimerMode::Once),
-        },
-        Transform::default(),
-    ));
     app.world_mut().spawn((Enemy, EnemyState::Dying));
     app.update();
     app.update();
@@ -520,50 +501,15 @@ fn find_best_target_closest_mode() {
 
 // ---------------------------------------------------------------------------
 // Regression: n8behavior/bevy-td-sandbox#10
-// Game over not triggering when enemies wander on empty pile
 // ---------------------------------------------------------------------------
 
-/// Reproduces the deadlock described in #10: pile is empty, no towers exist,
-/// no scrap on ground, no stolen scrap — but wandering enemies keep the game
-/// alive forever because `check_game_over` treats them as "could be killed
-/// for loot" even though no towers exist to kill them.
+/// #10: all enemies fled after stealing scrap, pile empty = game over.
 #[test]
-fn game_over_triggers_with_wandering_enemies_on_empty_pile() {
+fn regression_10_game_over_after_all_enemies_flee() {
     let mut app = game_over_app(0);
-
-    // Enemies wandering on the empty pile — no stolen scrap, no path to flee.
-    // No towers exist to kill them. This is the deadlock scenario from #10.
-    app.world_mut().spawn((
-        Enemy,
-        EnemyState::Wandering,
-        SearchWander {
-            target: Vec2::new(10.0, 10.0),
-            timer: Timer::from_seconds(2.0, TimerMode::Once),
-        },
-        Transform::from_translation(Vec3::new(0.0, 0.0, 1.0)),
-    ));
-    app.world_mut().spawn((
-        Enemy,
-        EnemyState::Wandering,
-        SearchWander {
-            target: Vec2::new(-5.0, 3.0),
-            timer: Timer::from_seconds(1.5, TimerMode::Once),
-        },
-        Transform::from_translation(Vec3::new(20.0, 0.0, 1.0)),
-    ));
-
-    app.add_systems(
-        Update,
-        check_game_over.run_if(in_state(PlayPhase::Defending)),
-    );
+    // No alive enemies, no stolen scrap, no drops — truly bankrupt.
+    // (Enemies that stole scrap have already fled and been despawned.)
     app.update();
     app.update();
-
-    let state = app.world().resource::<State<GameState>>();
-    assert_eq!(
-        *state.get(),
-        GameState::GameOver,
-        "game over should trigger when pile is empty and remaining enemies \
-         are just wandering with no way to be killed (#10)"
-    );
+    assert_eq!(game_state(&app), GameState::GameOver);
 }

@@ -124,8 +124,7 @@ pub fn handle_start_wave_input(
 }
 
 /// Game over when truly bankrupt: no scrap anywhere in the economy and no
-/// active enemies that could be killed for loot. Enemies stuck wandering an
-/// empty pile are ignored — they will never yield scrap.
+/// alive enemies that could be killed for loot.
 pub fn check_game_over(
     mut commands: Commands,
     pile_scrap: Res<PileScrap>,
@@ -141,13 +140,11 @@ pub fn check_game_over(
     if !drops.is_empty() {
         return;
     }
-    for (state, stolen) in &enemies {
-        if stolen.is_some_and(|s| s.0 > 0) {
-            return;
-        }
-        if state.is_active() {
-            return;
-        }
+    if enemies
+        .iter()
+        .any(|(s, stolen)| s.is_alive() || stolen.is_some_and(|s| s.0 > 0))
+    {
+        return;
     }
     if !wave_mgr.spawn_queue.is_empty() {
         return;

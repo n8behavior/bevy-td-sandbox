@@ -59,7 +59,7 @@ pub fn enemy_movement(
 ) {
     let mut rng = rand::rng();
     for (entity, mut agent_pos, next_pos, mut transform, speed, state, wander) in &mut query {
-        if !state.is_alive() || *state == EnemyState::Wandering {
+        if !state.is_alive() {
             continue;
         }
         let wander_vec = wander.as_deref().map_or(Vec2::ZERO, |w| w.0);
@@ -110,7 +110,7 @@ pub fn enemy_movement(
 }
 
 /// Approaching enemies that reach a pile cell steal scrap and start fleeing.
-/// If the pile is empty, enemies wander on the pile searching for scrap.
+/// If the pile is empty, enemies flee to the edge with nothing.
 pub fn enemy_reached_pile(
     mut commands: Commands,
     mut enemies: Query<
@@ -119,8 +119,6 @@ pub fn enemy_reached_pile(
             &AgentPos,
             &LootValue,
             &mut EnemyState,
-            &Transform,
-            Option<&SearchWander>,
             Option<&NextPos>,
             Option<&Pathfind>,
             Option<&Path>,
@@ -130,10 +128,7 @@ pub fn enemy_reached_pile(
     mut pile_scrap: ResMut<PileScrap>,
     edge_cells: Res<EdgeCells>,
 ) {
-    let mut rng = rand::rng();
-    for (entity, agent_pos, loot, mut state, transform, search, next_pos, pathfind_req, path) in
-        &mut enemies
-    {
+    for (entity, agent_pos, loot, mut state, next_pos, pathfind_req, path) in &mut enemies {
         if *state != EnemyState::Approaching {
             continue;
         }
@@ -145,16 +140,13 @@ pub fn enemy_reached_pile(
             continue;
         }
 
-        // Nothing to steal — start wandering if not already.
+        // Nothing to steal — flee empty-handed.
         if pile_scrap.amount == 0 {
-            if search.is_none() {
-                *state = EnemyState::Wandering;
-                let pos = transform.translation.truncate();
-                commands.entity(entity).insert(SearchWander {
-                    target: random_wander_target(&mut rng, pos),
-                    timer: Timer::from_seconds(rng.random_range(1.0..2.5), TimerMode::Once),
-                });
-            }
+            let flee_target = nearest_edge_cell(agent_pos.0, &edge_cells.0);
+            commands.entity(entity).insert((
+                EnemyState::Fleeing,
+                Pathfind::new(flee_target).mode(PathfindMode::Waypoints),
+            ));
             continue;
         }
 
@@ -168,7 +160,6 @@ pub fn enemy_reached_pile(
             StolenScrap(steal_amount),
             Pathfind::new(flee_target).mode(PathfindMode::Waypoints),
         ));
-        commands.entity(entity).remove::<SearchWander>();
 
         // Visual decal: small gold square on the enemy to indicate carried scrap.
         commands.entity(entity).with_child((
@@ -177,56 +168,6 @@ pub fn enemy_reached_pile(
             Transform::from_translation(Vec3::new(0.0, -5.0, 0.1)),
         ));
     }
-}
-
-/// Wander movement for enemies searching an empty pile.
-pub fn search_wander_movement(
-    mut query: Query<(&mut Transform, &MoveSpeed, &mut SearchWander, &EnemyState), With<Enemy>>,
-    time: Res<Time>,
-) {
-    let mut rng = rand::rng();
-    for (mut transform, speed, mut search, state) in &mut query {
-        if *state != EnemyState::Wandering {
-            continue;
-        }
-        search.timer.tick(time.delta());
-
-        let pos = transform.translation.truncate();
-        let dir = search.target - pos;
-        let dist = dir.length();
-
-        // Drift toward wander target at half speed.
-        if dist > 1.0 {
-            let goal = Quat::from_rotation_z(dir.y.atan2(dir.x));
-            let dot = transform.rotation.dot(goal);
-            let goal = if dot < 0.0 { -goal } else { goal };
-            let angle_remaining = transform.rotation.angle_between(goal);
-            let max_step = ENEMY_ROTATION_SPEED * time.delta_secs();
-            let t = if angle_remaining > 0.0 {
-                (max_step / angle_remaining).min(1.0)
-            } else {
-                1.0
-            };
-            transform.rotation = transform.rotation.slerp(goal, t);
-
-            let step = dir.normalize() * speed.current * 0.4 * time.delta_secs();
-            transform.translation += step.extend(0.0);
-        }
-
-        // Pick a new wander target when timer expires or close enough.
-        if search.timer.is_finished() || dist < 2.0 {
-            search.target = random_wander_target(&mut rng, pos);
-            search.timer = Timer::from_seconds(rng.random_range(1.0..2.5), TimerMode::Once);
-        }
-    }
-}
-
-fn random_wander_target(rng: &mut impl Rng, center: Vec2) -> Vec2 {
-    let radius = 30.0;
-    Vec2::new(
-        center.x + rng.random_range(-radius..radius),
-        center.y + rng.random_range(-radius..radius),
-    )
 }
 
 /// Fleeing enemies that reach the map edge escape with stolen scrap.
@@ -673,25 +614,5 @@ pub fn brute_attack_towers(
                 play_sound(&mut commands, &sounds.tower_destroyed, 0.5);
             }
         }
-    }
-}
-
-/// Wake wandering enemies when scrap is added back to the pile.
-pub fn wake_wandering_enemies(
-    mut commands: Commands,
-    pile_scrap: Res<PileScrap>,
-    pile_state: Res<PileState>,
-    mut enemies: Query<(Entity, &AgentPos, &mut EnemyState), With<SearchWander>>,
-) {
-    if !pile_scrap.is_changed() || pile_scrap.amount == 0 {
-        return;
-    }
-    for (entity, agent_pos, mut state) in &mut enemies {
-        *state = EnemyState::Approaching;
-        let goal = nearest_pile_cell(agent_pos.0, &pile_state);
-        commands.entity(entity).remove::<SearchWander>();
-        commands
-            .entity(entity)
-            .insert(Pathfind::new(goal).mode(PathfindMode::Waypoints));
     }
 }

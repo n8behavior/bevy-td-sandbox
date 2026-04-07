@@ -16,7 +16,7 @@ impl Plugin for EnemyPlugin {
                     (
                         systems::reset_speed,
                         systems::apply_slow_effects,
-                        (systems::enemy_movement, systems::search_wander_movement),
+                        systems::enemy_movement,
                     )
                         .chain(),
                     systems::boss_regeneration,
@@ -40,7 +40,6 @@ impl Plugin for EnemyPlugin {
                 systems::animate_death,
                 systems::animate_damage_flash,
                 systems::animate_aoe_burst,
-                systems::wake_wandering_enemies,
             )
                 .run_if(in_state(GameState::Playing)),
         )
