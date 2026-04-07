@@ -5,7 +5,7 @@ use bevy_northstar::prelude::*;
 use rand::Rng;
 
 use crate::common::constants::*;
-use crate::enemy::components::{Enemy, EnemyState, Health, MoveSpeed};
+use crate::enemy::components::{Enemy, Health, MoveSpeed};
 use crate::grid::components::GridCell;
 use crate::grid::systems::world_to_grid;
 use crate::pile::resources::{EdgeCells, PileState};
@@ -280,14 +280,11 @@ pub fn generate_terrain(
 // ---------------------------------------------------------------------------
 
 pub fn apply_puddle_slow(
-    mut enemies: Query<(&Transform, &mut MoveSpeed, &EnemyState), With<Enemy>>,
+    mut enemies: Query<(&Transform, &mut MoveSpeed), With<Enemy>>,
     terrain_map: Res<TerrainMap>,
     config: Res<GridConfig>,
 ) {
-    for (transform, mut speed, state) in &mut enemies {
-        if !state.is_alive() {
-            continue;
-        }
+    for (transform, mut speed) in &mut enemies {
         let pos = transform.translation.truncate();
         let Some(grid_pos) = world_to_grid(pos, &config) else {
             continue;
@@ -299,15 +296,12 @@ pub fn apply_puddle_slow(
 }
 
 pub fn apply_radioactive_damage(
-    mut enemies: Query<(&Transform, &mut Health, &EnemyState), With<Enemy>>,
+    mut enemies: Query<(&Transform, &mut Health), With<Enemy>>,
     terrain_map: Res<TerrainMap>,
     config: Res<GridConfig>,
     time: Res<Time>,
 ) {
-    for (transform, mut health, state) in &mut enemies {
-        if !state.is_alive() {
-            continue;
-        }
+    for (transform, mut health) in &mut enemies {
         let pos = transform.translation.truncate();
         let Some(grid_pos) = world_to_grid(pos, &config) else {
             continue;

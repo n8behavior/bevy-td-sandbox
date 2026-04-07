@@ -94,7 +94,7 @@ pub struct SpawnAnimation {
     pub timer: Timer,
 }
 
-/// Shrink + fade death animation. Sets `EnemyState::Dead` when complete.
+/// Shrink + fade death animation. Despawns the entity when complete.
 #[derive(Component)]
 pub struct DeathAnimation {
     pub timer: Timer,
@@ -118,20 +118,11 @@ pub struct AoEBurst {
     pub max_radius: f32,
 }
 
-/// Unified state for enemy lifecycle: navigation, scavenging, and death.
 #[derive(Component, Default, PartialEq, Eq, Debug, Clone, Copy)]
 pub enum EnemyState {
     #[default]
     Approaching,
     Fleeing,
-    Dying,
-    Dead,
-}
-
-impl EnemyState {
-    pub fn is_alive(&self) -> bool {
-        matches!(self, Self::Approaching | Self::Fleeing)
-    }
 }
 
 /// Scrap stolen from the pile that the enemy is carrying.
@@ -217,14 +208,6 @@ mod tests {
     fn brute_has_second_highest_loot() {
         assert!(EnemyType::Brute.loot_value() > EnemyType::Shambler.loot_value());
         assert!(EnemyType::Brute.loot_value() > EnemyType::Runner.loot_value());
-    }
-
-    #[test]
-    fn enemy_state_is_alive() {
-        assert!(EnemyState::Approaching.is_alive());
-        assert!(EnemyState::Fleeing.is_alive());
-        assert!(!EnemyState::Dying.is_alive());
-        assert!(!EnemyState::Dead.is_alive());
     }
 
     #[test]

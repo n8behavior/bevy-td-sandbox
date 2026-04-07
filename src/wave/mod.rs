@@ -30,14 +30,13 @@ impl Plugin for WavePlugin {
         .add_systems(
             Update,
             (
-                (systems::check_game_over, systems::check_wave_complete)
-                    .chain()
-                    .run_if(in_state(PlayPhase::Defending)),
+                systems::check_wave_complete.run_if(in_state(PlayPhase::Defending)),
                 systems::handle_start_wave_input.run_if(in_state(PlayPhase::Building)),
             )
                 .run_if(in_state(GameState::Playing))
                 .run_if(is_classic),
-        );
+        )
+        .add_observer(systems::on_wave_complete);
     }
 }
 

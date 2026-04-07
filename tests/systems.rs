@@ -8,7 +8,7 @@ use bevy_td_sandbox::test_helpers::*;
 use bevy_td_sandbox::tower::components::*;
 use bevy_td_sandbox::tower::systems::slow_aura;
 use bevy_td_sandbox::wave::resources::WaveManager;
-use bevy_td_sandbox::wave::systems::{check_game_over, check_wave_complete};
+use bevy_td_sandbox::wave::systems::{check_wave_complete, on_wave_complete};
 
 // ---------------------------------------------------------------------------
 // update_pile_state
@@ -58,125 +58,8 @@ fn update_pile_state_zero_scrap_minimal_cells() {
 // check_wave_complete
 // ---------------------------------------------------------------------------
 
-#[test]
-fn check_wave_complete_transitions_when_clear() {
-    let mut app = test_app();
-    app.init_state::<GameState>();
-    app.add_sub_state::<PlayPhase>();
-
-    // Set state to Playing/Defending
-    app.world_mut()
-        .resource_mut::<NextState<GameState>>()
-        .set(GameState::Playing);
-    app.update(); // apply state transition
-    app.world_mut()
-        .resource_mut::<NextState<PlayPhase>>()
-        .set(PlayPhase::Defending);
-    app.update(); // apply sub-state
-
-    app.insert_resource(WaveManager {
-        current_wave: 0,
-        waves: Vec::new(),
-        spawn_timer: Timer::from_seconds(1.0, TimerMode::Repeating),
-        enemies_remaining: 0,
-        spawn_queue: Vec::new(),
-    });
-
-    app.add_systems(
-        Update,
-        check_wave_complete.run_if(in_state(PlayPhase::Defending)),
-    );
-
-    // No enemies, no drops, empty queue — should transition to Building.
-    app.update();
-    app.update(); // apply state
-
-    let phase = app.world().resource::<State<PlayPhase>>();
-    assert_eq!(*phase.get(), PlayPhase::Building);
-}
-
-#[test]
-fn check_wave_complete_does_not_transition_with_enemies() {
-    let mut app = test_app();
-    app.init_state::<GameState>();
-    app.add_sub_state::<PlayPhase>();
-
-    app.world_mut()
-        .resource_mut::<NextState<GameState>>()
-        .set(GameState::Playing);
-    app.update();
-    app.world_mut()
-        .resource_mut::<NextState<PlayPhase>>()
-        .set(PlayPhase::Defending);
-    app.update();
-
-    app.insert_resource(WaveManager {
-        current_wave: 0,
-        waves: Vec::new(),
-        spawn_timer: Timer::from_seconds(1.0, TimerMode::Repeating),
-        enemies_remaining: 0,
-        spawn_queue: Vec::new(),
-    });
-
-    // Spawn an alive enemy.
-    app.world_mut().spawn((Enemy, EnemyState::Approaching));
-
-    app.add_systems(
-        Update,
-        check_wave_complete.run_if(in_state(PlayPhase::Defending)),
-    );
-    app.update();
-    app.update();
-
-    let phase = app.world().resource::<State<PlayPhase>>();
-    assert_eq!(*phase.get(), PlayPhase::Defending);
-}
-
-#[test]
-fn check_wave_complete_does_not_transition_with_drops() {
-    let mut app = test_app();
-    app.init_state::<GameState>();
-    app.add_sub_state::<PlayPhase>();
-
-    app.world_mut()
-        .resource_mut::<NextState<GameState>>()
-        .set(GameState::Playing);
-    app.update();
-    app.world_mut()
-        .resource_mut::<NextState<PlayPhase>>()
-        .set(PlayPhase::Defending);
-    app.update();
-
-    app.insert_resource(WaveManager {
-        current_wave: 0,
-        waves: Vec::new(),
-        spawn_timer: Timer::from_seconds(1.0, TimerMode::Repeating),
-        enemies_remaining: 0,
-        spawn_queue: Vec::new(),
-    });
-
-    // Spawn a scrap drop on the ground.
-    app.world_mut().spawn(ScrapDrop {
-        value: 10,
-        lifetime: Timer::from_seconds(10.0, TimerMode::Once),
-    });
-
-    app.add_systems(
-        Update,
-        check_wave_complete.run_if(in_state(PlayPhase::Defending)),
-    );
-    app.update();
-    app.update();
-
-    let phase = app.world().resource::<State<PlayPhase>>();
-    assert_eq!(*phase.get(), PlayPhase::Defending);
-}
-
-// ---------------------------------------------------------------------------
-// check_game_over
-// ---------------------------------------------------------------------------
-
-fn game_over_app(scrap: u32) -> App {
+/// Helper: set up a Defending-phase app with check_wave_complete and given scrap.
+fn wave_app(scrap: u32) -> App {
     let mut app = test_app();
     app.init_state::<GameState>();
     app.add_sub_state::<PlayPhase>();
@@ -200,119 +83,109 @@ fn game_over_app(scrap: u32) -> App {
         spawn_queue: Vec::new(),
     });
 
+    app.add_observer(on_wave_complete);
     app.add_systems(
         Update,
-        check_game_over.run_if(in_state(PlayPhase::Defending)),
+        check_wave_complete.run_if(in_state(PlayPhase::Defending)),
     );
     app
 }
+
+// ---------------------------------------------------------------------------
+// check_wave_complete — game over integrated
+// Game over is checked when wave resolves: pile=0 → GameOver, else → Building
+// ---------------------------------------------------------------------------
 
 fn game_state(app: &App) -> GameState {
     app.world().resource::<State<GameState>>().get().clone()
 }
 
+/// Wave resolved with scrap remaining → Building phase (next wave).
 #[test]
-fn check_game_over_no_trigger_with_scrap() {
-    let mut app = game_over_app(100);
+fn wave_complete_with_scrap_transitions_to_building() {
+    let mut app = wave_app(100);
     app.update();
     app.update();
+    assert_eq!(
+        *app.world().resource::<State<PlayPhase>>().get(),
+        PlayPhase::Building
+    );
     assert_eq!(game_state(&app), GameState::Playing);
 }
 
+/// Wave resolved with pile empty → GameOver.
 #[test]
-fn check_game_over_triggers_when_truly_bankrupt() {
-    let mut app = game_over_app(0);
+fn wave_complete_with_empty_pile_triggers_game_over() {
+    let mut app = wave_app(0);
     app.update();
     app.update();
     assert_eq!(game_state(&app), GameState::GameOver);
 }
 
+/// Alive enemies prevent wave from resolving (regardless of pile state).
 #[test]
-fn check_game_over_no_trigger_with_alive_enemies() {
-    let mut app = game_over_app(0);
-    // Alive enemy (approaching) — could be killed for loot.
+fn wave_does_not_resolve_with_alive_enemies() {
+    let mut app = wave_app(0);
     app.world_mut().spawn((Enemy, EnemyState::Approaching));
     app.update();
     app.update();
+    // Wave not resolved — still Defending, no game over.
+    assert_eq!(
+        *app.world().resource::<State<PlayPhase>>().get(),
+        PlayPhase::Defending
+    );
     assert_eq!(game_state(&app), GameState::Playing);
 }
 
+/// Drops on ground prevent wave from resolving.
 #[test]
-fn check_game_over_no_trigger_with_stolen_scrap() {
-    let mut app = game_over_app(0);
-    // Fleeing enemy carrying stolen scrap — recoverable if killed.
-    app.world_mut()
-        .spawn((Enemy, EnemyState::Fleeing, StolenScrap(50)));
-    app.update();
-    app.update();
-    assert_eq!(game_state(&app), GameState::Playing);
-}
-
-#[test]
-fn check_game_over_no_trigger_with_spawn_queue() {
-    let mut app = game_over_app(0);
-    // Enemies still queued to spawn — could be killed for loot by towers.
-    app.world_mut()
-        .resource_mut::<WaveManager>()
-        .spawn_queue
-        .push(bevy_td_sandbox::wave::resources::SpawnEntry {
-            enemy_type: bevy_td_sandbox::enemy::components::EnemyType::Shambler,
-            health_multiplier: 1.0,
-            speed_multiplier: 1.0,
-            boss_trait: None,
-        });
-    app.update();
-    app.update();
-    assert_eq!(game_state(&app), GameState::Playing);
-}
-
-/// Scrap drops on the ground should prevent game over even with empty pile.
-#[test]
-fn check_game_over_no_trigger_with_drops_on_ground() {
-    let mut app = game_over_app(0);
+fn wave_does_not_resolve_with_drops() {
+    let mut app = wave_app(0);
     app.world_mut().spawn(ScrapDrop {
         value: 10,
         lifetime: Timer::from_seconds(10.0, TimerMode::Once),
     });
     app.update();
     app.update();
-    assert_eq!(game_state(&app), GameState::Playing);
+    assert_eq!(
+        *app.world().resource::<State<PlayPhase>>().get(),
+        PlayPhase::Defending
+    );
 }
 
-/// Dying enemies (death animation playing, not yet Dead) should not block
-/// game over — they're already doomed and can't contribute to recovery.
+/// Dying/Dead enemies (DeathAnimation without Enemy) don't block wave resolution.
 #[test]
-fn check_game_over_triggers_with_only_dying_enemies() {
-    let mut app = game_over_app(0);
-    app.world_mut().spawn((Enemy, EnemyState::Dying));
+fn wave_resolves_with_only_dying_and_dead_enemies() {
+    let mut app = wave_app(0);
+    // These entities have DeathAnimation but no Enemy component — they are corpses.
+    app.world_mut().spawn(DeathAnimation {
+        timer: Timer::from_seconds(0.3, TimerMode::Once),
+    });
+    app.world_mut().spawn(DeathAnimation {
+        timer: Timer::from_seconds(0.3, TimerMode::Once),
+    });
     app.update();
     app.update();
     assert_eq!(game_state(&app), GameState::GameOver);
 }
 
-/// Dead enemies (pending cleanup) should not block game over.
+/// #10: boss steals last scrap, escapes (DeathAnimation + StolenScrap, no Enemy) → game over.
+/// The stolen scrap is already lost — it was subtracted from the pile at
+/// steal time and escaping doesn't return it.
 #[test]
-fn check_game_over_triggers_with_only_dead_enemies() {
-    let mut app = game_over_app(0);
-    app.world_mut().spawn((Enemy, EnemyState::Dead));
+fn regression_10_escaped_enemy_with_stolen_scrap() {
+    let mut app = wave_app(0);
+    // Boss escaped: has DeathAnimation and StolenScrap but no Enemy component.
+    app.world_mut().spawn((
+        DeathAnimation {
+            timer: Timer::from_seconds(0.3, TimerMode::Once),
+        },
+        StolenScrap(5),
+    ));
     app.update();
     app.update();
+    // No Enemy entities → wave resolves → pile=0 → game over.
     assert_eq!(game_state(&app), GameState::GameOver);
-}
-
-/// Stolen scrap of 0 should not block game over (enemy stole nothing).
-#[test]
-fn check_game_over_triggers_with_zero_stolen_scrap() {
-    let mut app = game_over_app(0);
-    app.world_mut()
-        .spawn((Enemy, EnemyState::Fleeing, StolenScrap(0)));
-    // Enemy is active (fleeing, not wandering) so it blocks game over —
-    // but it has 0 stolen scrap, so the stolen check shouldn't block.
-    // However the active_enemies check WILL block because it's fleeing.
-    app.update();
-    app.update();
-    // Fleeing enemy is still "active" — it's not stuck wandering.
-    assert_eq!(game_state(&app), GameState::Playing);
 }
 
 // ---------------------------------------------------------------------------
@@ -497,19 +370,4 @@ fn find_best_target_closest_mode() {
         TurretPhase::Acquiring { target } => assert_eq!(target, close),
         _ => panic!("expected Acquiring phase, got Idle or Tracking"),
     }
-}
-
-// ---------------------------------------------------------------------------
-// Regression: n8behavior/bevy-td-sandbox#10
-// ---------------------------------------------------------------------------
-
-/// #10: all enemies fled after stealing scrap, pile empty = game over.
-#[test]
-fn regression_10_game_over_after_all_enemies_flee() {
-    let mut app = game_over_app(0);
-    // No alive enemies, no stolen scrap, no drops — truly bankrupt.
-    // (Enemies that stole scrap have already fled and been despawned.)
-    app.update();
-    app.update();
-    assert_eq!(game_state(&app), GameState::GameOver);
 }

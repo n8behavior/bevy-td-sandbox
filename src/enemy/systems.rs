@@ -44,24 +44,23 @@ pub struct HealthBar {
 }
 
 pub fn enemy_movement(
-    mut query: Query<(
-        Entity,
-        &mut AgentPos,
-        &NextPos,
-        &mut Transform,
-        &MoveSpeed,
-        &EnemyState,
-        Option<&mut WanderOffset>,
-    )>,
+    mut query: Query<
+        (
+            Entity,
+            &mut AgentPos,
+            &NextPos,
+            &mut Transform,
+            &MoveSpeed,
+            Option<&mut WanderOffset>,
+        ),
+        With<Enemy>,
+    >,
     mut commands: Commands,
     time: Res<Time>,
     config: Res<GridConfig>,
 ) {
     let mut rng = rand::rng();
-    for (entity, mut agent_pos, next_pos, mut transform, speed, state, wander) in &mut query {
-        if !state.is_alive() {
-            continue;
-        }
+    for (entity, mut agent_pos, next_pos, mut transform, speed, wander) in &mut query {
         let wander_vec = wander.as_deref().map_or(Vec2::ZERO, |w| w.0);
         let target_world = (grid_to_world(next_pos.0, &config) + wander_vec).extend(1.0);
         let current = transform.translation;
@@ -173,10 +172,10 @@ pub fn enemy_reached_pile(
 /// Fleeing enemies that reach the map edge escape with stolen scrap.
 pub fn enemy_escaped(
     mut commands: Commands,
-    mut enemies: Query<(Entity, &mut EnemyState, &Transform), With<Enemy>>,
+    enemies: Query<(Entity, &EnemyState, &Transform), With<Enemy>>,
     config: Res<GridConfig>,
 ) {
-    for (entity, mut state, transform) in &mut enemies {
+    for (entity, state, transform) in &enemies {
         if *state != EnemyState::Fleeing {
             continue;
         }
@@ -192,17 +191,17 @@ pub fn enemy_escaped(
             continue;
         }
         // Stolen scrap is permanently lost — already subtracted from pile.
-        *state = EnemyState::Dying;
+        commands.entity(entity).remove::<Enemy>();
         commands.entity(entity).insert(DeathAnimation {
             timer: Timer::from_seconds(0.3, TimerMode::Once),
         });
     }
 }
 
-/// Mark enemies with zero health as Dying, trigger loot event.
+/// Mark enemies with zero health as dying: remove `Enemy`, trigger loot event.
 pub fn check_enemy_death(
     mut commands: Commands,
-    mut enemies: Query<
+    enemies: Query<
         (
             Entity,
             &Health,
@@ -210,7 +209,6 @@ pub fn check_enemy_death(
             &LootValue,
             &Sprite,
             &EnemyType,
-            &mut EnemyState,
             Option<&StolenScrap>,
             Option<&SplitsOnDeath>,
         ),
@@ -219,12 +217,7 @@ pub fn check_enemy_death(
     sounds: Res<SoundAssets>,
     mut shake: ResMut<ScreenShake>,
 ) {
-    for (entity, health, transform, loot, sprite, enemy_type, mut state, stolen, splits) in
-        &mut enemies
-    {
-        if !state.is_alive() {
-            continue;
-        }
+    for (entity, health, transform, loot, sprite, enemy_type, stolen, splits) in &enemies {
         if health.current <= 0.0 {
             let stolen_amount = stolen.map_or(0, |s| s.0);
             let split_count = splits.map_or(0, |s| s.count);
@@ -247,7 +240,7 @@ pub fn check_enemy_death(
                 shake.decay = 0.03;
             }
 
-            *state = EnemyState::Dying;
+            commands.entity(entity).remove::<Enemy>();
             commands.entity(entity).insert(DeathAnimation {
                 timer: Timer::from_seconds(0.3, TimerMode::Once),
             });
@@ -256,24 +249,18 @@ pub fn check_enemy_death(
 }
 
 /// Reset all enemy speeds to base each tick, before slow effects re-apply.
-pub fn reset_speed(mut query: Query<(&mut MoveSpeed, &EnemyState), With<Enemy>>) {
-    for (mut speed, state) in &mut query {
-        if !state.is_alive() {
-            continue;
-        }
+pub fn reset_speed(mut query: Query<&mut MoveSpeed, With<Enemy>>) {
+    for mut speed in &mut query {
         speed.current = speed.base;
     }
 }
 
 pub fn apply_slow_effects(
     mut commands: Commands,
-    mut query: Query<(Entity, &mut MoveSpeed, &mut SlowEffect, &EnemyState)>,
+    mut query: Query<(Entity, &mut MoveSpeed, &mut SlowEffect), With<Enemy>>,
     time: Res<Time>,
 ) {
-    for (entity, mut speed, mut slow, state) in &mut query {
-        if !state.is_alive() {
-            continue;
-        }
+    for (entity, mut speed, mut slow) in &mut query {
         slow.remaining.tick(time.delta());
         speed.current = speed.base * slow.factor;
         if slow.remaining.is_finished() {
@@ -284,13 +271,10 @@ pub fn apply_slow_effects(
 }
 
 pub fn update_health_bars(
-    enemies: Query<(&Health, &Transform, &Children, &EnemyState), (With<Enemy>,)>,
+    enemies: Query<(&Health, &Transform, &Children), With<Enemy>>,
     mut bars: Query<(&HealthBar, &mut Sprite, &mut Transform), Without<Enemy>>,
 ) {
-    for (health, enemy_tf, children, state) in &enemies {
-        if *state == EnemyState::Dead {
-            continue;
-        }
+    for (health, enemy_tf, children) in &enemies {
         for child in children.iter() {
             if let Ok((bar, mut sprite, mut bar_tf)) = bars.get_mut(child) {
                 let frac = (health.current / health.max).clamp(0.0, 1.0);
@@ -314,15 +298,6 @@ pub fn update_health_bars(
     }
 }
 
-/// Actually despawn all Dead entities. Runs last in the frame.
-pub fn cleanup_dead(mut commands: Commands, dead: Query<(Entity, &EnemyState), With<Enemy>>) {
-    for (entity, state) in &dead {
-        if *state == EnemyState::Dead {
-            commands.entity(entity).despawn();
-        }
-    }
-}
-
 /// Scale-up ease-out animation on spawn.
 pub fn animate_spawn(
     mut commands: Commands,
@@ -342,19 +317,13 @@ pub fn animate_spawn(
     }
 }
 
-/// Shrink + fade death animation. Sets `EnemyState::Dead` when complete.
+/// Shrink + fade death animation. Despawns the entity when complete.
 pub fn animate_death(
     mut commands: Commands,
-    mut query: Query<(
-        Entity,
-        &mut DeathAnimation,
-        &mut Transform,
-        &mut Sprite,
-        Option<&mut EnemyState>,
-    )>,
+    mut query: Query<(Entity, &mut DeathAnimation, &mut Transform, &mut Sprite)>,
     time: Res<Time>,
 ) {
-    for (entity, mut anim, mut transform, mut sprite, enemy_state) in &mut query {
+    for (entity, mut anim, mut transform, mut sprite) in &mut query {
         anim.timer.tick(time.delta());
         let t = anim.timer.fraction();
         // Shrink and fade out.
@@ -362,11 +331,7 @@ pub fn animate_death(
         transform.scale = Vec3::splat(scale);
         sprite.color = sprite.color.with_alpha(1.0 - t);
         if anim.timer.is_finished() {
-            if let Some(mut state) = enemy_state {
-                *state = EnemyState::Dead;
-            } else {
-                commands.entity(entity).despawn();
-            }
+            commands.entity(entity).despawn();
         }
     }
 }
@@ -494,13 +459,10 @@ pub fn spawn_enemy(
 
 /// Boss regeneration: heal over time.
 pub fn boss_regeneration(
-    mut query: Query<(&Regeneration, &mut Health, &EnemyState), With<Enemy>>,
+    mut query: Query<(&Regeneration, &mut Health), With<Enemy>>,
     time: Res<Time>,
 ) {
-    for (regen, mut health, state) in &mut query {
-        if !state.is_alive() {
-            continue;
-        }
+    for (regen, mut health) in &mut query {
         health.current = (health.current + regen.rate * time.delta_secs()).min(health.max);
     }
 }
@@ -549,7 +511,7 @@ pub fn on_boss_split(
 
 /// Brutes attack adjacent impassable towers, dealing damage over time.
 pub fn brute_attack_towers(
-    mut brutes: Query<(&Transform, &mut BruteAttack, &EnemyState), (With<Enemy>, Without<Tower>)>,
+    mut brutes: Query<(&Transform, &mut BruteAttack), (With<Enemy>, Without<Tower>)>,
     mut towers: Query<
         (
             Entity,
@@ -566,10 +528,7 @@ pub fn brute_attack_towers(
     time: Res<Time>,
     sounds: Res<SoundAssets>,
 ) {
-    for (brute_tf, mut attack, state) in &mut brutes {
-        if !state.is_alive() {
-            continue;
-        }
+    for (brute_tf, mut attack) in &mut brutes {
         attack.cooldown.tick(time.delta());
         if !attack.cooldown.is_finished() {
             continue;

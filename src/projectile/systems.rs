@@ -3,9 +3,7 @@ use bevy::prelude::*;
 use bevy::sprite_render::MeshMaterial2d;
 
 use crate::camera::components::ScreenShake;
-use crate::enemy::components::{
-    AoEBurst, Armor, DamageFlash, Enemy, EnemyState, Health, SlowEffect,
-};
+use crate::enemy::components::{AoEBurst, Armor, DamageFlash, Enemy, Health, SlowEffect};
 use crate::particles::systems::spawn_impact_particles;
 use crate::shader::{CircleMaterial, CircleMesh};
 
@@ -14,19 +12,15 @@ use super::components::*;
 pub fn projectile_movement(
     mut commands: Commands,
     mut projectiles: Query<(Entity, &Projectile, &mut Transform)>,
-    targets: Query<(&Transform, &EnemyState), (With<Enemy>, Without<Projectile>)>,
+    targets: Query<&Transform, (With<Enemy>, Without<Projectile>)>,
     time: Res<Time>,
 ) {
     for (entity, proj, mut proj_tf) in &mut projectiles {
-        let Ok((target_tf, target_state)) = targets.get(proj.target) else {
+        let Ok(target_tf) = targets.get(proj.target) else {
             // Target gone -- despawn projectile
             commands.entity(entity).despawn();
             continue;
         };
-        if !target_state.is_alive() {
-            commands.entity(entity).despawn();
-            continue;
-        }
 
         let direction = target_tf.translation - proj_tf.translation;
         let distance = direction.length();
@@ -71,17 +65,7 @@ pub fn projectile_hit_detection(
         Option<&AoEPayload>,
         Option<&SlowPayload>,
     )>,
-    mut enemies: Query<
-        (
-            Entity,
-            &mut Health,
-            &Transform,
-            &Sprite,
-            Option<&Armor>,
-            &EnemyState,
-        ),
-        With<Enemy>,
-    >,
+    mut enemies: Query<(Entity, &mut Health, &Transform, &Sprite, Option<&Armor>), With<Enemy>>,
     mut shake: ResMut<ScreenShake>,
     circle_mesh: Res<CircleMesh>,
     mut circle_mats: ResMut<Assets<CircleMaterial>>,
@@ -89,14 +73,10 @@ pub fn projectile_hit_detection(
     let mut hits: Vec<PendingHit> = Vec::new();
 
     for (proj_entity, proj, proj_tf, aoe, slow) in &projectiles {
-        let Ok((_, _, target_tf, _, target_armor, target_state)) = enemies.get(proj.target) else {
+        let Ok((_, _, target_tf, _, target_armor)) = enemies.get(proj.target) else {
             commands.entity(proj_entity).despawn();
             continue;
         };
-        if !target_state.is_alive() {
-            commands.entity(proj_entity).despawn();
-            continue;
-        }
 
         let distance = proj_tf.translation.distance(target_tf.translation);
         if distance > 5.0 {
@@ -117,7 +97,7 @@ pub fn projectile_hit_detection(
     for hit in hits {
         commands.entity(hit.proj_entity).despawn();
 
-        if let Ok((_, mut health, _, sprite, _, _)) = enemies.get_mut(hit.target) {
+        if let Ok((_, mut health, _, sprite, _)) = enemies.get_mut(hit.target) {
             apply_damage(&mut health, hit.damage, hit.armor);
             // Flash white on damage.
             commands.entity(hit.target).insert(DamageFlash {
@@ -165,15 +145,15 @@ pub fn projectile_hit_detection(
 
             let aoe_targets: Vec<(Entity, f32, Option<f32>)> = enemies
                 .iter()
-                .filter(|(e, _, _, _, _, state)| *e != hit.target && state.is_alive())
-                .filter_map(|(e, _, tf, _, armor, _)| {
+                .filter(|(e, _, _, _, _)| *e != hit.target)
+                .filter_map(|(e, _, tf, _, armor)| {
                     let dist = tf.translation.distance(hit.hit_pos);
                     (dist <= radius).then_some((e, dist, armor.map(|a| a.reduction)))
                 })
                 .collect();
 
             for (aoe_entity, dist, aoe_armor) in aoe_targets {
-                if let Ok((_, mut health, _, sprite, _, _)) = enemies.get_mut(aoe_entity) {
+                if let Ok((_, mut health, _, sprite, _)) = enemies.get_mut(aoe_entity) {
                     // Full damage at center, zero at edge.
                     let falloff = 1.0 - (dist / radius).clamp(0.0, 1.0);
                     apply_damage(&mut health, aoe_damage * falloff, aoe_armor);

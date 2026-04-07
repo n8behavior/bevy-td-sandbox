@@ -12,13 +12,9 @@ pub fn recalculate_enemy_paths(
     edge_cells: Res<EdgeCells>,
 ) {
     for (entity, agent_pos, state) in &enemies {
-        if !state.is_alive() {
-            continue;
-        }
         let goal = match state {
             EnemyState::Approaching => nearest_pile_cell(agent_pos.0, &pile_state),
             EnemyState::Fleeing => nearest_edge_cell(agent_pos.0, &edge_cells.0),
-            _ => continue,
         };
         commands
             .entity(entity)

@@ -6,7 +6,7 @@ use crate::audio::resources::SoundAssets;
 use crate::audio::systems::play_sound;
 use crate::common::constants::*;
 use crate::economy::components::ScrapDrop;
-use crate::enemy::components::{DamageFlash, Enemy, EnemyState, Health, SlowEffect};
+use crate::enemy::components::{DamageFlash, Enemy, Health, SlowEffect};
 use crate::grid::systems::grid_to_world_cfg;
 use crate::pile::resources::{PileScrap, PileState};
 use crate::projectile::components::{AoEPayload, Projectile, TrailEmitter};
@@ -41,17 +41,14 @@ pub(crate) fn targeting_score(
 
 /// Find the best enemy within range according to the given targeting mode.
 pub(crate) fn find_best_target(
-    enemies: &Query<(Entity, &Transform, &Health, &EnemyState), With<Enemy>>,
+    enemies: &Query<(Entity, &Transform, &Health), With<Enemy>>,
     tower_pos: Vec2,
     range: f32,
     mode: TargetingMode,
     pile_center_world: Vec2,
 ) -> Option<Entity> {
     let mut best: Option<(Entity, f32)> = None;
-    for (entity, tf, health, state) in enemies.iter() {
-        if !state.is_alive() {
-            continue;
-        }
+    for (entity, tf, health) in enemies.iter() {
         let enemy_pos = tf.translation.truncate();
         let dist = tower_pos.distance(enemy_pos);
         if dist <= range {
@@ -79,13 +76,13 @@ pub(crate) fn is_aimed_at(
 /// Check whether a target entity is still alive and in range.
 pub(crate) fn target_valid(
     entity: Entity,
-    enemies: &Query<(Entity, &Transform, &Health, &EnemyState), With<Enemy>>,
+    enemies: &Query<(Entity, &Transform, &Health), With<Enemy>>,
     tower_pos: Vec2,
     range: f32,
 ) -> bool {
-    enemies.get(entity).is_ok_and(|(_, tf, _, state)| {
-        state.is_alive() && tower_pos.distance(tf.translation.truncate()) <= range
-    })
+    enemies
+        .get(entity)
+        .is_ok_and(|(_, tf, _)| tower_pos.distance(tf.translation.truncate()) <= range)
 }
 
 fn spawn_projectile(
@@ -145,7 +142,7 @@ pub fn turret_state_machine(
         ),
         With<Tower>,
     >,
-    enemies: Query<(Entity, &Transform, &Health, &EnemyState), With<Enemy>>,
+    enemies: Query<(Entity, &Transform, &Health), With<Enemy>>,
     time: Res<Time>,
     pile_state: Res<PileState>,
     config: Res<GridConfig>,
@@ -196,7 +193,7 @@ pub fn turret_state_machine(
                         Some(new) => TurretPhase::Acquiring { target: new },
                         None => TurretPhase::Idle,
                     };
-                } else if let Ok((_, target_tf, _, _)) = enemies.get(target)
+                } else if let Ok((_, target_tf, _)) = enemies.get(target)
                     && is_aimed_at(tower_tf, target_tf, tower_pos, aim_tol.0)
                 {
                     state.phase = TurretPhase::Tracking { target };
@@ -209,7 +206,7 @@ pub fn turret_state_machine(
                         Some(new) => TurretPhase::Acquiring { target: new },
                         None => TurretPhase::Idle,
                     };
-                } else if let Ok((_, target_tf, _, _)) = enemies.get(target) {
+                } else if let Ok((_, target_tf, _)) = enemies.get(target) {
                     if !is_aimed_at(tower_tf, target_tf, tower_pos, aim_tol.0) {
                         // Lost aim — back to acquiring.
                         state.phase = TurretPhase::Acquiring { target };
@@ -256,7 +253,7 @@ pub fn slow_aura(
         ),
         With<Tower>,
     >,
-    enemies: Query<(Entity, &Transform, &EnemyState), With<Enemy>>,
+    enemies: Query<(Entity, &Transform), With<Enemy>>,
 ) {
     for (tower_tf, stats, slow, tower_health, tower_state) in aura_towers.iter() {
         if !tower_state.is_operational() {
@@ -266,10 +263,7 @@ pub fn slow_aura(
         let range = stats.range;
         let tower_pos = tower_tf.translation.truncate();
 
-        for (enemy_entity, enemy_tf, state) in &enemies {
-            if !state.is_alive() {
-                continue;
-            }
+        for (enemy_entity, enemy_tf) in &enemies {
             let dist = tower_pos.distance(enemy_tf.translation.truncate());
             if dist <= range {
                 // Slow proportional to distance: full slow at center, no slow at edge.
@@ -388,17 +382,14 @@ pub fn scrap_magnet_collect(
 
 /// Find the best initial target for chain lightning within range.
 fn find_chain_target(
-    enemies: &Query<(Entity, &mut Health, &Transform, &Sprite, &EnemyState), With<Enemy>>,
+    enemies: &Query<(Entity, &mut Health, &Transform, &Sprite), With<Enemy>>,
     tower_pos: Vec2,
     range: f32,
     mode: TargetingMode,
     pile_center_world: Vec2,
 ) -> Option<Entity> {
     let mut best: Option<(Entity, f32)> = None;
-    for (entity, health, tf, _, state) in enemies.iter() {
-        if !state.is_alive() {
-            continue;
-        }
+    for (entity, health, tf, _) in enemies.iter() {
         let enemy_pos = tf.translation.truncate();
         let dist = tower_pos.distance(enemy_pos);
         if dist <= range {
@@ -426,7 +417,7 @@ pub fn chain_lightning_fire(
         ),
         With<Tower>,
     >,
-    mut enemies: Query<(Entity, &mut Health, &Transform, &Sprite, &EnemyState), With<Enemy>>,
+    mut enemies: Query<(Entity, &mut Health, &Transform, &Sprite), With<Enemy>>,
     time: Res<Time>,
     pile_state: Res<PileState>,
     config: Res<GridConfig>,
@@ -463,7 +454,7 @@ pub fn chain_lightning_fire(
         let mut hit_set = vec![first_target];
         let mut current_damage = stats.damage * eff;
 
-        if let Ok((_, _, tf, _, _)) = enemies.get(first_target) {
+        if let Ok((_, _, tf, _)) = enemies.get(first_target) {
             let pos = tf.translation.truncate();
             chain_targets.push((first_target, pos, current_damage));
 
@@ -477,8 +468,8 @@ pub fn chain_lightning_fire(
 
                 // Find nearest unhit enemy within arc range.
                 let mut best: Option<(Entity, Vec2, f32)> = None;
-                for (e, _, tf, _, state) in enemies.iter() {
-                    if !state.is_alive() || hit_set.contains(&e) {
+                for (e, _, tf, _) in enemies.iter() {
+                    if hit_set.contains(&e) {
                         continue;
                     }
                     let pos = tf.translation.truncate();
@@ -502,7 +493,7 @@ pub fn chain_lightning_fire(
         let mut prev_pos = tower_pos;
 
         for &(entity, pos, damage) in &chain_targets {
-            if let Ok((_, mut health, _, sprite, _)) = enemies.get_mut(entity) {
+            if let Ok((_, mut health, _, sprite)) = enemies.get_mut(entity) {
                 health.current -= damage;
                 commands.entity(entity).insert(DamageFlash {
                     timer: Timer::from_seconds(0.1, TimerMode::Once),
@@ -557,13 +548,10 @@ pub fn animate_lightning_arcs(
 /// Only the Magnet tower type (ScrapMagnet marker) pulls enemies, not all collectors.
 pub fn magnetic_pull_enemies(
     magnets: Query<(&Transform, &ScrapCollector, &TowerState), (With<ScrapMagnet>, With<Tower>)>,
-    mut enemies: Query<(&mut Transform, &EnemyState), (With<Enemy>, Without<Tower>)>,
+    mut enemies: Query<&mut Transform, (With<Enemy>, Without<Tower>)>,
     time: Res<Time>,
 ) {
-    for (mut enemy_tf, state) in &mut enemies {
-        if !state.is_alive() {
-            continue;
-        }
+    for mut enemy_tf in &mut enemies {
         let enemy_pos = enemy_tf.translation.truncate();
         for (mag_tf, collector, tower_state) in &magnets {
             if !tower_state.is_operational() {

@@ -11,24 +11,19 @@ impl Plugin for EnemyPlugin {
         app.add_systems(
             FixedUpdate,
             (
+                // Speed pipeline: reset → apply slows → movement
                 (
-                    // Speed pipeline: reset → apply slows → movement
-                    (
-                        systems::reset_speed,
-                        systems::apply_slow_effects,
-                        systems::enemy_movement,
-                    )
-                        .chain(),
-                    systems::boss_regeneration,
-                    systems::enemy_reached_pile,
-                    systems::enemy_escaped,
-                    systems::check_enemy_death,
-                    systems::brute_attack_towers,
-                ),
-                // Cleanup runs after all game logic
-                systems::cleanup_dead,
+                    systems::reset_speed,
+                    systems::apply_slow_effects,
+                    systems::enemy_movement,
+                )
+                    .chain(),
+                systems::boss_regeneration,
+                systems::enemy_reached_pile,
+                systems::enemy_escaped,
+                systems::check_enemy_death,
+                systems::brute_attack_towers,
             )
-                .chain()
                 .run_if(in_state(GameState::Playing))
                 .run_if(in_state(PlayPhase::Defending)),
         )

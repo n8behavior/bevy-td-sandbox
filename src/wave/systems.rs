@@ -7,7 +7,7 @@ use crate::audio::resources::SoundAssets;
 use crate::audio::systems::play_sound;
 use crate::common::constants::GridConfig;
 use crate::economy::components::ScrapDrop;
-use crate::enemy::components::{Enemy, EnemyState, EnemyType, StolenScrap};
+use crate::enemy::components::{Enemy, EnemyType};
 use crate::enemy::systems::spawn_enemy;
 use crate::pile::resources::{EdgeCells, PileScrap, PileState};
 use crate::pile::systems::nearest_pile_cell;
@@ -96,15 +96,37 @@ pub fn spawn_enemies(
     );
 }
 
+#[derive(Event)]
+pub struct WaveComplete;
+
+/// When the wave is fully resolved (all enemies dead/escaped, all drops
+/// settled), trigger the `WaveComplete` event.
 pub fn check_wave_complete(
-    mut wave_mgr: ResMut<WaveManager>,
-    enemies: Query<&EnemyState, With<Enemy>>,
+    mut commands: Commands,
+    wave_mgr: Res<WaveManager>,
+    enemies: Query<(), With<Enemy>>,
     drops: Query<(), With<ScrapDrop>>,
-    mut next_phase: ResMut<NextState<PlayPhase>>,
 ) {
-    // Wave isn't over until all enemies dead AND all ground scrap settled.
-    let alive_count = enemies.iter().filter(|s| s.is_alive()).count();
-    if wave_mgr.spawn_queue.is_empty() && alive_count == 0 && drops.is_empty() {
+    if !wave_mgr.spawn_queue.is_empty() || !enemies.is_empty() || !drops.is_empty() {
+        return;
+    }
+    commands.trigger(WaveComplete);
+}
+
+/// Observer: handle wave completion — game over vs next wave.
+pub fn on_wave_complete(
+    _trigger: On<WaveComplete>,
+    mut commands: Commands,
+    mut wave_mgr: ResMut<WaveManager>,
+    pile_scrap: Res<PileScrap>,
+    mut next_phase: ResMut<NextState<PlayPhase>>,
+    mut next_state: ResMut<NextState<GameState>>,
+    sounds: Res<SoundAssets>,
+) {
+    if pile_scrap.amount == 0 {
+        play_sound(&mut commands, &sounds.game_over, 0.6);
+        next_state.set(GameState::GameOver);
+    } else {
         wave_mgr.current_wave += 1;
         next_phase.set(PlayPhase::Building);
     }
@@ -121,36 +143,6 @@ pub fn handle_start_wave_input(
     if keyboard.just_pressed(KeyCode::Enter) {
         next_phase.set(PlayPhase::Defending);
     }
-}
-
-/// Game over when truly bankrupt: no scrap anywhere in the economy and no
-/// alive enemies that could be killed for loot.
-pub fn check_game_over(
-    mut commands: Commands,
-    pile_scrap: Res<PileScrap>,
-    drops: Query<(), With<ScrapDrop>>,
-    enemies: Query<(&EnemyState, Option<&StolenScrap>), With<Enemy>>,
-    wave_mgr: Res<WaveManager>,
-    mut next_state: ResMut<NextState<GameState>>,
-    sounds: Res<SoundAssets>,
-) {
-    if pile_scrap.amount > 0 {
-        return;
-    }
-    if !drops.is_empty() {
-        return;
-    }
-    if enemies
-        .iter()
-        .any(|(s, stolen)| s.is_alive() || stolen.is_some_and(|s| s.0 > 0))
-    {
-        return;
-    }
-    if !wave_mgr.spawn_queue.is_empty() {
-        return;
-    }
-    play_sound(&mut commands, &sounds.game_over, 0.6);
-    next_state.set(GameState::GameOver);
 }
 
 pub fn generate_waves() -> Vec<WaveConfig> {
