@@ -6,6 +6,7 @@ use crate::camera::components::ScreenShake;
 use crate::enemy::components::{AoEBurst, Armor, DamageFlash, Enemy, Health, SlowEffect};
 use crate::particles::systems::spawn_impact_particles;
 use crate::shader::{CircleMaterial, CircleMesh};
+use crate::states::PlayPhase;
 
 use super::components::*;
 
@@ -141,6 +142,7 @@ pub fn projectile_hit_detection(
                 Mesh2d(circle_mesh.0.clone()),
                 MeshMaterial2d(burst_mat),
                 Transform::from_translation(hit.hit_pos).with_scale(Vec3::splat(4.0)),
+                DespawnOnExit(PlayPhase::Defending),
             ));
 
             let aoe_targets: Vec<(Entity, f32, Option<f32>)> = enemies
@@ -185,6 +187,7 @@ pub fn emit_trail_particles(
                     Vec2::splat(emitter.particle_size),
                 ),
                 Transform::from_translation(tf.translation),
+                DespawnOnExit(PlayPhase::Defending),
             ));
         }
     }
