@@ -36,6 +36,14 @@ pub struct EnemyDied {
     pub splits: u32,
     /// Type of enemy that died (for stats tracking).
     pub enemy_type: EnemyType,
+    /// Sprite color at time of death (for death particles).
+    pub color: Color,
+}
+
+#[derive(Event)]
+pub struct EnemyEscaped {
+    pub stolen_scrap: u32,
+    pub enemy_type: EnemyType,
 }
 
 #[derive(Component)]
@@ -142,10 +150,10 @@ pub fn enemy_reached_pile(
         // Nothing to steal — flee empty-handed.
         if pile_scrap.amount == 0 {
             let flee_target = nearest_edge_cell(agent_pos.0, &edge_cells.0);
-            commands.entity(entity).insert((
-                EnemyState::Fleeing,
-                Pathfind::new(flee_target).mode(PathfindMode::Waypoints),
-            ));
+            *state = EnemyState::Fleeing;
+            commands
+                .entity(entity)
+                .insert(Pathfind::new(flee_target).mode(PathfindMode::Waypoints));
             continue;
         }
 
@@ -172,10 +180,19 @@ pub fn enemy_reached_pile(
 /// Fleeing enemies that reach the map edge escape with stolen scrap.
 pub fn enemy_escaped(
     mut commands: Commands,
-    enemies: Query<(Entity, &EnemyState, &Transform), With<Enemy>>,
+    enemies: Query<
+        (
+            Entity,
+            &EnemyState,
+            &Transform,
+            &EnemyType,
+            Option<&StolenScrap>,
+        ),
+        With<Enemy>,
+    >,
     config: Res<GridConfig>,
 ) {
-    for (entity, state, transform) in &enemies {
+    for (entity, state, transform, enemy_type, stolen) in &enemies {
         if *state != EnemyState::Fleeing {
             continue;
         }
@@ -191,6 +208,10 @@ pub fn enemy_escaped(
             continue;
         }
         // Stolen scrap is permanently lost — already subtracted from pile.
+        commands.trigger(EnemyEscaped {
+            stolen_scrap: stolen.map_or(0, |s| s.0),
+            enemy_type: *enemy_type,
+        });
         commands.entity(entity).remove::<Enemy>();
         commands.entity(entity).insert(DeathAnimation {
             timer: Timer::from_seconds(0.3, TimerMode::Once),
@@ -214,8 +235,6 @@ pub fn check_enemy_death(
         ),
         With<Enemy>,
     >,
-    sounds: Res<SoundAssets>,
-    mut shake: ResMut<ScreenShake>,
 ) {
     for (entity, health, transform, loot, sprite, enemy_type, stolen, splits) in &enemies {
         if health.current <= 0.0 {
@@ -228,23 +247,34 @@ pub fn check_enemy_death(
                 stolen_scrap: stolen_amount,
                 splits: split_count,
                 enemy_type: *enemy_type,
+                color: sprite.color,
             });
-
-            play_sound(&mut commands, &sounds.enemy_death, 0.4);
-            spawn_death_particles(&mut commands, position, sprite.color);
-
-            // Boss death: stronger screen shake.
-            if matches!(*enemy_type, EnemyType::Boss) {
-                shake.intensity = 6.0;
-                shake.timer = Timer::from_seconds(0.5, TimerMode::Once);
-                shake.decay = 0.03;
-            }
 
             commands.entity(entity).remove::<Enemy>();
             commands.entity(entity).insert(DeathAnimation {
                 timer: Timer::from_seconds(0.3, TimerMode::Once),
             });
         }
+    }
+}
+
+pub fn on_enemy_died_sound(
+    _trigger: On<EnemyDied>,
+    mut commands: Commands,
+    sounds: Res<SoundAssets>,
+) {
+    play_sound(&mut commands, &sounds.enemy_death, 0.4);
+}
+
+pub fn on_enemy_died_particles(trigger: On<EnemyDied>, mut commands: Commands) {
+    spawn_death_particles(&mut commands, trigger.position, trigger.color);
+}
+
+pub fn on_enemy_died_shake(trigger: On<EnemyDied>, mut shake: ResMut<ScreenShake>) {
+    if matches!(trigger.enemy_type, EnemyType::Boss) {
+        shake.intensity = 6.0;
+        shake.timer = Timer::from_seconds(0.5, TimerMode::Once);
+        shake.decay = 0.03;
     }
 }
 
@@ -570,7 +600,6 @@ pub fn brute_attack_towers(
 
             if health.current <= 0.0 {
                 *tower_state = TowerState::Rubble;
-                play_sound(&mut commands, &sounds.tower_destroyed, 0.5);
             }
         }
     }

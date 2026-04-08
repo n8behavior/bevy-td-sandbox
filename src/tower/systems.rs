@@ -39,6 +39,28 @@ pub(crate) fn targeting_score(
     }
 }
 
+/// Find the best entity from an iterator of `(Entity, position, health)` tuples
+/// within `range` of `tower_pos`, scored by the given targeting mode.
+pub(crate) fn best_target_from(
+    candidates: impl Iterator<Item = (Entity, Vec2, f32)>,
+    tower_pos: Vec2,
+    range: f32,
+    mode: TargetingMode,
+    pile_center_world: Vec2,
+) -> Option<Entity> {
+    let mut best: Option<(Entity, f32)> = None;
+    for (entity, enemy_pos, health) in candidates {
+        let dist = tower_pos.distance(enemy_pos);
+        if dist <= range {
+            let score = targeting_score(mode, dist, health, enemy_pos, pile_center_world);
+            if best.is_none_or(|(_, s)| score < s) {
+                best = Some((entity, score));
+            }
+        }
+    }
+    best.map(|(e, _)| e)
+}
+
 /// Find the best enemy within range according to the given targeting mode.
 pub(crate) fn find_best_target(
     enemies: &Query<(Entity, &Transform, &Health), With<Enemy>>,
@@ -47,18 +69,15 @@ pub(crate) fn find_best_target(
     mode: TargetingMode,
     pile_center_world: Vec2,
 ) -> Option<Entity> {
-    let mut best: Option<(Entity, f32)> = None;
-    for (entity, tf, health) in enemies.iter() {
-        let enemy_pos = tf.translation.truncate();
-        let dist = tower_pos.distance(enemy_pos);
-        if dist <= range {
-            let score = targeting_score(mode, dist, health.current, enemy_pos, pile_center_world);
-            if best.is_none_or(|(_, s)| score < s) {
-                best = Some((entity, score));
-            }
-        }
-    }
-    best.map(|(e, _)| e)
+    best_target_from(
+        enemies
+            .iter()
+            .map(|(e, tf, h)| (e, tf.translation.truncate(), h.current)),
+        tower_pos,
+        range,
+        mode,
+        pile_center_world,
+    )
 }
 
 /// Check whether the tower's rotation is within aim tolerance of a target.
@@ -380,28 +399,6 @@ pub fn scrap_magnet_collect(
 // Chain Lightning
 // ---------------------------------------------------------------------------
 
-/// Find the best initial target for chain lightning within range.
-fn find_chain_target(
-    enemies: &Query<(Entity, &mut Health, &Transform, &Sprite), With<Enemy>>,
-    tower_pos: Vec2,
-    range: f32,
-    mode: TargetingMode,
-    pile_center_world: Vec2,
-) -> Option<Entity> {
-    let mut best: Option<(Entity, f32)> = None;
-    for (entity, health, tf, _) in enemies.iter() {
-        let enemy_pos = tf.translation.truncate();
-        let dist = tower_pos.distance(enemy_pos);
-        if dist <= range {
-            let score = targeting_score(mode, dist, health.current, enemy_pos, pile_center_world);
-            if best.is_none_or(|(_, s)| score < s) {
-                best = Some((entity, score));
-            }
-        }
-    }
-    best.map(|(e, _)| e)
-}
-
 /// Chain lightning towers: find target, build chain, deal damage, spawn arcs.
 pub fn chain_lightning_fire(
     mut commands: Commands,
@@ -440,9 +437,15 @@ pub fn chain_lightning_fire(
         let tower_pos = tower_tf.translation.truncate();
         let mode = targeting.copied().unwrap_or_default();
 
-        let Some(first_target) =
-            find_chain_target(&enemies, tower_pos, stats.range, mode, pile_center_world)
-        else {
+        let Some(first_target) = best_target_from(
+            enemies
+                .iter()
+                .map(|(e, h, tf, _)| (e, tf.translation.truncate(), h.current)),
+            tower_pos,
+            stats.range,
+            mode,
+            pile_center_world,
+        ) else {
             continue;
         };
 

@@ -38,6 +38,9 @@ impl Plugin for EnemyPlugin {
             )
                 .run_if(in_state(GameState::Playing)),
         )
-        .add_observer(systems::on_boss_split);
+        .add_observer(systems::on_boss_split)
+        .add_observer(systems::on_enemy_died_sound)
+        .add_observer(systems::on_enemy_died_particles)
+        .add_observer(systems::on_enemy_died_shake);
     }
 }
