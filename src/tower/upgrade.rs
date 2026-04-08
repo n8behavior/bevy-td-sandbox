@@ -19,7 +19,7 @@ use crate::common::constants::{
 };
 
 use super::components::*;
-use super::placement::{SelectedTower, SellText};
+use super::placement::{SELL_REFUND_PERCENT, SelectedTower, SellText};
 use super::targeting::RadialMenuState;
 use super::types::scrap_magnet::ScrapMagnet;
 
@@ -275,7 +275,7 @@ pub fn apply_upgrade(
         run_stats.scrap_spent += ucost;
     }
     tier.0 += 1;
-    let t = tier.0 as usize;
+    let t = (tier.0 as usize).min(MAX_TIER as usize);
 
     // Scale tower HP with tier (preserve damage fraction).
     if let Some(mut health) = tower_health {
@@ -929,7 +929,7 @@ pub fn update_upgrade_panel(
             ));
         } else if tier.0 < MAX_TIER {
             let ucost = upgrade_cost(base.cost, tier.0);
-            let t = tier.0 as usize + 1;
+            let t = (tier.0 as usize + 1).min(MAX_TIER as usize);
             let next_dmg = base.damage * DAMAGE_MULT[t];
             let next_rng = base.range * RANGE_MULT[t];
 
@@ -1051,7 +1051,7 @@ pub fn update_upgrade_panel(
         }
 
         // Sell hint
-        let sell_refund = cost.0 * 60 / 100;
+        let sell_refund = cost.0 * SELL_REFUND_PERCENT / 100;
         parent.spawn((
             Text::new(format!("[RMB] Sell: +${sell_refund}")),
             TextColor(HINT_COLOR),

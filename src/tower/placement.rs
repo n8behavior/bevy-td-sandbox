@@ -329,7 +329,7 @@ pub fn confirm_tower_placement(
 // Sell towers
 // ---------------------------------------------------------------------------
 
-const SELL_REFUND_PERCENT: u32 = 60;
+pub(super) const SELL_REFUND_PERCENT: u32 = 60;
 
 /// Floating text that rises and fades after selling or upgrading a tower.
 #[derive(Component)]
