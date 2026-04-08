@@ -82,6 +82,10 @@ pub fn update_pile_visuals(
     }
 
     for (entity, grid_cell, mut sprite, has_pile) in &mut cells {
+        if grid_cell.coord.x < 0 || grid_cell.coord.y < 0 {
+            debug_assert!(false, "negative grid coord: {:?}", grid_cell.coord);
+            continue;
+        }
         let coord = UVec3::new(grid_cell.coord.x as u32, grid_cell.coord.y as u32, 0);
         let should_be_pile = pile_state.cells.contains(&coord);
 
