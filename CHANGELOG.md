@@ -1,6 +1,23 @@
 # Changelog
 
-## Unreleased
+## v0.2.2 — Pathing Fix & Event Cleanup
+
+### Bug Fixes
+
+- **Fixed tower placement not changing enemy pathing** (#11) — Enemies walked through towers placed mid-game. Root cause: `recalculate_enemy_paths` inserted a new `Pathfind` but left stale `Path` and `NextPos` components. bevy_northstar's `next_position` system immediately popped the next waypoint from the old path. Fix: remove both `Path` and `NextPos` before re-inserting `Pathfind`.
+- **Fixed double tower destruction sound** (#14) — `brute_attack_towers` no longer plays `tower_destroyed`; `on_tower_becomes_rubble` owns it.
+
+### Refactors
+
+- **Simplified enemy lifecycle** — `EnemyState` reduced to just `Approaching | Fleeing`. Removing the `Enemy` component IS the death transition; `DeathAnimation` serves as the implicit corpse marker. `check_wave_complete` uses `enemies.is_empty()` (O(1)) instead of iterating all enemies.
+- **Extracted events** — `WaveComplete` event separates detection from outcome handling. `EnemyDied` and `EnemyEscaped` events with observers for sound, particles, and screen shake.
+- **Deduplicated targeting** — Shared `best_target_from` function replaces duplicated `find_chain_target` logic.
+
+### Infrastructure
+
+- **62 tests** — added 2 regression tests for #11; net decrease from 68 due to dead-state tests removed when the enemy lifecycle was simplified
+
+## v0.2.1 — State Machines & Game Over Fix
 
 ### Refactors
 
