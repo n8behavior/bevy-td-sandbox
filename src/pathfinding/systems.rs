@@ -18,6 +18,7 @@ pub fn recalculate_enemy_paths(
         };
         commands
             .entity(entity)
+            .remove::<(NextPos, Path)>()
             .insert(Pathfind::new(goal).mode(PathfindMode::Waypoints));
     }
 }

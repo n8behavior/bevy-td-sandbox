@@ -1,6 +1,8 @@
 use bevy::prelude::*;
+use bevy_northstar::prelude::*;
 use bevy_td_sandbox::economy::components::ScrapDrop;
 use bevy_td_sandbox::enemy::components::*;
+use bevy_td_sandbox::pathfinding::systems::recalculate_enemy_paths;
 use bevy_td_sandbox::pile::resources::{PileScrap, PileState};
 use bevy_td_sandbox::pile::systems::update_pile_state;
 use bevy_td_sandbox::states::{GameState, PlayPhase};
@@ -186,6 +188,130 @@ fn regression_10_escaped_enemy_with_stolen_scrap() {
     app.update();
     // No Enemy entities → wave resolves → pile=0 → game over.
     assert_eq!(game_state(&app), GameState::GameOver);
+}
+
+// ---------------------------------------------------------------------------
+// recalculate_enemy_paths (#11)
+// ---------------------------------------------------------------------------
+
+/// #11: placing a tower mid-game should invalidate stale NextPos AND Path so
+/// bevy_northstar's next_position system doesn't pop from the old path.
+#[test]
+fn regression_11_recalculate_clears_stale_path_state() {
+    let mut app = test_app();
+    insert_pile(&mut app, 200);
+
+    // Spawn enemy mid-movement: has stale NextPos AND old Path from previous route.
+    let enemy = app
+        .world_mut()
+        .spawn((
+            Enemy,
+            EnemyState::Approaching,
+            AgentPos(UVec3::new(5, 5, 0)),
+            NextPos(UVec3::new(6, 5, 0)),
+            Path::new(vec![UVec3::new(6, 5, 0), UVec3::new(10, 5, 0)], 5),
+        ))
+        .id();
+
+    app.add_systems(Update, recalculate_enemy_paths);
+    app.update();
+
+    assert!(
+        app.world().get::<NextPos>(enemy).is_none(),
+        "stale NextPos should be removed after path recalculation"
+    );
+    assert!(
+        app.world().get::<Path>(enemy).is_none(),
+        "stale Path should be removed so next_position doesn't pop old waypoints"
+    );
+    assert!(
+        app.world().get::<Pathfind>(enemy).is_some(),
+        "new Pathfind should be inserted after path recalculation"
+    );
+}
+
+/// #11 integration: after blocking a cell and recalculating, bevy_northstar
+/// produces a new path that avoids the blocked cell.
+#[test]
+fn regression_11_enemy_reroutes_around_blocked_cell() {
+    use bevy_td_sandbox::common::constants::{GridConfig, CHUNK_SIZE};
+
+    let mut app = test_app();
+    app.add_plugins(NorthstarPlugin::<OrdinalNeighborhood>::default());
+
+    // Small 16x16 grid (must be chunk-aligned).
+    let size: u32 = 16;
+    assert_eq!(size % CHUNK_SIZE, 0);
+    let config = GridConfig {
+        width: size,
+        height: size,
+        pixel_scale: 1,
+    };
+    insert_empty_pile(&mut app, 200, config);
+
+    let settings = GridSettingsBuilder::new_2d(size, size)
+        .chunk_size(CHUNK_SIZE)
+        .build();
+    let mut grid = OrdinalGrid::new(&settings);
+    for x in 0..size {
+        for y in 0..size {
+            grid.set_nav(UVec3::new(x, y, 0), Nav::Passable(1));
+        }
+    }
+    grid.build();
+    let grid_entity = app.world_mut().spawn(grid).id();
+
+    // Enemy at left edge, pathing toward pile center (8,8) along row 8.
+    // recalculate_enemy_paths uses nearest_pile_cell which returns (8,8).
+    let start = UVec3::new(0, 8, 0);
+    let goal = UVec3::new(size / 2, size / 2, 0); // pile center
+    let enemy = app
+        .world_mut()
+        .spawn((
+            Enemy,
+            EnemyState::Approaching,
+            AgentPos(start),
+            AgentOfGrid(grid_entity),
+            Pathfind::new(goal).mode(PathfindMode::Waypoints),
+        ))
+        .id();
+
+    // Let bevy_northstar compute the initial path.
+    for _ in 0..5 {
+        app.update();
+    }
+    let has_path = app.world().get::<Path>(enemy).is_some()
+        || app.world().get::<NextPos>(enemy).is_some();
+    assert!(has_path, "enemy should have an active path after init");
+
+    // Block a cell on the straight-line path (NOT the goal itself).
+    let blocked = UVec3::new(4, 8, 0);
+    {
+        let mut state = app.world_mut().query::<&mut OrdinalGrid>();
+        let mut grid = state.single_mut(app.world_mut()).unwrap();
+        grid.set_nav(blocked, Nav::Impassable);
+        grid.build();
+    }
+
+    // Recalculate paths (same as GridChanged observer does).
+    app.add_systems(Update, recalculate_enemy_paths);
+    for _ in 0..5 {
+        app.update();
+    }
+
+    // The new path must not pass through the blocked cell.
+    if let Some(path) = app.world().get::<Path>(enemy) {
+        assert!(
+            !path.is_position_in_path(blocked),
+            "recalculated path should not contain the blocked cell"
+        );
+    }
+    if let Some(next) = app.world().get::<NextPos>(enemy) {
+        assert_ne!(
+            next.0, blocked,
+            "next waypoint should not be the blocked cell"
+        );
+    }
 }
 
 // ---------------------------------------------------------------------------
