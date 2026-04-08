@@ -26,7 +26,7 @@ impl EnemyType {
             EnemyType::Shambler => 50.0,
             EnemyType::Runner => 30.0,
             EnemyType::Brute => 150.0,
-            EnemyType::Boss => 500.0,
+            EnemyType::Boss => 350.0,
         }
     }
 

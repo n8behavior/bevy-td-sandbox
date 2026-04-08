@@ -476,7 +476,7 @@ pub fn spawn_enemy(
                 .insert(Regeneration { rate: 5.0 });
         }
         Some(BossTrait::Armor) => {
-            commands.entity(entity_id).insert(Armor { reduction: 10.0 });
+            commands.entity(entity_id).insert(Armor { reduction: 5.0 });
         }
         Some(BossTrait::Splitting) => {
             commands

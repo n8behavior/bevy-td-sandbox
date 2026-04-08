@@ -4,7 +4,7 @@ pub const TILE_SIZE: f32 = 20.0;
 pub const MIN_GRID_HEIGHT: u32 = 30;
 pub const CHUNK_SIZE: u32 = 8;
 
-pub const STARTING_SCRAP: u32 = 200;
+pub const STARTING_SCRAP: u32 = 250;
 pub const ENDLESS_STARTING_SCRAP: u32 = 400;
 
 pub const SCRAP_DROP_LIFETIME: f32 = 10.0;
