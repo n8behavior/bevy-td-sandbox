@@ -234,7 +234,7 @@ fn regression_11_recalculate_clears_stale_path_state() {
 /// produces a new path that avoids the blocked cell.
 #[test]
 fn regression_11_enemy_reroutes_around_blocked_cell() {
-    use bevy_td_sandbox::common::constants::{GridConfig, CHUNK_SIZE};
+    use bevy_td_sandbox::common::constants::{CHUNK_SIZE, GridConfig};
 
     let mut app = test_app();
     app.add_plugins(NorthstarPlugin::<OrdinalNeighborhood>::default());
@@ -280,8 +280,8 @@ fn regression_11_enemy_reroutes_around_blocked_cell() {
     for _ in 0..5 {
         app.update();
     }
-    let has_path = app.world().get::<Path>(enemy).is_some()
-        || app.world().get::<NextPos>(enemy).is_some();
+    let has_path =
+        app.world().get::<Path>(enemy).is_some() || app.world().get::<NextPos>(enemy).is_some();
     assert!(has_path, "enemy should have an active path after init");
 
     // Block a cell on the straight-line path (NOT the goal itself).
