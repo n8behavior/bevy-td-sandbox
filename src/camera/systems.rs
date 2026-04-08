@@ -76,7 +76,7 @@ pub fn camera_pan(
         return;
     };
     let Some(cursor_pos) = window.cursor_position() else {
-        pan.dragging = false;
+        pan.cursor_absent = true;
         return;
     };
 
@@ -87,15 +87,21 @@ pub fn camera_pan(
         pan.last_world_pos = world_pos;
     }
 
-    if mouse.just_released(MouseButton::Middle) {
+    if !mouse.pressed(MouseButton::Middle) {
         pan.dragging = false;
     }
 
     if pan.dragging
         && let Ok(current_world) = camera.viewport_to_world_2d(global_tf, cursor_pos)
     {
-        let delta = pan.last_world_pos - current_world;
-        transform.translation += delta.extend(0.0);
+        if pan.cursor_absent {
+            // Cursor just returned — refresh position to prevent jump.
+            pan.last_world_pos = current_world;
+            pan.cursor_absent = false;
+        } else {
+            let delta = pan.last_world_pos - current_world;
+            transform.translation += delta.extend(0.0);
+        }
     }
 }
 

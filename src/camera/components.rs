@@ -15,6 +15,7 @@ pub struct CameraController {
 pub struct PanState {
     pub dragging: bool,
     pub last_world_pos: Vec2,
+    pub cursor_absent: bool,
 }
 
 #[derive(Resource, Default)]
