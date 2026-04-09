@@ -10,8 +10,6 @@ use crate::particles::systems::spawn_scrap_sparkle;
 
 use super::components::ScrapDrop;
 
-const SCRAP_COLOR: Color = Color::srgb(1.0, 0.85, 0.1);
-
 pub fn on_enemy_died(trigger: On<EnemyDied>, mut commands: Commands, sounds: Res<SoundAssets>) {
     let event = &*trigger;
     let mut rng = rand::rng();

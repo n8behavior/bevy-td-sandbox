@@ -8,6 +8,8 @@ pub const STARTING_SCRAP: u32 = 250;
 pub const ENDLESS_STARTING_SCRAP: u32 = 400;
 
 pub const SCRAP_DROP_LIFETIME: f32 = 10.0;
+/// Scrap drop sprite color (golden yellow).
+pub const SCRAP_COLOR: Color = Color::srgb(1.0, 0.85, 0.1);
 
 /// Scrap collection: pull speed for scrap drops (world units/sec).
 pub const SCRAP_PULL_SPEED: f32 = 60.0;

@@ -7,7 +7,7 @@ use bevy::sprite_render::MeshMaterial2d;
 use crate::audio::resources::SoundAssets;
 use crate::audio::systems::play_sound;
 use crate::camera::components::ScreenShake;
-use crate::common::constants::{GridConfig, TILE_SIZE};
+use crate::common::constants::{GridConfig, SCRAP_COLOR, TILE_SIZE};
 use crate::grid::systems::{grid_to_world_cfg, world_to_grid};
 use crate::particles::systems::spawn_death_particles;
 use crate::pile::resources::{EdgeCells, PileScrap, PileState};
@@ -171,7 +171,7 @@ pub fn enemy_reached_pile(
         // Visual decal: small gold square on the enemy to indicate carried scrap.
         commands.entity(entity).with_child((
             ScrapCarrierDecal,
-            Sprite::from_color(Color::srgb(1.0, 0.85, 0.1), Vec2::splat(6.0)),
+            Sprite::from_color(SCRAP_COLOR, Vec2::splat(6.0)),
             Transform::from_translation(Vec3::new(0.0, -5.0, 0.1)),
         ));
     }
