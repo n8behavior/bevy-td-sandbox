@@ -25,13 +25,7 @@ fn spawn_range_rings(
 ) {
     for (entity, config) in &query {
         let diameter = config.range * 2.0;
-        let mat = materials.add(CircleMaterial {
-            color: config.color,
-            softness: 0.05,
-            fill_fade: 0.0,
-            ripple_speed: 0.0,
-            time: 0.0,
-        });
+        let mat = materials.add(CircleMaterial::range_indicator(config.color));
         commands.entity(entity).with_child((
             RangeRing,
             Mesh2d(circle_mesh.0.clone()),
@@ -52,13 +46,7 @@ fn spawn_aura_rings(
 ) {
     for (entity, config) in &query {
         let diameter = config.range * 2.0;
-        let mat = materials.add(CircleMaterial {
-            color: config.color,
-            softness: 0.05,
-            fill_fade: 1.0,
-            ripple_speed: 0.4,
-            time: 0.0,
-        });
+        let mat = materials.add(CircleMaterial::aura(config.color));
         commands.entity(entity).with_child((
             AuraVisual,
             Mesh2d(circle_mesh.0.clone()),
@@ -80,13 +68,7 @@ fn spawn_magnet_aura_rings(
 ) {
     for (entity, config) in &query {
         let diameter = config.range * 2.0;
-        let mat = materials.add(CircleMaterial {
-            color: config.color,
-            softness: 0.05,
-            fill_fade: 1.0,
-            ripple_speed: 0.4,
-            time: 0.0,
-        });
+        let mat = materials.add(CircleMaterial::aura(config.color));
         commands.entity(entity).with_child((
             MagnetAura,
             Mesh2d(circle_mesh.0.clone()),

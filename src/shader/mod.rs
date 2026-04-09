@@ -19,6 +19,18 @@ pub struct CircleMaterial {
     pub time: f32,
 }
 
+impl CircleMaterial {
+    /// Hard-edged ring with no fill or ripple. Used for tower range indicators.
+    pub fn range_indicator(color: Color) -> Self {
+        Self { color, softness: 0.05, fill_fade: 0.0, ripple_speed: 0.0, time: 0.0 }
+    }
+
+    /// Radial-gradient ring with ripple pulse. Used for aura effects.
+    pub fn aura(color: Color) -> Self {
+        Self { color, softness: 0.05, fill_fade: 1.0, ripple_speed: 0.4, time: 0.0 }
+    }
+}
+
 impl Material2d for CircleMaterial {
     fn fragment_shader() -> ShaderRef {
         "embedded://bevy_td_sandbox/shader/circle_sdf.wgsl".into()
@@ -54,7 +66,7 @@ impl AsBindGroupShaderType<CircleMaterialUniform> for CircleMaterial {
     }
 }
 
-/// Shared mesh handle for a unit circle (radius 1.0).
+/// Shared mesh handle for a unit circle (radius 0.5, diameter 1.0).
 /// Scale via Transform to get the desired diameter.
 #[derive(Resource)]
 pub struct CircleMesh(pub Handle<Mesh>);
@@ -80,5 +92,116 @@ impl Plugin for ShaderPlugin {
         app.add_plugins(Material2dPlugin::<CircleMaterial>::default())
             .add_systems(Startup, setup_circle_mesh)
             .add_systems(Update, tick_circle_materials);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_helpers::test_app_with_assets;
+
+    // -- Constructor tests (#50) ------------------------------------------
+
+    #[test]
+    fn range_indicator_field_values() {
+        let mat = CircleMaterial::range_indicator(Color::WHITE);
+        assert_eq!(mat.softness, 0.05);
+        assert_eq!(mat.fill_fade, 0.0);
+        assert_eq!(mat.ripple_speed, 0.0);
+        assert_eq!(mat.time, 0.0);
+    }
+
+    #[test]
+    fn aura_field_values() {
+        let mat = CircleMaterial::aura(Color::WHITE);
+        assert_eq!(mat.softness, 0.05);
+        assert_eq!(mat.fill_fade, 1.0);
+        assert_eq!(mat.ripple_speed, 0.4);
+        assert_eq!(mat.time, 0.0);
+    }
+
+    // -- Color conversion (#49) -------------------------------------------
+
+    #[test]
+    fn srgb_to_linear_conversion() {
+        // The AsBindGroupShaderType impl converts via LinearRgba::from().to_vec4().
+        // sRGB extremes (0.0, 1.0) map to themselves in linear space.
+        let linear = bevy::color::LinearRgba::from(Color::srgb(1.0, 0.0, 0.0)).to_vec4();
+        assert_eq!(linear, Vec4::new(1.0, 0.0, 0.0, 1.0));
+
+        // Mid-range: sRGB 0.5 ≈ linear 0.214
+        let linear_mid = bevy::color::LinearRgba::from(Color::srgb(0.5, 0.5, 0.5)).to_vec4();
+        assert!(
+            (linear_mid.x - 0.214).abs() < 0.01,
+            "sRGB 0.5 should convert to ~0.214 linear, got {}",
+            linear_mid.x
+        );
+    }
+
+    // -- tick_circle_materials (#49) ---------------------------------------
+
+    fn shader_test_app() -> App {
+        let mut app = test_app_with_assets();
+        app.init_asset::<CircleMaterial>();
+        app.add_systems(Update, tick_circle_materials);
+        app
+    }
+
+    #[test]
+    fn tick_advances_time_for_rippling_material() {
+        let mut app = shader_test_app();
+        let handle = app
+            .world_mut()
+            .resource_mut::<Assets<CircleMaterial>>()
+            .add(CircleMaterial::aura(Color::WHITE));
+
+        // First update initialises Time; second provides non-zero delta.
+        app.update();
+        app.update();
+
+        let mats = app.world().resource::<Assets<CircleMaterial>>();
+        let mat = mats.get(&handle).unwrap();
+        assert!(mat.time > 0.0, "time should advance for rippling material");
+    }
+
+    #[test]
+    fn tick_does_not_advance_time_for_static_material() {
+        let mut app = shader_test_app();
+        let handle = app
+            .world_mut()
+            .resource_mut::<Assets<CircleMaterial>>()
+            .add(CircleMaterial::range_indicator(Color::WHITE));
+
+        app.update();
+        app.update();
+
+        let mats = app.world().resource::<Assets<CircleMaterial>>();
+        let mat = mats.get(&handle).unwrap();
+        assert_eq!(mat.time, 0.0, "time should not advance for static material");
+    }
+
+    #[test]
+    fn tick_does_not_advance_time_for_negative_ripple_speed() {
+        let mut app = shader_test_app();
+        let handle = app
+            .world_mut()
+            .resource_mut::<Assets<CircleMaterial>>()
+            .add(CircleMaterial {
+                color: Color::WHITE,
+                softness: 0.05,
+                fill_fade: 0.0,
+                ripple_speed: -1.0,
+                time: 0.0,
+            });
+
+        app.update();
+        app.update();
+
+        let mats = app.world().resource::<Assets<CircleMaterial>>();
+        let mat = mats.get(&handle).unwrap();
+        assert_eq!(
+            mat.time, 0.0,
+            "time should not advance for negative ripple_speed"
+        );
     }
 }

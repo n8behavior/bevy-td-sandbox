@@ -14,6 +14,13 @@ pub fn test_app() -> App {
     app
 }
 
+/// Minimal headless App with asset support (for testing materials, meshes, etc.).
+pub fn test_app_with_assets() -> App {
+    let mut app = test_app();
+    app.add_plugins(bevy::asset::AssetPlugin::default());
+    app
+}
+
 /// Deterministic 40x32 grid config (equivalent to an 800x640 window).
 pub fn test_grid_config() -> GridConfig {
     GridConfig {
