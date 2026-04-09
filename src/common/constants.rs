@@ -127,6 +127,11 @@ impl GridConfig {
     pub fn center(&self) -> UVec3 {
         UVec3::new(self.width / 2, self.height / 2, 0)
     }
+
+    /// Whether the cell at (x, y) sits on the grid boundary.
+    pub fn is_edge(&self, x: u32, y: u32) -> bool {
+        x == 0 || x == self.width - 1 || y == 0 || y == self.height - 1
+    }
 }
 
 #[cfg(test)]
@@ -166,5 +171,77 @@ mod tests {
             pixel_scale: 1,
         };
         assert_eq!(config.center(), UVec3::new(20, 16, 0));
+    }
+
+    #[test]
+    fn is_edge_all_four_edges() {
+        let config = GridConfig {
+            width: 10,
+            height: 8,
+            pixel_scale: 1,
+        };
+        // Left edge (x=0)
+        assert!(config.is_edge(0, 4));
+        // Right edge (x=width-1)
+        assert!(config.is_edge(9, 4));
+        // Bottom edge (y=0)
+        assert!(config.is_edge(5, 0));
+        // Top edge (y=height-1)
+        assert!(config.is_edge(5, 7));
+    }
+
+    #[test]
+    fn is_edge_corners() {
+        let config = GridConfig {
+            width: 10,
+            height: 8,
+            pixel_scale: 1,
+        };
+        assert!(config.is_edge(0, 0));
+        assert!(config.is_edge(9, 0));
+        assert!(config.is_edge(0, 7));
+        assert!(config.is_edge(9, 7));
+    }
+
+    #[test]
+    fn is_edge_interior() {
+        let config = GridConfig {
+            width: 10,
+            height: 8,
+            pixel_scale: 1,
+        };
+        assert!(!config.is_edge(1, 1));
+        assert!(!config.is_edge(5, 4));
+        assert!(!config.is_edge(8, 6));
+    }
+
+    #[test]
+    fn from_window_4k_display() {
+        let config = GridConfig::from_window(3840.0, 2160.0);
+        assert_eq!(config.width % CHUNK_SIZE, 0);
+        assert_eq!(config.height % CHUNK_SIZE, 0);
+        assert!(config.pixel_scale >= 2, "4K should have pixel_scale >= 2");
+    }
+
+    #[test]
+    fn from_window_ultrawide() {
+        let config = GridConfig::from_window(3440.0, 1440.0);
+        assert_eq!(config.width % CHUNK_SIZE, 0);
+        assert_eq!(config.height % CHUNK_SIZE, 0);
+        assert!(config.width > config.height);
+    }
+
+    #[test]
+    fn from_window_dimensions_never_zero() {
+        for (w, h) in [
+            (640.0, 480.0),
+            (1280.0, 720.0),
+            (1920.0, 1080.0),
+            (3840.0, 2160.0),
+        ] {
+            let config = GridConfig::from_window(w, h);
+            assert!(config.width > 0, "width=0 for {w}x{h}");
+            assert!(config.height > 0, "height=0 for {w}x{h}");
+        }
     }
 }

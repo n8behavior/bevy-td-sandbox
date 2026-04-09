@@ -16,7 +16,7 @@ impl Plugin for PilePlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(
             OnEnter(GameState::Playing),
-            init_pile.after(crate::grid::systems::setup_grid),
+            init_pile.after(crate::grid::systems::spawn_grid_visuals),
         )
         .add_systems(
             Update,

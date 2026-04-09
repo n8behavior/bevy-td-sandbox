@@ -8,7 +8,7 @@ use crate::audio::resources::SoundAssets;
 use crate::audio::systems::play_sound;
 use crate::camera::components::ScreenShake;
 use crate::common::constants::{GridConfig, TILE_SIZE};
-use crate::grid::systems::{grid_to_world, grid_to_world_cfg, world_to_grid};
+use crate::grid::systems::{grid_to_world_cfg, world_to_grid};
 use crate::particles::systems::spawn_death_particles;
 use crate::pile::resources::{EdgeCells, PileScrap, PileState};
 use crate::pile::systems::{nearest_edge_cell, nearest_pile_cell};
@@ -70,7 +70,7 @@ pub fn enemy_movement(
     let mut rng = rand::rng();
     for (entity, mut agent_pos, next_pos, mut transform, speed, wander) in &mut query {
         let wander_vec = wander.as_deref().map_or(Vec2::ZERO, |w| w.0);
-        let target_world = (grid_to_world(next_pos.0, &config) + wander_vec).extend(1.0);
+        let target_world = (grid_to_world_cfg(next_pos.0, &config) + wander_vec).extend(1.0);
         let current = transform.translation;
         let direction = target_world - current;
         let distance = direction.length();

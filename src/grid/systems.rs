@@ -21,6 +21,9 @@ pub fn compute_grid_config(mut commands: Commands, windows: Query<&Window>) {
     commands.insert_resource(config);
 }
 
+/// Spawn the 2D camera with pixel-scale-adjusted orthographic projection.
+/// Camera2d auto-requires a default projection; we override it with a custom
+/// scale derived from GridConfig::pixel_scale.
 pub fn setup_camera(mut commands: Commands, config: Res<GridConfig>) {
     use bevy::camera::ScalingMode;
     let scale = 1.0 / config.pixel_scale as f32;
@@ -42,7 +45,8 @@ pub fn setup_camera(mut commands: Commands, config: Res<GridConfig>) {
     ));
 }
 
-pub fn setup_grid(mut commands: Commands, config: Res<GridConfig>) {
+/// Create the pathfinding navigation grid with all cells passable.
+pub fn spawn_nav_grid(mut commands: Commands, config: Res<GridConfig>) {
     let settings = GridSettingsBuilder::new_2d(config.width, config.height)
         .chunk_size(CHUNK_SIZE)
         .build();
@@ -56,8 +60,11 @@ pub fn setup_grid(mut commands: Commands, config: Res<GridConfig>) {
     grid.build();
 
     commands.spawn((grid, DespawnOnExit(GameState::Playing)));
+}
 
-    // Ground plane — fine grid line color fills gaps between cells.
+/// Spawn the visual grid: ground plane, cell sprites, and major grid lines.
+pub fn spawn_grid_visuals(mut commands: Commands, config: Res<GridConfig>) {
+    // Ground plane — sits behind cells (z=-1) so its color shows as fine grid lines.
     let grid_w = config.width as f32 * TILE_SIZE;
     let grid_h = config.height as f32 * TILE_SIZE;
     commands.spawn((
@@ -66,12 +73,13 @@ pub fn setup_grid(mut commands: Commands, config: Res<GridConfig>) {
         DespawnOnExit(GameState::Playing),
     ));
 
-    // Cell sprites — slightly smaller than TILE_SIZE to reveal fine grid lines.
+    // Cell sprites are smaller than TILE_SIZE by GRID_LINE_WIDTH so the ground
+    // plane (colored GRID_LINE_COLOR) shows through the gap as fine grid lines.
     let cell_size = TILE_SIZE - GRID_LINE_WIDTH;
     for x in 0..config.width {
         for y in 0..config.height {
             let world_pos = grid_to_world_cfg(UVec3::new(x, y, 0), &config);
-            let is_edge = x == 0 || x == config.width - 1 || y == 0 || y == config.height - 1;
+            let is_edge = config.is_edge(x, y);
 
             let mut entity = commands.spawn((
                 Sprite::from_color(PAPER_COLOR, Vec2::splat(cell_size)),
@@ -88,12 +96,8 @@ pub fn setup_grid(mut commands: Commands, config: Res<GridConfig>) {
         }
     }
 
-    // Major grid lines — darker lines every MAJOR_GRID_INTERVAL cells.
-    let half_w = grid_w / 2.0;
-    let half_h = grid_h / 2.0;
-
-    for c in (0..=config.width).step_by(MAJOR_GRID_INTERVAL as usize) {
-        let x = c as f32 * TILE_SIZE - half_w;
+    // Major grid lines — drawn above cells (z=0.1) every MAJOR_GRID_INTERVAL cells.
+    for x in major_line_positions(config.width) {
         commands.spawn((
             Sprite::from_color(MAJOR_LINE_COLOR, Vec2::new(MAJOR_LINE_WIDTH, grid_h)),
             Transform::from_translation(Vec3::new(x, 0.0, 0.1)),
@@ -101,14 +105,23 @@ pub fn setup_grid(mut commands: Commands, config: Res<GridConfig>) {
         ));
     }
 
-    for r in (0..=config.height).step_by(MAJOR_GRID_INTERVAL as usize) {
-        let y = r as f32 * TILE_SIZE - half_h;
+    for y in major_line_positions(config.height) {
         commands.spawn((
             Sprite::from_color(MAJOR_LINE_COLOR, Vec2::new(grid_w, MAJOR_LINE_WIDTH)),
             Transform::from_translation(Vec3::new(0.0, y, 0.1)),
             DespawnOnExit(GameState::Playing),
         ));
     }
+}
+
+/// Compute world-space positions for major grid lines along one axis.
+fn major_line_positions(extent: u32) -> Vec<f32> {
+    let total = extent as f32 * TILE_SIZE;
+    let half = total / 2.0;
+    (0..=extent)
+        .step_by(MAJOR_GRID_INTERVAL as usize)
+        .map(|c| c as f32 * TILE_SIZE - half)
+        .collect()
 }
 
 /// Convert grid coord to world position, using GridConfig resource
@@ -119,11 +132,6 @@ pub fn grid_to_world_cfg(coord: UVec3, config: &GridConfig) -> Vec2 {
         coord.x as f32 * TILE_SIZE + TILE_SIZE / 2.0 - offset_x,
         coord.y as f32 * TILE_SIZE + TILE_SIZE / 2.0 - offset_y,
     )
-}
-
-/// Convert grid coord to world position, using GridConfig from ECS
-pub fn grid_to_world(coord: UVec3, config: &Res<GridConfig>) -> Vec2 {
-    grid_to_world_cfg(coord, config)
 }
 
 pub fn world_to_grid(pos: Vec2, config: &GridConfig) -> Option<IVec2> {
@@ -186,5 +194,30 @@ mod tests {
         // Far corner should be in positive quadrant
         assert!(far.x > 0.0);
         assert!(far.y > 0.0);
+    }
+
+    #[test]
+    fn major_line_positions_count() {
+        // 40-wide grid: lines at 0, 5, 10, 15, 20, 25, 30, 35, 40 = 9 lines
+        let positions = major_line_positions(40);
+        assert_eq!(positions.len(), 9);
+    }
+
+    #[test]
+    fn major_line_positions_boundaries() {
+        let positions = major_line_positions(40);
+        let half = 40.0 * TILE_SIZE / 2.0;
+        // First line at left edge
+        assert!((positions[0] - (-half)).abs() < f32::EPSILON);
+        // Last line at right edge
+        assert!((positions[positions.len() - 1] - half).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn major_line_positions_small_grid() {
+        // 8-wide grid (single chunk): lines at 0, 5 = 2 lines
+        // (step_by(5) from 0..=8 yields 0 and 5; 10 > 8 so no third)
+        let positions = major_line_positions(8);
+        assert_eq!(positions.len(), 2);
     }
 }

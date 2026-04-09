@@ -315,6 +315,34 @@ fn regression_11_enemy_reroutes_around_blocked_cell() {
 }
 
 // ---------------------------------------------------------------------------
+// spawn_nav_grid
+// ---------------------------------------------------------------------------
+
+#[test]
+fn spawn_nav_grid_creates_passable_grid() {
+    use bevy_td_sandbox::grid::systems::spawn_nav_grid;
+
+    let mut app = test_app();
+    app.add_plugins(NorthstarPlugin::<OrdinalNeighborhood>::default());
+
+    let config = test_grid_config();
+    app.insert_resource(config);
+    app.add_systems(Update, spawn_nav_grid);
+    app.update();
+
+    // Verify an OrdinalGrid entity was spawned with viable paths.
+    let mut query = app.world_mut().query::<&OrdinalGrid>();
+    let grid = query.single(app.world()).unwrap();
+    let start = UVec3::new(0, 0, 0);
+    let goal = UVec3::new(5, 5, 0);
+    assert!(
+        grid.pathfind(&mut PathfindArgs::new(start, goal).astar())
+            .is_some(),
+        "interior path should be viable"
+    );
+}
+
+// ---------------------------------------------------------------------------
 // slow_aura
 // ---------------------------------------------------------------------------
 

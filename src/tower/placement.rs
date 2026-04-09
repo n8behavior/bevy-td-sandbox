@@ -4,7 +4,7 @@ use bevy_northstar::prelude::*;
 use crate::common::constants::*;
 use crate::enemy::components::SpawnAnimation;
 use crate::grid::components::GridCell;
-use crate::grid::systems::{grid_to_world, world_to_grid};
+use crate::grid::systems::{grid_to_world_cfg, world_to_grid};
 use crate::pathfinding::GridChanged;
 use crate::pile::resources::{PileScrap, PileState};
 use crate::states::GameState;
@@ -132,7 +132,7 @@ pub fn update_placing_tower(
     };
 
     let cell_uvec = UVec3::new(grid_pos.x as u32, grid_pos.y as u32, 0);
-    let snap_pos = grid_to_world(cell_uvec, &config);
+    let snap_pos = grid_to_world_cfg(cell_uvec, &config);
     transform.translation = snap_pos.extend(2.0);
     *vis = Visibility::Inherited;
 
@@ -287,7 +287,7 @@ pub fn confirm_tower_placement(
     }
 
     // Transition from Placing to Active.
-    let snap_pos = grid_to_world(cell_uvec, &config);
+    let snap_pos = grid_to_world_cfg(cell_uvec, &config);
     *tower_state = TowerState::Active;
     commands.entity(entity).remove::<PlacementValid>();
     // Despawn range ring children.
@@ -393,7 +393,7 @@ pub fn sell_tower(
     }
 
     let cell_uvec = UVec3::new(grid_pos.x as u32, grid_pos.y as u32, 0);
-    let tower_world_pos = grid_to_world(cell_uvec, &config);
+    let tower_world_pos = grid_to_world_cfg(cell_uvec, &config);
 
     // Restore nav grid if this tower blocked pathing.
     if blocks_nav.is_some()

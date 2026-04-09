@@ -12,7 +12,11 @@ impl Plugin for GridPlugin {
             OnEnter(GameState::Playing),
             (
                 systems::compute_grid_config,
-                (systems::setup_camera, systems::setup_grid),
+                (
+                    systems::setup_camera,
+                    systems::spawn_nav_grid,
+                    systems::spawn_grid_visuals,
+                ),
             )
                 .chain(),
         );
