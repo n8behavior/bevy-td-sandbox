@@ -39,15 +39,16 @@ pub fn compute_scrap_alpha(remaining_secs: f32) -> Option<f32> {
     Some(alpha)
 }
 
-pub fn on_enemy_died(trigger: On<EnemyDied>, mut commands: Commands, sounds: Res<SoundAssets>) {
+/// Spawn a [`ScrapDrop`] entity with glow child and sparkle particles.
+pub fn on_enemy_died_spawn_drop(trigger: On<EnemyDied>, mut commands: Commands) {
     let event = &*trigger;
-    let mut rng = rand::rng();
 
     let total_value = compute_scrap_value(event.loot_value, event.stolen_scrap);
     if total_value == 0 {
         return;
     }
 
+    let mut rng = rand::rng();
     let offset = compute_drop_offset(&mut rng);
     let pos = event.position + offset;
 
@@ -69,8 +70,20 @@ pub fn on_enemy_died(trigger: On<EnemyDied>, mut commands: Commands, sounds: Res
             Transform::from_translation(Vec3::new(0.0, 0.0, -0.1)),
         ));
 
-    play_sound(&mut commands, &sounds.scrap_drop, 0.25);
     spawn_scrap_sparkle(&mut commands, pos);
+}
+
+/// Play the scrap-drop sound when loot is awarded.
+pub fn on_enemy_died_scrap_sound(
+    trigger: On<EnemyDied>,
+    mut commands: Commands,
+    sounds: Res<SoundAssets>,
+) {
+    let total_value = compute_scrap_value(trigger.loot_value, trigger.stolen_scrap);
+    if total_value == 0 {
+        return;
+    }
+    play_sound(&mut commands, &sounds.scrap_drop, 0.25);
 }
 
 /// Slowly rotate scrap drops for visual flair (diamond ↔ square oscillation).
