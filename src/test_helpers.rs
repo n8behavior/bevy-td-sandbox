@@ -2,10 +2,10 @@ use bevy::prelude::*;
 use std::collections::HashSet;
 
 use crate::audio::resources::SoundAssets;
-use crate::stats::resources::RunStats;
 use crate::common::constants::GridConfig;
 use crate::pile::resources::{EdgeCells, PileScrap, PileState};
 use crate::pile::systems::{compute_pile_cells, pile_radius};
+use crate::stats::resources::RunStats;
 
 /// Minimal headless App for testing (time ticking, no window/renderer).
 pub fn test_app() -> App {

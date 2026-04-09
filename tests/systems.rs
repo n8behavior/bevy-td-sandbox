@@ -159,7 +159,10 @@ fn update_pile_visuals_adds_pile_cell_and_color() {
         "cell inside pile should have PileCell marker"
     );
     let sprite = app.world().get::<Sprite>(cell).unwrap();
-    assert_eq!(sprite.color, PILE_COLOR, "cell inside pile should be PILE_COLOR");
+    assert_eq!(
+        sprite.color, PILE_COLOR,
+        "cell inside pile should be PILE_COLOR"
+    );
 }
 
 #[test]
@@ -228,7 +231,10 @@ fn update_pile_visuals_skips_tower_entities() {
         "tower cell should not get PileCell even if inside pile"
     );
     let sprite = app.world().get::<Sprite>(cell).unwrap();
-    assert_eq!(sprite.color, PAPER_COLOR, "tower cell color should be unchanged");
+    assert_eq!(
+        sprite.color, PAPER_COLOR,
+        "tower cell color should be unchanged"
+    );
 }
 
 #[test]
@@ -259,7 +265,10 @@ fn update_pile_visuals_skips_terrain_entities() {
         "terrain cell should not get PileCell even if inside pile"
     );
     let sprite = app.world().get::<Sprite>(cell).unwrap();
-    assert_eq!(sprite.color, PAPER_COLOR, "terrain cell color should be unchanged");
+    assert_eq!(
+        sprite.color, PAPER_COLOR,
+        "terrain cell color should be unchanged"
+    );
 }
 
 // ---------------------------------------------------------------------------

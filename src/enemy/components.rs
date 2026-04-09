@@ -11,59 +11,77 @@ pub enum EnemyType {
     Boss,
 }
 
+/// Per-variant stat block for enemies. Consolidates color, health, speed,
+/// loot value, and size so adding a new variant requires one update.
+pub struct EnemyStats {
+    pub color: Color,
+    pub ui_color: Color,
+    pub health: f32,
+    pub speed: f32,
+    pub loot: u32,
+    pub size: f32,
+}
+
 impl EnemyType {
-    pub fn color(&self) -> Color {
+    pub fn stats(&self) -> EnemyStats {
         match self {
-            EnemyType::Shambler => Color::srgb(0.4, 0.7, 0.3),
-            EnemyType::Runner => Color::srgb(0.9, 0.8, 0.2),
-            EnemyType::Brute => Color::srgb(0.6, 0.2, 0.5),
-            EnemyType::Boss => Color::srgb(0.8, 0.1, 0.1),
+            EnemyType::Shambler => EnemyStats {
+                color: Color::srgb(0.4, 0.7, 0.3),
+                ui_color: Color::srgb(0.5, 0.9, 0.4),
+                health: 50.0,
+                speed: 40.0,
+                loot: 10,
+                size: 14.0,
+            },
+            EnemyType::Runner => EnemyStats {
+                color: Color::srgb(0.9, 0.8, 0.2),
+                ui_color: Color::srgb(1.0, 0.9, 0.3),
+                health: 30.0,
+                speed: 80.0,
+                loot: 15,
+                size: 10.0,
+            },
+            EnemyType::Brute => EnemyStats {
+                color: Color::srgb(0.6, 0.2, 0.5),
+                ui_color: Color::srgb(0.8, 0.4, 0.7),
+                health: 150.0,
+                speed: 25.0,
+                loot: 30,
+                size: 18.0,
+            },
+            EnemyType::Boss => EnemyStats {
+                color: Color::srgb(0.8, 0.1, 0.1),
+                ui_color: Color::srgb(1.0, 0.3, 0.3),
+                health: 350.0,
+                speed: 20.0,
+                loot: 150,
+                size: 28.0,
+            },
         }
+    }
+
+    pub fn color(&self) -> Color {
+        self.stats().color
     }
 
     pub fn base_health(&self) -> f32 {
-        match self {
-            EnemyType::Shambler => 50.0,
-            EnemyType::Runner => 30.0,
-            EnemyType::Brute => 150.0,
-            EnemyType::Boss => 350.0,
-        }
+        self.stats().health
     }
 
     pub fn base_speed(&self) -> f32 {
-        match self {
-            EnemyType::Shambler => 40.0,
-            EnemyType::Runner => 80.0,
-            EnemyType::Brute => 25.0,
-            EnemyType::Boss => 20.0,
-        }
+        self.stats().speed
     }
 
     pub fn loot_value(&self) -> u32 {
-        match self {
-            EnemyType::Shambler => 10,
-            EnemyType::Runner => 15,
-            EnemyType::Brute => 30,
-            EnemyType::Boss => 150,
-        }
+        self.stats().loot
     }
 
     pub fn ui_color(&self) -> Color {
-        match self {
-            EnemyType::Shambler => Color::srgb(0.5, 0.9, 0.4),
-            EnemyType::Runner => Color::srgb(1.0, 0.9, 0.3),
-            EnemyType::Brute => Color::srgb(0.8, 0.4, 0.7),
-            EnemyType::Boss => Color::srgb(1.0, 0.3, 0.3),
-        }
+        self.stats().ui_color
     }
 
     pub fn size(&self) -> f32 {
-        match self {
-            EnemyType::Shambler => 14.0,
-            EnemyType::Runner => 10.0,
-            EnemyType::Brute => 18.0,
-            EnemyType::Boss => 28.0,
-        }
+        self.stats().size
     }
 }
 
@@ -213,5 +231,18 @@ mod tests {
     #[test]
     fn enemy_state_default_is_approaching() {
         assert_eq!(EnemyState::default(), EnemyState::Approaching);
+    }
+
+    #[test]
+    fn stats_fields_match_accessors() {
+        for ty in &ALL_TYPES {
+            let s = ty.stats();
+            assert_eq!(ty.color(), s.color, "{ty:?} color");
+            assert_eq!(ty.ui_color(), s.ui_color, "{ty:?} ui_color");
+            assert_eq!(ty.base_health(), s.health, "{ty:?} health");
+            assert_eq!(ty.base_speed(), s.speed, "{ty:?} speed");
+            assert_eq!(ty.loot_value(), s.loot, "{ty:?} loot");
+            assert_eq!(ty.size(), s.size, "{ty:?} size");
+        }
     }
 }

@@ -22,12 +22,24 @@ pub struct CircleMaterial {
 impl CircleMaterial {
     /// Hard-edged ring with no fill or ripple. Used for tower range indicators.
     pub fn range_indicator(color: Color) -> Self {
-        Self { color, softness: 0.05, fill_fade: 0.0, ripple_speed: 0.0, time: 0.0 }
+        Self {
+            color,
+            softness: 0.05,
+            fill_fade: 0.0,
+            ripple_speed: 0.0,
+            time: 0.0,
+        }
     }
 
     /// Radial-gradient ring with ripple pulse. Used for aura effects.
     pub fn aura(color: Color) -> Self {
-        Self { color, softness: 0.05, fill_fade: 1.0, ripple_speed: 0.4, time: 0.0 }
+        Self {
+            color,
+            softness: 0.05,
+            fill_fade: 1.0,
+            ripple_speed: 0.4,
+            time: 0.0,
+        }
     }
 }
 

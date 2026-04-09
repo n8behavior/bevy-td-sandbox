@@ -164,7 +164,10 @@ mod tests {
     fn drop_offset_deterministic() {
         let mut rng1 = SmallRng::seed_from_u64(123);
         let mut rng2 = SmallRng::seed_from_u64(123);
-        assert_eq!(compute_drop_offset(&mut rng1), compute_drop_offset(&mut rng2));
+        assert_eq!(
+            compute_drop_offset(&mut rng1),
+            compute_drop_offset(&mut rng2)
+        );
     }
 
     // -- compute_scrap_alpha --
