@@ -2,6 +2,7 @@ use bevy::prelude::*;
 use std::collections::HashSet;
 
 use crate::audio::resources::SoundAssets;
+use crate::stats::resources::RunStats;
 use crate::common::constants::GridConfig;
 use crate::pile::resources::{EdgeCells, PileScrap, PileState};
 use crate::pile::systems::{compute_pile_cells, pile_radius};
@@ -60,6 +61,11 @@ pub fn insert_empty_pile(app: &mut App, scrap: u32, config: GridConfig) {
     });
     app.insert_resource(EdgeCells(Vec::new()));
     app.insert_resource(config);
+}
+
+/// `RunStats` with `start_time = 0` and all counters zeroed.
+pub fn make_test_stats() -> RunStats {
+    RunStats::new(0.0)
 }
 
 /// Mock SoundAssets with default (invalid) handles for headless tests.

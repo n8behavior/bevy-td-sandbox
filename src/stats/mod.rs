@@ -1,3 +1,11 @@
+//! Per-run statistics: kill counters, survival time, and scrap/tower tracking.
+//!
+//! [`systems::init_stats`] inserts a zeroed [`resources::RunStats`] on
+//! `OnEnter(Playing)`.  [`systems::on_enemy_died_stats`] observes
+//! [`EnemyDied`](crate::enemy::systems::EnemyDied) to increment per-type kill
+//! counters, and [`systems::track_survival_time`] updates elapsed time each
+//! frame.
+
 pub mod resources;
 pub mod systems;
 
