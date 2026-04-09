@@ -118,9 +118,9 @@ pub struct DeathAnimation {
     pub timer: Timer,
 }
 
-/// Small random offset within a cell so enemies don't all walk the exact same pixel path.
+/// Per-cell random jitter so enemies don't all walk the exact same pixel path.
 #[derive(Component)]
-pub struct WanderOffset(pub Vec2);
+pub struct CellJitter(pub Vec2);
 
 /// Brief white flash on damage.
 #[derive(Component)]

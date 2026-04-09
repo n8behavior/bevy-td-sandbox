@@ -1,3 +1,14 @@
+//! Enemy lifecycle: spawning, pathfinding, state transitions, and animations.
+//!
+//! Enemies spawn at map edges and pathfind toward the scrap pile
+//! (`EnemyState::Approaching`). On arrival they steal scrap and flee to the
+//! nearest edge (`EnemyState::Fleeing`). Death triggers observer events for
+//! loot drops, particles, sound, and boss splitting.
+//!
+//! Each `EnemyType` variant carries a stat block (`EnemyStats`) that drives
+//! health, speed, loot, and visuals. Boss enemies gain traits (`Regeneration`,
+//! `Armor`, `SplitsOnDeath`) assigned per wave.
+
 pub mod components;
 pub mod systems;
 

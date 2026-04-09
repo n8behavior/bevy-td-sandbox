@@ -26,6 +26,21 @@ use super::components::*;
 /// Radians per second enemies rotate toward their travel direction.
 const ENEMY_ROTATION_SPEED: f32 = 6.0;
 
+/// Half-width of per-cell random jitter (world units per axis).
+const CELL_JITTER_RANGE: f32 = 7.0;
+
+/// Duration of the shrink+fade death animation (seconds).
+const DEATH_ANIM_SECS: f32 = 0.3;
+
+/// Random offset within a grid cell so enemies don't overlap on the same pixel path.
+/// Each axis is sampled uniformly from `[-CELL_JITTER_RANGE, CELL_JITTER_RANGE]`.
+pub fn random_cell_jitter(rng: &mut impl Rng) -> Vec2 {
+    Vec2::new(
+        rng.random_range(-CELL_JITTER_RANGE..CELL_JITTER_RANGE),
+        rng.random_range(-CELL_JITTER_RANGE..CELL_JITTER_RANGE),
+    )
+}
+
 #[derive(Event)]
 pub struct EnemyDied {
     pub position: Vec2,
@@ -59,7 +74,7 @@ pub fn enemy_movement(
             &NextPos,
             &mut Transform,
             &MoveSpeed,
-            Option<&mut WanderOffset>,
+            Option<&mut CellJitter>,
         ),
         With<Enemy>,
     >,
@@ -68,9 +83,9 @@ pub fn enemy_movement(
     config: Res<GridConfig>,
 ) {
     let mut rng = rand::rng();
-    for (entity, mut agent_pos, next_pos, mut transform, speed, wander) in &mut query {
-        let wander_vec = wander.as_deref().map_or(Vec2::ZERO, |w| w.0);
-        let target_world = (grid_to_world_cfg(next_pos.0, &config) + wander_vec).extend(1.0);
+    for (entity, mut agent_pos, next_pos, mut transform, speed, jitter) in &mut query {
+        let jitter_vec = jitter.as_deref().map_or(Vec2::ZERO, |j| j.0);
+        let target_world = (grid_to_world_cfg(next_pos.0, &config) + jitter_vec).extend(1.0);
         let current = transform.translation;
         let direction = target_world - current;
         let distance = direction.length();
@@ -95,20 +110,18 @@ pub fn enemy_movement(
             agent_pos.0 = next_pos.0;
             transform.translation = target_world;
             commands.entity(entity).remove::<NextPos>();
-            commands.entity(entity).insert(WanderOffset(Vec2::new(
-                rng.random_range(-7.0..7.0),
-                rng.random_range(-7.0..7.0),
-            )));
+            commands
+                .entity(entity)
+                .insert(CellJitter(random_cell_jitter(&mut rng)));
         } else {
             let step = direction.normalize() * speed.current * time.delta_secs();
             if step.length() >= distance {
                 agent_pos.0 = next_pos.0;
                 transform.translation = target_world;
                 commands.entity(entity).remove::<NextPos>();
-                commands.entity(entity).insert(WanderOffset(Vec2::new(
-                    rng.random_range(-7.0..7.0),
-                    rng.random_range(-7.0..7.0),
-                )));
+                commands
+                    .entity(entity)
+                    .insert(CellJitter(random_cell_jitter(&mut rng)));
             } else {
                 transform.translation += step;
             }
@@ -214,7 +227,7 @@ pub fn enemy_escaped(
         });
         commands.entity(entity).remove::<Enemy>();
         commands.entity(entity).insert(DeathAnimation {
-            timer: Timer::from_seconds(0.3, TimerMode::Once),
+            timer: Timer::from_seconds(DEATH_ANIM_SECS, TimerMode::Once),
         });
     }
 }
@@ -252,7 +265,7 @@ pub fn check_enemy_death(
 
             commands.entity(entity).remove::<Enemy>();
             commands.entity(entity).insert(DeathAnimation {
-                timer: Timer::from_seconds(0.3, TimerMode::Once),
+                timer: Timer::from_seconds(DEATH_ANIM_SECS, TimerMode::Once),
             });
         }
     }
@@ -445,10 +458,7 @@ pub fn spawn_enemy(
             SpawnAnimation {
                 timer: Timer::from_seconds(0.25, TimerMode::Once),
             },
-            WanderOffset(Vec2::new(
-                rng.random_range(-7.0..7.0),
-                rng.random_range(-7.0..7.0),
-            )),
+            CellJitter(random_cell_jitter(&mut rng)),
             AgentPos(spawn_pos),
             AgentOfGrid(grid_entity),
             Pathfind::new(goal_pos).mode(PathfindMode::Waypoints),
@@ -602,5 +612,39 @@ pub fn brute_attack_towers(
                 *tower_state = TowerState::Rubble;
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rand::SeedableRng;
+    use rand::rngs::SmallRng;
+
+    // -- random_cell_jitter --
+
+    #[test]
+    fn cell_jitter_within_bounds() {
+        let mut rng = SmallRng::seed_from_u64(42);
+        for _ in 0..100 {
+            let j = random_cell_jitter(&mut rng);
+            assert!(
+                (-CELL_JITTER_RANGE..=CELL_JITTER_RANGE).contains(&j.x),
+                "x out of range: {}",
+                j.x
+            );
+            assert!(
+                (-CELL_JITTER_RANGE..=CELL_JITTER_RANGE).contains(&j.y),
+                "y out of range: {}",
+                j.y
+            );
+        }
+    }
+
+    #[test]
+    fn cell_jitter_deterministic() {
+        let mut rng1 = SmallRng::seed_from_u64(123);
+        let mut rng2 = SmallRng::seed_from_u64(123);
+        assert_eq!(random_cell_jitter(&mut rng1), random_cell_jitter(&mut rng2));
     }
 }
