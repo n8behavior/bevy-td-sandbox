@@ -1,6 +1,6 @@
 use bevy::prelude::*;
 
-use crate::common::constants::{MAGNET_AURA_COLOR, TOWER_HP_COST_MULT};
+use crate::common::constants::{MAGNET_AURA_COLOR, SCRAP_MAGNET_RANGE, TOWER_HP_COST_MULT};
 use crate::tower::components::*;
 
 /// Marker for the dedicated Magnet tower type.
@@ -26,7 +26,7 @@ fn register(mut registry: ResMut<TowerRegistry>) {
         special_label: "PULL",
         spawn_fn: |cmds| {
             let damage = 0.0;
-            let range = 90.0;
+            let range = SCRAP_MAGNET_RANGE;
             let slow_factor = 0.5;
             let color = Color::srgb(0.2, 0.5, 0.8);
             let stats = TowerStats { damage, range };

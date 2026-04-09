@@ -1,6 +1,14 @@
+//! Junk pile: the player's scrap stockpile at the grid center.
+//!
+//! `PileScrap` tracks the current amount; `update_pile_state` converts it to
+//! a circular cell footprint (`PileState`), and `update_pile_visuals` syncs
+//! grid cell sprites to match.
+
 pub mod components;
 pub mod resources;
 pub mod systems;
+
+pub use systems::{compute_pile_cells, nearest_edge_cell, nearest_pile_cell, pile_radius};
 
 use bevy::prelude::*;
 
@@ -20,6 +28,8 @@ impl Plugin for PilePlugin {
         )
         .add_systems(
             Update,
+            // update_pile_state must run before update_pile_visuals
+            // so visuals always reflect the current pile cell set.
             (systems::update_pile_state, systems::update_pile_visuals)
                 .chain()
                 .run_if(in_state(GameState::Playing)),
@@ -60,8 +70,7 @@ pub fn init_pile(mut commands: Commands, config: Res<GridConfig>, game_mode: Res
     commands.insert_resource(EdgeCells(edges));
 
     // Pile center entity: acts as a scrap collector with aura visual.
-    // Range is 50% longer than the dedicated Magnet tower (90 * 1.5 = 135).
-    let pile_range = 135.0;
+    let pile_range = PILE_COLLECTOR_RANGE;
     let world_pos = crate::grid::systems::grid_to_world_cfg(center, &config);
     commands.spawn((
         ScrapCollector { range: pile_range },

@@ -15,6 +15,12 @@ pub const SCRAP_PULL_SPEED: f32 = 60.0;
 pub const ENEMY_PULL_SPEED: f32 = 15.0;
 /// Distance at which a pulled scrap drop is auto-collected.
 pub const MAGNET_COLLECT_RADIUS: f32 = 5.0;
+/// Scrap Magnet tower: base engagement range (world units).
+pub const SCRAP_MAGNET_RANGE: f32 = 90.0;
+/// Pile center collector range (world units).
+/// 50% longer than the Scrap Magnet tower so scrap dropped near the pile
+/// center is never stranded.
+pub const PILE_COLLECTOR_RANGE: f32 = 135.0;
 /// Aura color shared by all scrap collectors (blue electromagnetic).
 pub const MAGNET_AURA_COLOR: Color = Color::srgba(0.15, 0.35, 0.7, 0.55);
 

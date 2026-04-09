@@ -1,11 +1,17 @@
 use bevy::prelude::*;
 use bevy_northstar::prelude::*;
+use bevy_td_sandbox::common::constants::{
+    PAPER_COLOR, PILE_COLLECTOR_RANGE, PILE_COLOR, SCRAP_MAGNET_RANGE,
+};
 use bevy_td_sandbox::economy::components::ScrapDrop;
 use bevy_td_sandbox::enemy::components::*;
+use bevy_td_sandbox::grid::components::GridCell;
 use bevy_td_sandbox::pathfinding::systems::recalculate_enemy_paths;
+use bevy_td_sandbox::pile::components::PileCell;
 use bevy_td_sandbox::pile::resources::{PileScrap, PileState};
-use bevy_td_sandbox::pile::systems::update_pile_state;
+use bevy_td_sandbox::pile::systems::{update_pile_state, update_pile_visuals};
 use bevy_td_sandbox::states::{GameState, PlayPhase};
+use bevy_td_sandbox::terrain::components::Terrain;
 use bevy_td_sandbox::test_helpers::*;
 use bevy_td_sandbox::tower::components::*;
 use bevy_td_sandbox::tower::systems::slow_aura;
@@ -54,6 +60,243 @@ fn update_pile_state_zero_scrap_minimal_cells() {
     let pile_state = app.world().resource::<PileState>();
     // Radius 0 still includes the center cell
     assert_eq!(pile_state.cells.len(), 1);
+}
+
+// ---------------------------------------------------------------------------
+// update_pile_state — caching
+// ---------------------------------------------------------------------------
+
+#[test]
+fn update_pile_state_cache_skips_fractional_change() {
+    let mut app = test_app();
+    insert_pile(&mut app, 50_000);
+    app.add_systems(Update, update_pile_state);
+
+    // Consume the initial "changed" resource.
+    app.update();
+    let cells_before = app.world().resource::<PileState>().cells.len();
+
+    // Tiny scrap bump — same integer radius, different float radius.
+    let old_radius = bevy_td_sandbox::pile::pile_radius(50_000);
+    let new_radius = bevy_td_sandbox::pile::pile_radius(50_001);
+    assert_eq!(
+        old_radius as u32, new_radius as u32,
+        "precondition: integer radius should not change"
+    );
+
+    app.world_mut().resource_mut::<PileScrap>().amount = 50_001;
+    app.update();
+
+    let pile_state = app.world().resource::<PileState>();
+    assert_eq!(
+        pile_state.cells.len(),
+        cells_before,
+        "cells should not recompute on fractional radius change"
+    );
+    // Float radius should still be updated even when cells are cached.
+    assert!(
+        (pile_state.radius_tiles - new_radius).abs() < 1e-6,
+        "radius_tiles should reflect updated float value"
+    );
+}
+
+#[test]
+fn update_pile_state_cache_bypassed_when_empty() {
+    let mut app = test_app();
+    let config = test_grid_config();
+    let center = config.center();
+
+    // Manually set up: non-zero scrap, matching last_radius_int, but empty cells.
+    let radius = bevy_td_sandbox::pile::pile_radius(50_000);
+    app.insert_resource(PileScrap { amount: 50_000 });
+    app.insert_resource(PileState {
+        cells: std::collections::HashSet::new(),
+        center,
+        radius_tiles: radius,
+        last_radius_int: radius as u32,
+    });
+    app.insert_resource(bevy_td_sandbox::pile::resources::EdgeCells(Vec::new()));
+    app.insert_resource(config);
+    app.add_systems(Update, update_pile_state);
+
+    app.update();
+
+    let pile_state = app.world().resource::<PileState>();
+    assert!(
+        !pile_state.cells.is_empty(),
+        "cache should be bypassed when cells are empty, even if last_radius_int matches"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// update_pile_visuals
+// ---------------------------------------------------------------------------
+
+#[test]
+fn update_pile_visuals_adds_pile_cell_and_color() {
+    let mut app = test_app();
+    insert_pile(&mut app, 50_000);
+
+    let config = test_grid_config();
+    let center = config.center();
+
+    // Spawn a grid cell at the pile center — should be inside the pile.
+    let cell = app
+        .world_mut()
+        .spawn((
+            GridCell {
+                coord: IVec2::new(center.x as i32, center.y as i32),
+            },
+            Sprite::from_color(PAPER_COLOR, Vec2::splat(19.0)),
+        ))
+        .id();
+
+    app.add_systems(Update, update_pile_visuals);
+    app.update();
+
+    assert!(
+        app.world().get::<PileCell>(cell).is_some(),
+        "cell inside pile should have PileCell marker"
+    );
+    let sprite = app.world().get::<Sprite>(cell).unwrap();
+    assert_eq!(sprite.color, PILE_COLOR, "cell inside pile should be PILE_COLOR");
+}
+
+#[test]
+fn update_pile_visuals_removes_pile_cell_and_restores_color() {
+    let mut app = test_app();
+    insert_empty_pile(&mut app, 0, test_grid_config());
+
+    let config = test_grid_config();
+    let center = config.center();
+
+    // Spawn a cell that already has PileCell and PILE_COLOR but is NOT in the pile.
+    let cell = app
+        .world_mut()
+        .spawn((
+            GridCell {
+                coord: IVec2::new(center.x as i32, center.y as i32),
+            },
+            Sprite::from_color(PILE_COLOR, Vec2::splat(19.0)),
+            PileCell,
+        ))
+        .id();
+
+    app.add_systems(Update, update_pile_visuals);
+    // First update processes the "changed" resource from insert_empty_pile which
+    // computes the empty pile state. We need a second update after update_pile_state
+    // ran, but since we only added update_pile_visuals, the PileState is already
+    // marked as changed from insertion.
+    app.update();
+
+    assert!(
+        app.world().get::<PileCell>(cell).is_none(),
+        "cell outside pile should not have PileCell marker"
+    );
+    let sprite = app.world().get::<Sprite>(cell).unwrap();
+    assert_eq!(
+        sprite.color, PAPER_COLOR,
+        "cell outside pile should be restored to PAPER_COLOR"
+    );
+}
+
+#[test]
+fn update_pile_visuals_skips_tower_entities() {
+    let mut app = test_app();
+    insert_pile(&mut app, 50_000);
+
+    let config = test_grid_config();
+    let center = config.center();
+
+    // Spawn a grid cell with Tower — should be excluded by Without<Tower> filter.
+    let cell = app
+        .world_mut()
+        .spawn((
+            GridCell {
+                coord: IVec2::new(center.x as i32, center.y as i32),
+            },
+            Sprite::from_color(PAPER_COLOR, Vec2::splat(19.0)),
+            Tower,
+        ))
+        .id();
+
+    app.add_systems(Update, update_pile_visuals);
+    app.update();
+
+    assert!(
+        app.world().get::<PileCell>(cell).is_none(),
+        "tower cell should not get PileCell even if inside pile"
+    );
+    let sprite = app.world().get::<Sprite>(cell).unwrap();
+    assert_eq!(sprite.color, PAPER_COLOR, "tower cell color should be unchanged");
+}
+
+#[test]
+fn update_pile_visuals_skips_terrain_entities() {
+    let mut app = test_app();
+    insert_pile(&mut app, 50_000);
+
+    let config = test_grid_config();
+    let center = config.center();
+
+    // Spawn a grid cell with Terrain — should be excluded by Without<Terrain> filter.
+    let cell = app
+        .world_mut()
+        .spawn((
+            GridCell {
+                coord: IVec2::new(center.x as i32, center.y as i32),
+            },
+            Sprite::from_color(PAPER_COLOR, Vec2::splat(19.0)),
+            Terrain::Rubble,
+        ))
+        .id();
+
+    app.add_systems(Update, update_pile_visuals);
+    app.update();
+
+    assert!(
+        app.world().get::<PileCell>(cell).is_none(),
+        "terrain cell should not get PileCell even if inside pile"
+    );
+    let sprite = app.world().get::<Sprite>(cell).unwrap();
+    assert_eq!(sprite.color, PAPER_COLOR, "terrain cell color should be unchanged");
+}
+
+// ---------------------------------------------------------------------------
+// Pile constants
+// ---------------------------------------------------------------------------
+
+#[test]
+fn pile_collector_range_derives_from_magnet() {
+    assert_eq!(
+        PILE_COLLECTOR_RANGE,
+        SCRAP_MAGNET_RANGE * 1.5,
+        "pile collector range should be 1.5x the Scrap Magnet range"
+    );
+}
+
+#[test]
+fn init_pile_spawns_collector_with_constant_range() {
+    use bevy_td_sandbox::pile::init_pile;
+    use bevy_td_sandbox::states::GameMode;
+
+    let mut app = test_app();
+    app.insert_resource(test_grid_config());
+    app.insert_resource(GameMode::Classic);
+    app.add_systems(Update, init_pile);
+    app.update();
+
+    let mut found = false;
+    for collector in app.world_mut().query::<&ScrapCollector>().iter(app.world()) {
+        if collector.range == PILE_COLLECTOR_RANGE {
+            found = true;
+            break;
+        }
+    }
+    assert!(
+        found,
+        "init_pile should spawn a ScrapCollector with range == PILE_COLLECTOR_RANGE ({PILE_COLLECTOR_RANGE})"
+    );
 }
 
 // ---------------------------------------------------------------------------

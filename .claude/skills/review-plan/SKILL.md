@@ -1,20 +1,20 @@
 ---
 name: review-plan
-description: Review a plan document from multiple technical perspectives (simplicity, Bevy/ECS idioms, testability)
+description: Review a plan document from multiple technical perspectives (simplicity, Bevy/ECS idioms, testability, documentation)
 argument-hint: [plan-filepath]
 ---
 
 ## Multi-Perspective Plan Review
 
-You are reviewing the plan at `$ARGUMENTS`. Your job is to provide three independent expert reviews, then synthesize them.
+You are reviewing the plan at `$ARGUMENTS`. Your job is to provide four independent expert reviews, then synthesize them.
 
 ### Step 1: Read the plan
 
 Read the plan file at `$ARGUMENTS` and read `CLAUDE.md` for project conventions. Identify all source files referenced in the plan.
 
-### Step 2: Launch 3 review agents in parallel
+### Step 2: Launch 4 review agents in parallel
 
-Use the Agent tool to spawn all 3 agents in a single message (parallel execution). Each agent should:
+Use the Agent tool to spawn all 4 agents in a single message (parallel execution). Each agent should:
 - Read the plan file at `$ARGUMENTS`
 - Read `CLAUDE.md` for project conventions
 - Read all source files referenced in the plan
@@ -56,9 +56,38 @@ Use the Agent tool to spawn all 3 agents in a single message (parallel execution
 > 
 > Be specific. Reference file paths and line numbers. Report in under 300 words.
 
-### Step 3: Synthesize
+**Agent 4 — Documentation** (subagent_type: Explore, thoroughness: very thorough)
+> You are reviewing a plan for documentation quality. Read the plan at `$ARGUMENTS` and all source files it references. Also read CLAUDE.md for project conventions.
+> 
+> Review for:
+> - Does the plan account for rustdoc comments on new or changed public items (modules, structs, functions, methods)?
+> - Are there module-level docs (`//!`) that explain how components and systems in that module work together as a cohesive unit?
+> - Do docs explain *concepts* and *why*, not just restate the type signature?
+> - Are `// ANCHOR:` / `// ANCHOR_END:` tags used so that doc comments and module docs can reference specific code sections with `{{#include}}`?
+> - Where a simpler example would clarify a concept, does the plan include a doc test (`/// ```rust` block) to both explain and verify the example?
+> - Will the plan's changes leave any public API surface undocumented or with stale docs?
+> 
+> Be specific. Reference file paths and line numbers. Report in under 300 words.
 
-After all 3 agents complete, compile their findings into this structure:
+### Step 3: Present individual reports
+
+After all 4 agents complete, present each agent's full report under its own heading. Do not summarize or truncate — show everything the agent returned:
+
+#### Simplicity & Clarity
+> (Agent 1 report verbatim)
+
+#### Bevy/ECS Idioms
+> (Agent 2 report verbatim)
+
+#### Testability
+> (Agent 3 report verbatim)
+
+#### Documentation
+> (Agent 4 report verbatim)
+
+### Step 4: Synthesize
+
+After the individual reports, compile cross-cutting findings into this structure:
 
 **Agreements** — Points where 2+ perspectives align
 
