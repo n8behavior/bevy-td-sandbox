@@ -189,10 +189,12 @@ grid.is_path_viable(start, goal) // -> bool
 ## Build Commands
 
 ```bash
-cargo check          # fast compile check
-cargo clippy         # lint check (MUST pass with zero warnings before every commit)
-cargo run            # run the game
-cargo doc --open     # browse local API docs
+just run             # run the game (dynamic linking for fast recompiles)
+just check           # fast compile check
+just clippy          # lint check (MUST pass with zero warnings before every commit)
+just test            # run all tests (unit, integration, doctests)
+just ci              # full CI check (format + clippy + tests)
+just doc             # browse local API docs
 ```
 
 ## Zero Warnings Policy
