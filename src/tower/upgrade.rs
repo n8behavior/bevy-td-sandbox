@@ -113,8 +113,64 @@ fn darken(color: Color, amount: f32) -> Color {
     )
 }
 
-fn upgrade_cost(base_cost: u32, current_tier: u8) -> u32 {
+/// Scrap cost to upgrade from `current_tier` to the next tier.
+pub(crate) fn upgrade_cost(base_cost: u32, current_tier: u8) -> u32 {
     (base_cost as f32 * UPGRADE_COST_MULT[current_tier as usize]) as u32
+}
+
+/// Tower damage at the given tier (base scaled by tier multiplier).
+pub(crate) fn damage_at_tier(base_damage: f32, tier: u8) -> f32 {
+    base_damage * DAMAGE_MULT[tier as usize]
+}
+
+/// Tower range at the given tier.
+pub(crate) fn range_at_tier(base_range: f32, tier: u8) -> f32 {
+    base_range * RANGE_MULT[tier as usize]
+}
+
+/// Fire cooldown at the given tier (lower = faster).
+pub(crate) fn cooldown_at_tier(base_cooldown: f32, tier: u8) -> f32 {
+    base_cooldown * COOLDOWN_MULT[tier as usize]
+}
+
+/// AOE blast radius at the given tier.
+pub(crate) fn aoe_radius_at_tier(base_radius: f32, tier: u8) -> f32 {
+    base_radius * AOE_RADIUS_MULT[tier as usize]
+}
+
+/// Slow factor at the given tier (lower = stronger slow).
+pub(crate) fn slow_factor_at_tier(base_factor: f32, tier: u8) -> f32 {
+    base_factor * SLOW_MULT[tier as usize]
+}
+
+/// Chain lightning arc range at the given tier.
+pub(crate) fn arc_range_at_tier(base_arc: f32, tier: u8) -> f32 {
+    base_arc * ARC_RANGE_MULT[tier as usize]
+}
+
+/// Maximum tower HP at the given tier, derived from base cost.
+pub(crate) fn tower_max_hp(base_cost: u32, tier: u8) -> f32 {
+    base_cost as f32 * TOWER_HP_COST_MULT * TOWER_HP_TIER_MULT[tier as usize]
+}
+
+/// Scrap collection range at the given magnet tier.
+pub(crate) fn magnet_range_at_tier(base_range: f32, tier: u8) -> f32 {
+    base_range * MAGNET_RANGE_MULT[tier as usize]
+}
+
+/// Scrap refund when selling a tower (60% of total investment).
+pub(crate) fn sell_refund(total_cost: u32) -> u32 {
+    total_cost * SELL_REFUND_PERCENT / 100
+}
+
+/// Scrap cost to fully repair a tower. Rubble towers cost more.
+pub(crate) fn repair_cost(base_cost: u32, is_rubble: bool) -> u32 {
+    let frac = if is_rubble {
+        REPAIR_RUBBLE_COST_FRAC
+    } else {
+        REPAIR_COST_FRAC
+    };
+    (base_cost as f32 * frac) as u32
 }
 
 // ---------------------------------------------------------------------------
@@ -217,7 +273,7 @@ pub fn apply_upgrade(
             Option<&mut SlowOnHit>,
             (
                 Option<&RangeRingConfig>,
-                Option<&AuraRingConfig>,
+                Option<&SlowAuraRingConfig>,
                 Option<&mut ChainLightning>,
                 Option<&BaseArcRange>,
                 Option<&mut ChainCooldown>,
@@ -275,40 +331,39 @@ pub fn apply_upgrade(
         run_stats.scrap_spent += ucost;
     }
     tier.0 += 1;
-    let t = (tier.0 as usize).min(MAX_TIER as usize);
 
     // Scale tower HP with tier (preserve damage fraction).
     if let Some(mut health) = tower_health {
         let old_frac = health.fraction();
-        let new_max = base.cost as f32 * TOWER_HP_COST_MULT * TOWER_HP_TIER_MULT[t];
+        let new_max = tower_max_hp(base.cost, tier.0);
         health.max = new_max;
         health.current = new_max * old_frac;
     }
 
     // Apply stat multipliers from base.
-    stats.damage = base.damage * DAMAGE_MULT[t];
-    stats.range = base.range * RANGE_MULT[t];
+    stats.damage = damage_at_tier(base.damage, tier.0);
+    stats.range = range_at_tier(base.range, tier.0);
 
     if let Some(mut turret) = turret {
-        let new_dur = base.cooldown_secs * COOLDOWN_MULT[t];
+        let new_dur = cooldown_at_tier(base.cooldown_secs, tier.0);
         turret
             .cooldown
             .set_duration(Duration::from_secs_f32(new_dur));
     }
     if let Some(mut aoe) = aoe {
-        aoe.radius = base.aoe_radius * AOE_RADIUS_MULT[t];
-        aoe.damage = base.aoe_damage * DAMAGE_MULT[t];
+        aoe.radius = aoe_radius_at_tier(base.aoe_radius, tier.0);
+        aoe.damage = damage_at_tier(base.aoe_damage, tier.0);
     }
     if let Some(mut slow) = slow {
-        slow.factor = base.slow_factor * SLOW_MULT[t];
+        slow.factor = slow_factor_at_tier(base.slow_factor, tier.0);
     }
     if let Some(mut chain) = chain_lightning
         && let Some(base_arc) = base_arc_range
     {
-        chain.arc_range = base_arc.0 * ARC_RANGE_MULT[t];
+        chain.arc_range = arc_range_at_tier(base_arc.0, tier.0);
     }
     if let Some(mut cc) = chain_cooldown {
-        let new_dur = base.cooldown_secs * COOLDOWN_MULT[t];
+        let new_dur = cooldown_at_tier(base.cooldown_secs, tier.0);
         cc.timer.set_duration(Duration::from_secs_f32(new_dur));
     }
 
@@ -332,11 +387,11 @@ pub fn apply_upgrade(
     if let Some(ar) = aura_ring {
         // Use updated stats.range so the aura visual scales with upgrades
         // (affects TarPit slow aura and ScrapMagnet pull aura).
-        let new_ar = AuraRingConfig {
+        let new_ar = SlowAuraRingConfig {
             range: stats.range,
             color: ar.color,
         };
-        ecmds.remove::<AuraRingConfig>();
+        ecmds.remove::<SlowAuraRingConfig>();
         ecmds.insert(new_ar);
     }
 
@@ -394,7 +449,7 @@ pub fn apply_magnet_upgrade(
             &mut TowerCost,
             &Transform,
             &Children,
-            Option<&MagnetAuraConfig>,
+            Option<&CollectionAuraRingConfig>,
             &TowerState,
         ),
         With<Tower>,
@@ -437,10 +492,9 @@ pub fn apply_magnet_upgrade(
     pile_scrap.amount -= ucost;
     cost.0 += ucost;
     tier.0 += 1;
-    let t = tier.0 as usize;
 
     // Update collection range.
-    collector.range = base_range.0 * MAGNET_RANGE_MULT[t];
+    collector.range = magnet_range_at_tier(base_range.0, tier.0);
 
     // Despawn old magnet aura children before re-inserting config.
     for child in children.iter() {
@@ -449,13 +503,13 @@ pub fn apply_magnet_upgrade(
         }
     }
 
-    // Re-insert MagnetAuraConfig to trigger the Added<> reactive system.
+    // Re-insert CollectionAuraRingConfig to trigger the Added<> reactive system.
     let color = magnet_aura
         .map(|c| c.color)
         .unwrap_or(crate::common::constants::MAGNET_AURA_COLOR);
     let mut ecmds = commands.entity(entity);
-    ecmds.remove::<MagnetAuraConfig>();
-    ecmds.insert(MagnetAuraConfig {
+    ecmds.remove::<CollectionAuraRingConfig>();
+    ecmds.insert(CollectionAuraRingConfig {
         range: collector.range,
         color,
     });
@@ -492,8 +546,8 @@ pub fn apply_repair(
             &Children,
             &mut TowerState,
             Option<&RangeRingConfig>,
-            Option<&AuraRingConfig>,
-            Option<&MagnetAuraConfig>,
+            Option<&SlowAuraRingConfig>,
+            Option<&CollectionAuraRingConfig>,
         ),
         With<Tower>,
     >,
@@ -535,12 +589,7 @@ pub fn apply_repair(
     }
 
     let is_rubble = *tower_state == TowerState::Rubble;
-    let fraction = if is_rubble {
-        REPAIR_RUBBLE_COST_FRAC
-    } else {
-        REPAIR_COST_FRAC
-    };
-    let repair_cost = (base.cost as f32 * fraction) as u32;
+    let repair_cost = repair_cost(base.cost, is_rubble);
 
     if pile_scrap.amount < repair_cost {
         return;
@@ -577,19 +626,19 @@ pub fn apply_repair(
             ecmds.insert(rr_new);
         }
         if let Some(ar) = aura_ring {
-            let ar_new = AuraRingConfig {
+            let ar_new = SlowAuraRingConfig {
                 range: ar.range,
                 color: ar.color,
             };
-            ecmds.remove::<AuraRingConfig>();
+            ecmds.remove::<SlowAuraRingConfig>();
             ecmds.insert(ar_new);
         }
         if let Some(ma) = magnet_aura {
-            let ma_new = MagnetAuraConfig {
+            let ma_new = CollectionAuraRingConfig {
                 range: ma.range,
                 color: ma.color,
             };
-            ecmds.remove::<MagnetAuraConfig>();
+            ecmds.remove::<CollectionAuraRingConfig>();
             ecmds.insert(ma_new);
         }
     }
@@ -929,13 +978,13 @@ pub fn update_upgrade_panel(
             ));
         } else if tier.0 < MAX_TIER {
             let ucost = upgrade_cost(base.cost, tier.0);
-            let t = (tier.0 as usize + 1).min(MAX_TIER as usize);
-            let next_dmg = base.damage * DAMAGE_MULT[t];
-            let next_rng = base.range * RANGE_MULT[t];
+            let next = tier.0 + 1;
+            let next_dmg = damage_at_tier(base.damage, next);
+            let next_rng = range_at_tier(base.range, next);
 
             let mut next_text = format!("\nNext: DMG {:.0}  RNG {:.0}", next_dmg, next_rng);
             if let Some(ba) = base_arc {
-                let next_arc = ba.0 * ARC_RANGE_MULT[t];
+                let next_arc = arc_range_at_tier(ba.0, next);
                 next_text.push_str(&format!("  ARC {:.0}", next_arc));
             }
 
@@ -1028,20 +1077,15 @@ pub fn update_upgrade_panel(
             && health.current < health.max
         {
             let is_rubble = *tower_state == TowerState::Rubble;
-            let frac = if is_rubble {
-                REPAIR_RUBBLE_COST_FRAC
-            } else {
-                REPAIR_COST_FRAC
-            };
-            let repair_cost = (base.cost as f32 * frac) as u32;
-            let can_afford = pile_scrap.amount >= repair_cost;
+            let rcost = repair_cost(base.cost, is_rubble);
+            let can_afford = pile_scrap.amount >= rcost;
             let repair_color = if can_afford {
                 LABEL_COLOR
             } else {
                 Color::srgb(0.9, 0.3, 0.3)
             };
             parent.spawn((
-                Text::new(format!("[R] Repair: ${repair_cost}")),
+                Text::new(format!("[R] Repair: ${rcost}")),
                 TextColor(repair_color),
                 TextFont {
                     font_size: 13.0,
@@ -1051,7 +1095,7 @@ pub fn update_upgrade_panel(
         }
 
         // Sell hint
-        let sell_refund = cost.0 * SELL_REFUND_PERCENT / 100;
+        let sell_refund = sell_refund(cost.0);
         parent.spawn((
             Text::new(format!("[RMB] Sell: +${sell_refund}")),
             TextColor(HINT_COLOR),
@@ -1081,4 +1125,175 @@ pub fn update_upgrade_panel(
             },
         ));
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // -- upgrade_cost --
+
+    #[test]
+    fn upgrade_cost_tier_0() {
+        // Tier 0→1: base_cost * 1.0
+        assert_eq!(upgrade_cost(100, 0), 100);
+    }
+
+    #[test]
+    fn upgrade_cost_tier_1() {
+        // Tier 1→2: base_cost * 1.5
+        assert_eq!(upgrade_cost(100, 1), 150);
+    }
+
+    // -- damage_at_tier --
+
+    #[test]
+    fn damage_progression() {
+        let base = 10.0;
+        assert_eq!(damage_at_tier(base, 0), 10.0);
+        assert_eq!(damage_at_tier(base, 1), 14.0);
+        assert_eq!(damage_at_tier(base, 2), 20.0);
+    }
+
+    // -- range_at_tier --
+
+    #[test]
+    fn range_progression() {
+        let base = 100.0;
+        assert_eq!(range_at_tier(base, 0), 100.0);
+        assert!((range_at_tier(base, 1) - 110.0).abs() < 0.01);
+        assert!((range_at_tier(base, 2) - 120.0).abs() < 0.01);
+    }
+
+    // -- cooldown_at_tier --
+
+    #[test]
+    fn cooldown_decreases_with_tier() {
+        let base = 1.0;
+        assert_eq!(cooldown_at_tier(base, 0), 1.0);
+        assert_eq!(cooldown_at_tier(base, 1), 0.85);
+        assert_eq!(cooldown_at_tier(base, 2), 0.7);
+    }
+
+    // -- aoe / slow / arc --
+
+    #[test]
+    fn aoe_radius_progression() {
+        let base = 50.0;
+        assert_eq!(aoe_radius_at_tier(base, 0), 50.0);
+        assert_eq!(aoe_radius_at_tier(base, 2), 65.0);
+    }
+
+    #[test]
+    fn slow_factor_decreases_with_tier() {
+        let base = 0.5;
+        assert_eq!(slow_factor_at_tier(base, 0), 0.5);
+        assert!((slow_factor_at_tier(base, 2) - 0.35).abs() < 0.001);
+    }
+
+    #[test]
+    fn arc_range_progression() {
+        let base = 60.0;
+        assert_eq!(arc_range_at_tier(base, 0), 60.0);
+        assert!((arc_range_at_tier(base, 2) - 100.02).abs() < 0.1);
+    }
+
+    // -- tower_max_hp --
+
+    #[test]
+    fn tower_max_hp_progression() {
+        // cost=50, TOWER_HP_COST_MULT=3.0, TOWER_HP_TIER_MULT=[1.0, 1.4, 2.0]
+        assert_eq!(tower_max_hp(50, 0), 150.0);
+        assert_eq!(tower_max_hp(50, 1), 210.0);
+        assert_eq!(tower_max_hp(50, 2), 300.0);
+    }
+
+    // -- magnet_range_at_tier --
+
+    #[test]
+    fn magnet_range_progression() {
+        let base = 30.0;
+        assert_eq!(magnet_range_at_tier(base, 0), 30.0);
+        assert_eq!(magnet_range_at_tier(base, 1), 45.0);
+        assert_eq!(magnet_range_at_tier(base, 2), 60.0);
+        assert_eq!(magnet_range_at_tier(base, 3), 75.0);
+    }
+
+    // -- sell_refund --
+
+    #[test]
+    fn sell_refund_sixty_percent() {
+        assert_eq!(sell_refund(100), 60);
+        assert_eq!(sell_refund(150), 90);
+    }
+
+    #[test]
+    fn sell_refund_zero_cost() {
+        assert_eq!(sell_refund(0), 0);
+    }
+
+    // -- repair_cost --
+
+    #[test]
+    fn repair_cost_damaged() {
+        // REPAIR_COST_FRAC = 0.3
+        assert_eq!(repair_cost(100, false), 30);
+    }
+
+    #[test]
+    fn repair_cost_rubble() {
+        // REPAIR_RUBBLE_COST_FRAC = 0.5
+        assert_eq!(repair_cost(100, true), 50);
+    }
+
+    // -- tier_color --
+
+    #[test]
+    fn tier_color_base_unchanged() {
+        let base = Color::srgb(0.5, 0.5, 0.5);
+        let result = tier_color(base, 0);
+        let Srgba {
+            red, green, blue, ..
+        } = Srgba::from(result);
+        assert!((red - 0.5).abs() < 0.001);
+        assert!((green - 0.5).abs() < 0.001);
+        assert!((blue - 0.5).abs() < 0.001);
+    }
+
+    #[test]
+    fn tier_color_clamped_at_one() {
+        let bright = Color::srgb(0.95, 0.95, 0.95);
+        let result = tier_color(bright, 2); // boost = 0.3
+        let Srgba {
+            red, green, blue, ..
+        } = Srgba::from(result);
+        assert_eq!(red, 1.0);
+        assert_eq!(green, 1.0);
+        assert_eq!(blue, 1.0);
+    }
+
+    // -- degradation_color --
+
+    #[test]
+    fn degradation_full_health_returns_tier_color() {
+        let base = Color::srgb(0.5, 0.5, 0.5);
+        let health = TowerHealth {
+            current: 100.0,
+            max: 100.0,
+        };
+        let result = degradation_color(base, 0, &health);
+        let expected = tier_color(base, 0);
+        assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn degradation_zero_health_returns_rubble() {
+        use crate::common::constants::RUBBLE_TOWER_COLOR;
+        let health = TowerHealth {
+            current: 0.0,
+            max: 100.0,
+        };
+        let result = degradation_color(Color::WHITE, 0, &health);
+        assert_eq!(result, RUBBLE_TOWER_COLOR);
+    }
 }

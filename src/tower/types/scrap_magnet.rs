@@ -35,7 +35,7 @@ fn register(mut registry: ResMut<TowerRegistry>) {
                     range,
                     color: Color::srgba(0.2, 0.4, 0.8, 0.2),
                 },
-                AuraRingConfig {
+                SlowAuraRingConfig {
                     range,
                     color: MAGNET_AURA_COLOR,
                 },

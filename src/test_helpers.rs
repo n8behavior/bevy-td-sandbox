@@ -68,6 +68,21 @@ pub fn make_test_stats() -> RunStats {
     RunStats::new(0.0)
 }
 
+/// Sensible `BaseStats` defaults for unit tests. Only `cost` varies; other
+/// fields use typical ScrapGun-like values.
+pub fn test_base_stats(cost: u32) -> crate::tower::components::BaseStats {
+    crate::tower::components::BaseStats {
+        cost,
+        damage: 10.0,
+        range: 80.0,
+        cooldown_secs: 1.0,
+        aoe_radius: 0.0,
+        aoe_damage: 0.0,
+        slow_factor: 1.0,
+        color: Color::srgb(0.5, 0.5, 0.5),
+    }
+}
+
 /// Mock SoundAssets with default (invalid) handles for headless tests.
 /// Systems that call play_sound will spawn AudioPlayer entities that do
 /// nothing without an audio backend.

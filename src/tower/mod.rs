@@ -1,3 +1,13 @@
+//! Tower lifecycle: placement, targeting, firing, upgrades, and visuals.
+//!
+//! Towers progress through `TowerState`: `Placing` (preview at cursor),
+//! `Active` (operational on the grid), and `Rubble` (destroyed, repairable).
+//!
+//! Each tower type registers a `TowerBlueprint` via its plugin. Ring visuals
+//! (range, slow-aura, collection-aura) are spawned reactively when the
+//! corresponding config component (`RangeRingConfig`, `SlowAuraRingConfig`,
+//! `CollectionAuraRingConfig`) is added to an entity.
+
 pub mod components;
 pub mod placement;
 pub mod systems;
@@ -11,12 +21,34 @@ use bevy::prelude::*;
 use bevy::sprite_render::MeshMaterial2d;
 
 use components::{
-    AuraRingConfig, AuraVisual, MagnetAura, MagnetAuraConfig, RangeRing, RangeRingConfig,
-    TowerRegistry,
+    AuraVisual, CollectionAuraRingConfig, MagnetAura, RangeRing, RangeRingConfig,
+    SlowAuraRingConfig, TowerRegistry,
 };
 
-/// Reactive system: when a tower entity gets a `RangeRingConfig`, spawn the
-/// shader-driven range ring as a child.
+/// Spawn a shader-driven ring child on an entity.
+fn spawn_ring_child<M: Component>(
+    commands: &mut Commands,
+    entity: Entity,
+    marker: M,
+    mesh: &CircleMesh,
+    materials: &mut Assets<CircleMaterial>,
+    range: f32,
+    color: Color,
+    z_offset: f32,
+    material_fn: fn(Color) -> CircleMaterial,
+) {
+    let diameter = range * 2.0;
+    let mat = materials.add(material_fn(color));
+    commands.entity(entity).with_child((
+        marker,
+        Mesh2d(mesh.0.clone()),
+        MeshMaterial2d(mat),
+        Transform::from_translation(Vec3::new(0.0, 0.0, z_offset))
+            .with_scale(Vec3::splat(diameter)),
+    ));
+}
+
+/// Reactive system: spawn a range ring when `RangeRingConfig` is added.
 fn spawn_range_rings(
     mut commands: Commands,
     query: Query<(Entity, &RangeRingConfig), Added<RangeRingConfig>>,
@@ -24,58 +56,62 @@ fn spawn_range_rings(
     mut materials: ResMut<Assets<CircleMaterial>>,
 ) {
     for (entity, config) in &query {
-        let diameter = config.range * 2.0;
-        let mat = materials.add(CircleMaterial::range_indicator(config.color));
-        commands.entity(entity).with_child((
+        spawn_ring_child(
+            &mut commands,
+            entity,
             RangeRing,
-            Mesh2d(circle_mesh.0.clone()),
-            MeshMaterial2d(mat),
-            Transform::from_translation(Vec3::new(0.0, 0.0, -0.1))
-                .with_scale(Vec3::splat(diameter)),
-        ));
+            &circle_mesh,
+            &mut materials,
+            config.range,
+            config.color,
+            -0.1,
+            CircleMaterial::range_indicator,
+        );
     }
 }
 
-/// Reactive system: when a tower entity gets an `AuraRingConfig`, spawn
-/// gradient aura ring children.
+/// Reactive system: spawn a slow-aura ring when `SlowAuraRingConfig` is added.
 fn spawn_aura_rings(
     mut commands: Commands,
-    query: Query<(Entity, &AuraRingConfig), Added<AuraRingConfig>>,
+    query: Query<(Entity, &SlowAuraRingConfig), Added<SlowAuraRingConfig>>,
     circle_mesh: Res<CircleMesh>,
     mut materials: ResMut<Assets<CircleMaterial>>,
 ) {
     for (entity, config) in &query {
-        let diameter = config.range * 2.0;
-        let mat = materials.add(CircleMaterial::aura(config.color));
-        commands.entity(entity).with_child((
+        spawn_ring_child(
+            &mut commands,
+            entity,
             AuraVisual,
-            Mesh2d(circle_mesh.0.clone()),
-            MeshMaterial2d(mat),
-            Transform::from_translation(Vec3::new(0.0, 0.0, -0.2))
-                .with_scale(Vec3::splat(diameter)),
-        ));
+            &circle_mesh,
+            &mut materials,
+            config.range,
+            config.color,
+            -0.2,
+            CircleMaterial::aura,
+        );
     }
 }
 
-/// Reactive system: when a tower entity gets a `MagnetAuraConfig`, spawn
-/// a collection aura ring as a child. Separate from `AuraRingConfig` so
-/// towers can have both a gameplay aura and a collection aura.
-fn spawn_magnet_aura_rings(
+/// Reactive system: spawn a collection-aura ring when
+/// `CollectionAuraRingConfig` is added.
+fn spawn_collection_aura_rings(
     mut commands: Commands,
-    query: Query<(Entity, &MagnetAuraConfig), Added<MagnetAuraConfig>>,
+    query: Query<(Entity, &CollectionAuraRingConfig), Added<CollectionAuraRingConfig>>,
     circle_mesh: Res<CircleMesh>,
     mut materials: ResMut<Assets<CircleMaterial>>,
 ) {
     for (entity, config) in &query {
-        let diameter = config.range * 2.0;
-        let mat = materials.add(CircleMaterial::aura(config.color));
-        commands.entity(entity).with_child((
+        spawn_ring_child(
+            &mut commands,
+            entity,
             MagnetAura,
-            Mesh2d(circle_mesh.0.clone()),
-            MeshMaterial2d(mat),
-            Transform::from_translation(Vec3::new(0.0, 0.0, -0.2))
-                .with_scale(Vec3::splat(diameter)),
-        ));
+            &circle_mesh,
+            &mut materials,
+            config.range,
+            config.color,
+            -0.2,
+            CircleMaterial::aura,
+        );
     }
 }
 
@@ -149,7 +185,11 @@ impl Plugin for TowerPlugin {
             )
             .add_systems(
                 Update,
-                (spawn_range_rings, spawn_aura_rings, spawn_magnet_aura_rings)
+                (
+                    spawn_range_rings,
+                    spawn_aura_rings,
+                    spawn_collection_aura_rings,
+                )
                     .run_if(in_state(GameState::Playing)),
             )
             .add_systems(

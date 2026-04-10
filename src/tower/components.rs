@@ -232,7 +232,7 @@ impl TurretState {
     }
 }
 
-#[derive(Default)]
+#[derive(Default, Debug, PartialEq)]
 pub enum TurretPhase {
     #[default]
     Idle,
@@ -281,9 +281,10 @@ pub struct RangeRingConfig {
     pub color: Color,
 }
 
-/// Insert on a tower entity to request gradient aura ring children.
+/// Insert on a tower entity to request gradient slow-aura ring children.
+/// Used by towers with `SlowOnHit` (TarPit, ScrapMagnet).
 #[derive(Component)]
-pub struct AuraRingConfig {
+pub struct SlowAuraRingConfig {
     pub range: f32,
     pub color: Color,
 }
@@ -342,19 +343,19 @@ pub struct MagnetTier(pub u8);
 #[derive(Component)]
 pub struct BaseMagnetRange(pub f32);
 
-/// Insert on a tower entity to request a magnet collection aura ring child.
+/// Insert on a tower entity to request a scrap collection aura ring child.
 /// A reactive system converts this into a `Mesh2d` + `CircleMaterial`.
-/// Separate from `AuraRingConfig` so towers can have both (e.g. TarPit has
-/// a slow aura AND a collection aura).
+/// Separate from `SlowAuraRingConfig` so towers can have both (e.g. TarPit
+/// has a slow aura AND a collection aura).
 #[derive(Component)]
-pub struct MagnetAuraConfig {
+pub struct CollectionAuraRingConfig {
     pub range: f32,
     pub color: Color,
 }
 
-/// Marker for the magnet collection aura ring child (spawned from
-/// `MagnetAuraConfig`). Distinct from `AuraVisual` to avoid interference
-/// during tower stat upgrades.
+/// Marker for the collection aura ring child (spawned from
+/// `CollectionAuraRingConfig`). Distinct from `AuraVisual` to avoid
+/// interference during tower stat upgrades.
 #[derive(Component)]
 pub struct MagnetAura;
 

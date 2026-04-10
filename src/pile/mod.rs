@@ -14,7 +14,7 @@ use bevy::prelude::*;
 
 use crate::common::constants::*;
 use crate::states::{GameMode, GameState};
-use crate::tower::components::{AuraRingConfig, ScrapCollector};
+use crate::tower::components::{CollectionAuraRingConfig, ScrapCollector};
 
 use resources::{EdgeCells, PileScrap, PileState};
 
@@ -74,7 +74,7 @@ pub fn init_pile(mut commands: Commands, config: Res<GridConfig>, game_mode: Res
     let world_pos = crate::grid::systems::grid_to_world_cfg(center, &config);
     commands.spawn((
         ScrapCollector { range: pile_range },
-        AuraRingConfig {
+        CollectionAuraRingConfig {
             range: pile_range,
             color: MAGNET_AURA_COLOR,
         },

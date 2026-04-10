@@ -104,6 +104,85 @@ pub(crate) fn target_valid(
         .is_ok_and(|(_, tf, _)| tower_pos.distance(tf.translation.truncate()) <= range)
 }
 
+/// Decision output from the pure turret state machine.
+#[derive(Debug, PartialEq)]
+pub(crate) enum TurretDecision {
+    /// No phase change, no fire.
+    Stay,
+    /// Transition to a new phase (no fire).
+    Transition(TurretPhase),
+    /// Fire at the current tracking target (phase stays Tracking).
+    Fire,
+}
+
+/// Pure state machine: determines the next turret action from current state
+/// and sensor inputs. No side effects — projectile spawning and sound remain
+/// in the `FixedUpdate` system for determinism.
+pub(crate) fn advance_turret(
+    phase: &TurretPhase,
+    best_target: Option<Entity>,
+    current_target_valid: bool,
+    is_aimed: bool,
+    cooldown_ready: bool,
+) -> TurretDecision {
+    match phase {
+        TurretPhase::Idle => match best_target {
+            Some(target) => TurretDecision::Transition(TurretPhase::Acquiring { target }),
+            None => TurretDecision::Stay,
+        },
+        TurretPhase::Acquiring { target } => {
+            if !current_target_valid {
+                TurretDecision::Transition(match best_target {
+                    Some(new) => TurretPhase::Acquiring { target: new },
+                    None => TurretPhase::Idle,
+                })
+            } else if is_aimed {
+                TurretDecision::Transition(TurretPhase::Tracking { target: *target })
+            } else {
+                TurretDecision::Stay
+            }
+        }
+        TurretPhase::Tracking { target } => {
+            if !current_target_valid {
+                TurretDecision::Transition(match best_target {
+                    Some(new) => TurretPhase::Acquiring { target: new },
+                    None => TurretPhase::Idle,
+                })
+            } else if !is_aimed {
+                TurretDecision::Transition(TurretPhase::Acquiring { target: *target })
+            } else if cooldown_ready {
+                TurretDecision::Fire
+            } else {
+                TurretDecision::Stay
+            }
+        }
+    }
+}
+
+/// Compute the slow speed-multiplier for an enemy at `dist` from a tower with
+/// `base_factor` slow, scaled by tower `effectiveness`.
+/// At dist=0 the enemy gets full slow; at dist=range the slow fades to zero.
+pub(crate) fn slow_aura_factor(base_factor: f32, dist: f32, range: f32, effectiveness: f32) -> f32 {
+    let t = (dist / range).clamp(0.0, 1.0);
+    let base = base_factor + (1.0 - base_factor) * t;
+    1.0 - (1.0 - base) * effectiveness
+}
+
+/// Compute the pull displacement for a magnet field this frame.
+/// Strength falls off linearly from center (full) to edge (zero).
+pub(crate) fn magnetic_pull(
+    enemy_pos: Vec2,
+    magnet_pos: Vec2,
+    range: f32,
+    pull_speed: f32,
+    dt: f32,
+) -> Vec2 {
+    let direction = (magnet_pos - enemy_pos).normalize();
+    let dist = magnet_pos.distance(enemy_pos);
+    let strength = 1.0 - (dist / range);
+    direction * pull_speed * strength * dt
+}
+
 fn spawn_projectile(
     commands: &mut Commands,
     visuals: &ProjectileVisuals,
@@ -198,57 +277,44 @@ pub fn turret_state_machine(
 
         let best = find_best_target(&enemies, tower_pos, range, mode, pile_center_world);
 
-        match state.phase {
-            TurretPhase::Idle => {
-                if let Some(target) = best {
-                    state.phase = TurretPhase::Acquiring { target };
-                }
+        let current_target = state.target();
+        let current_valid =
+            current_target.is_some_and(|e| target_valid(e, &enemies, tower_pos, range));
+        let aimed = current_target
+            .and_then(|e| enemies.get(e).ok())
+            .is_some_and(|(_, target_tf, _)| {
+                is_aimed_at(tower_tf, target_tf, tower_pos, aim_tol.0)
+            });
+
+        match advance_turret(
+            &state.phase,
+            best,
+            current_valid,
+            aimed,
+            state.cooldown.is_finished(),
+        ) {
+            TurretDecision::Stay => {}
+            TurretDecision::Transition(new_phase) => {
+                state.phase = new_phase;
             }
+            TurretDecision::Fire => {
+                let target = state.target().unwrap();
+                spawn_projectile(
+                    &mut commands,
+                    visuals,
+                    tower_tf,
+                    stats.damage * eff,
+                    target,
+                    aoe,
+                );
+                state.cooldown.reset();
 
-            TurretPhase::Acquiring { target } => {
-                if !target_valid(target, &enemies, tower_pos, range) {
-                    // Target lost — retarget or idle.
-                    state.phase = match best {
-                        Some(new) => TurretPhase::Acquiring { target: new },
-                        None => TurretPhase::Idle,
-                    };
-                } else if let Ok((_, target_tf, _)) = enemies.get(target)
-                    && is_aimed_at(tower_tf, target_tf, tower_pos, aim_tol.0)
-                {
-                    state.phase = TurretPhase::Tracking { target };
-                }
-            }
-
-            TurretPhase::Tracking { target } => {
-                if !target_valid(target, &enemies, tower_pos, range) {
-                    state.phase = match best {
-                        Some(new) => TurretPhase::Acquiring { target: new },
-                        None => TurretPhase::Idle,
-                    };
-                } else if let Ok((_, target_tf, _)) = enemies.get(target) {
-                    if !is_aimed_at(tower_tf, target_tf, tower_pos, aim_tol.0) {
-                        // Lost aim — back to acquiring.
-                        state.phase = TurretPhase::Acquiring { target };
-                    } else if state.cooldown.is_finished() {
-                        // FIRE!
-                        spawn_projectile(
-                            &mut commands,
-                            visuals,
-                            tower_tf,
-                            stats.damage * eff,
-                            target,
-                            aoe,
-                        );
-                        state.cooldown.reset();
-
-                        if is_scrapgun.is_some() {
-                            play_sound(&mut commands, &sounds.tower_scrapgun, 0.3);
-                        } else if is_explosive.is_some() {
-                            play_sound(&mut commands, &sounds.tower_explosive, 0.4);
-                        } else if is_railgun.is_some() {
-                            play_sound(&mut commands, &sounds.tower_railgun, 0.3);
-                        }
-                    }
+                if is_scrapgun.is_some() {
+                    play_sound(&mut commands, &sounds.tower_scrapgun, 0.3);
+                } else if is_explosive.is_some() {
+                    play_sound(&mut commands, &sounds.tower_explosive, 0.4);
+                } else if is_railgun.is_some() {
+                    play_sound(&mut commands, &sounds.tower_railgun, 0.3);
                 }
             }
         }
@@ -285,11 +351,7 @@ pub fn slow_aura(
         for (enemy_entity, enemy_tf) in &enemies {
             let dist = tower_pos.distance(enemy_tf.translation.truncate());
             if dist <= range {
-                // Slow proportional to distance: full slow at center, no slow at edge.
-                let t = (dist / range).clamp(0.0, 1.0);
-                let base_factor = slow.factor + (1.0 - slow.factor) * t;
-                // Scale slow strength by effectiveness.
-                let factor = 1.0 - (1.0 - base_factor) * eff;
+                let factor = slow_aura_factor(slow.factor, dist, range, eff);
                 commands.entity(enemy_entity).insert(SlowEffect {
                     factor,
                     remaining: Timer::from_seconds(slow.duration, TimerMode::Once),
@@ -563,9 +625,13 @@ pub fn magnetic_pull_enemies(
             let mag_pos = mag_tf.translation.truncate();
             let dist = mag_pos.distance(enemy_pos);
             if dist <= collector.range && dist > 2.0 {
-                let direction = (mag_pos - enemy_pos).normalize();
-                let strength = 1.0 - (dist / collector.range);
-                let pull = direction * ENEMY_PULL_SPEED * strength * time.delta_secs();
+                let pull = magnetic_pull(
+                    enemy_pos,
+                    mag_pos,
+                    collector.range,
+                    ENEMY_PULL_SPEED,
+                    time.delta_secs(),
+                );
                 enemy_tf.translation += pull.extend(0.0);
             }
         }
@@ -694,9 +760,242 @@ mod tests {
 
     #[test]
     fn targeting_closest_selects_nearest() {
-        // With Closest mode, the enemy with smallest distance should have lowest score
         let d1 = targeting_score(TargetingMode::Closest, 10.0, 100.0, Vec2::ZERO, Vec2::ZERO);
         let d2 = targeting_score(TargetingMode::Closest, 50.0, 100.0, Vec2::ZERO, Vec2::ZERO);
         assert!(d1 < d2);
+    }
+
+    // -- best_target_from --
+
+    #[test]
+    fn best_target_from_no_candidates() {
+        let result = best_target_from(
+            std::iter::empty(),
+            Vec2::ZERO,
+            100.0,
+            TargetingMode::Closest,
+            Vec2::ZERO,
+        );
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn best_target_from_all_out_of_range() {
+        let far_entity = Entity::from_raw_u32(1).unwrap();
+        let candidates = vec![(far_entity, Vec2::new(200.0, 0.0), 100.0)];
+        let result = best_target_from(
+            candidates.into_iter(),
+            Vec2::ZERO,
+            50.0,
+            TargetingMode::Closest,
+            Vec2::ZERO,
+        );
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn best_target_from_at_exact_range() {
+        let e = Entity::from_raw_u32(1).unwrap();
+        let candidates = vec![(e, Vec2::new(50.0, 0.0), 100.0)];
+        let result = best_target_from(
+            candidates.into_iter(),
+            Vec2::ZERO,
+            50.0, // dist == range
+            TargetingMode::Closest,
+            Vec2::ZERO,
+        );
+        assert_eq!(result, Some(e));
+    }
+
+    #[test]
+    fn best_target_from_just_beyond_range() {
+        let e = Entity::from_raw_u32(1).unwrap();
+        let candidates = vec![(e, Vec2::new(50.1, 0.0), 100.0)];
+        let result = best_target_from(
+            candidates.into_iter(),
+            Vec2::ZERO,
+            50.0,
+            TargetingMode::Closest,
+            Vec2::ZERO,
+        );
+        assert!(result.is_none());
+    }
+
+    // -- advance_turret --
+
+    #[test]
+    fn idle_no_target_stays() {
+        assert_eq!(
+            advance_turret(&TurretPhase::Idle, None, false, false, false),
+            TurretDecision::Stay,
+        );
+    }
+
+    #[test]
+    fn idle_with_target_acquires() {
+        let e = Entity::from_raw_u32(1).unwrap();
+        assert_eq!(
+            advance_turret(&TurretPhase::Idle, Some(e), false, false, false),
+            TurretDecision::Transition(TurretPhase::Acquiring { target: e }),
+        );
+    }
+
+    #[test]
+    fn acquiring_target_lost_idles() {
+        let e = Entity::from_raw_u32(1).unwrap();
+        assert_eq!(
+            advance_turret(
+                &TurretPhase::Acquiring { target: e },
+                None,
+                false,
+                false,
+                false
+            ),
+            TurretDecision::Transition(TurretPhase::Idle),
+        );
+    }
+
+    #[test]
+    fn acquiring_target_lost_reacquires() {
+        let old = Entity::from_raw_u32(1).unwrap();
+        let new = Entity::from_raw_u32(2).unwrap();
+        assert_eq!(
+            advance_turret(
+                &TurretPhase::Acquiring { target: old },
+                Some(new),
+                false,
+                false,
+                false
+            ),
+            TurretDecision::Transition(TurretPhase::Acquiring { target: new }),
+        );
+    }
+
+    #[test]
+    fn acquiring_aimed_tracks() {
+        let e = Entity::from_raw_u32(1).unwrap();
+        assert_eq!(
+            advance_turret(
+                &TurretPhase::Acquiring { target: e },
+                Some(e),
+                true,
+                true,
+                false
+            ),
+            TurretDecision::Transition(TurretPhase::Tracking { target: e }),
+        );
+    }
+
+    #[test]
+    fn tracking_target_lost_idles() {
+        let e = Entity::from_raw_u32(1).unwrap();
+        assert_eq!(
+            advance_turret(
+                &TurretPhase::Tracking { target: e },
+                None,
+                false,
+                true,
+                true
+            ),
+            TurretDecision::Transition(TurretPhase::Idle),
+        );
+    }
+
+    #[test]
+    fn tracking_lost_aim_reacquires() {
+        let e = Entity::from_raw_u32(1).unwrap();
+        assert_eq!(
+            advance_turret(
+                &TurretPhase::Tracking { target: e },
+                Some(e),
+                true,
+                false, // not aimed
+                true
+            ),
+            TurretDecision::Transition(TurretPhase::Acquiring { target: e }),
+        );
+    }
+
+    #[test]
+    fn tracking_aimed_cooldown_ready_fires() {
+        let e = Entity::from_raw_u32(1).unwrap();
+        assert_eq!(
+            advance_turret(
+                &TurretPhase::Tracking { target: e },
+                Some(e),
+                true,
+                true,
+                true
+            ),
+            TurretDecision::Fire,
+        );
+    }
+
+    #[test]
+    fn tracking_aimed_cooldown_not_ready_stays() {
+        let e = Entity::from_raw_u32(1).unwrap();
+        assert_eq!(
+            advance_turret(
+                &TurretPhase::Tracking { target: e },
+                Some(e),
+                true,
+                true,
+                false // cooldown not ready
+            ),
+            TurretDecision::Stay,
+        );
+    }
+
+    // -- slow_aura_factor --
+
+    #[test]
+    fn slow_at_center_full_slow() {
+        // At distance 0, factor = base_factor + 0 = base_factor
+        // With full effectiveness: 1.0 - (1.0 - 0.4) * 1.0 = 0.4
+        let f = slow_aura_factor(0.4, 0.0, 100.0, 1.0);
+        assert!((f - 0.4).abs() < 0.001);
+    }
+
+    #[test]
+    fn slow_at_edge_no_slow() {
+        // At distance = range, factor = base_factor + (1 - base_factor) * 1 = 1.0
+        // Result: 1.0 - (1.0 - 1.0) * 1.0 = 1.0
+        let f = slow_aura_factor(0.4, 100.0, 100.0, 1.0);
+        assert!((f - 1.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn slow_half_effectiveness_scales() {
+        // At center: base = 0.4, eff = 0.5
+        // 1.0 - (1.0 - 0.4) * 0.5 = 1.0 - 0.3 = 0.7
+        let f = slow_aura_factor(0.4, 0.0, 100.0, 0.5);
+        assert!((f - 0.7).abs() < 0.001);
+    }
+
+    // -- magnetic_pull --
+
+    #[test]
+    fn magnetic_pull_direction_toward_magnet() {
+        let pull = magnetic_pull(
+            Vec2::new(0.0, 0.0),   // enemy
+            Vec2::new(100.0, 0.0), // magnet
+            200.0,
+            60.0,
+            1.0,
+        );
+        assert!(pull.x > 0.0, "should pull rightward toward magnet");
+        assert!(pull.y.abs() < 0.001, "should not pull vertically");
+    }
+
+    #[test]
+    fn magnetic_pull_strength_at_edge_near_zero() {
+        let pull = magnetic_pull(
+            Vec2::new(0.0, 0.0),
+            Vec2::new(100.0, 0.0),
+            100.0, // range == dist
+            60.0,
+            1.0,
+        );
+        assert!(pull.length() < 0.01, "pull should be near zero at edge");
     }
 }

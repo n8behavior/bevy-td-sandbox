@@ -1,3 +1,7 @@
+//! Tower type plugins. Each plugin registers a `TowerBlueprint` with the
+//! `TowerRegistry` during `Startup`. The blueprint's `spawn_fn` inserts all
+//! type-specific components (marker, stats, visuals, health) onto the entity.
+
 pub mod chain_lightning;
 pub mod explosive;
 pub mod railgun;

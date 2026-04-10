@@ -22,6 +22,50 @@ pub struct SelectedTower {
     pub entity: Option<Entity>,
 }
 
+// ---------------------------------------------------------------------------
+// Placement validation helpers
+// ---------------------------------------------------------------------------
+
+/// Whether a grid cell passes all basic placement checks (no tower, no terrain,
+/// not part of the pile, and affordable).
+pub(crate) fn is_cell_buildable(
+    occupied: bool,
+    is_terrain: bool,
+    is_pile: bool,
+    can_afford: bool,
+) -> bool {
+    !occupied && !is_terrain && !is_pile && can_afford
+}
+
+/// Whether placing an impassable tower at `cell` would sever all edge→center
+/// paths. Temporarily mutates the grid and reverts; grid state is restored on
+/// return.
+pub(crate) fn would_block_all_paths(
+    grid: &mut OrdinalGrid,
+    cell: UVec3,
+    center: UVec3,
+    edge_midpoints: &[UVec3],
+) -> bool {
+    let old_nav = grid.nav(cell);
+    grid.set_nav(cell, Nav::Impassable);
+    grid.build();
+
+    let blocked = edge_midpoints.iter().any(|edge| {
+        grid.pathfind(&mut PathfindArgs::new(*edge, center).astar())
+            .is_none()
+    });
+
+    // Revert tentative change.
+    if let Some(old) = old_nav {
+        grid.set_nav(cell, old);
+    } else {
+        grid.set_nav(cell, Nav::Passable(1));
+    }
+    grid.build();
+
+    blocked
+}
+
 /// Select a tower type by pressing its registered key. Spawns a placing entity.
 pub fn handle_tower_selection(
     mut commands: Commands,
@@ -150,18 +194,13 @@ pub fn update_placing_tower(
     let is_pile = pile_state.cells.contains(&cell_uvec);
     let can_afford = pile_scrap.amount >= cost;
 
-    let mut is_valid = !occupied && !is_terrain && !is_pile && can_afford;
+    let mut is_valid = is_cell_buildable(occupied, is_terrain, is_pile, can_afford);
 
     // Path validation for BlocksNav towers.
     if is_valid
         && blocks_nav.is_some()
         && let Ok(mut grid) = grid_query.single_mut()
     {
-        let old_nav = grid.nav(cell_uvec);
-        grid.set_nav(cell_uvec, Nav::Impassable);
-        grid.build();
-
-        let center = pile_state.center;
         let edge_midpoints = [
             UVec3::new(0, config.height / 2, 0),
             UVec3::new(config.width - 1, config.height / 2, 0),
@@ -169,20 +208,7 @@ pub fn update_placing_tower(
             UVec3::new(config.width / 2, config.height - 1, 0),
         ];
 
-        let all_paths_exist = edge_midpoints.iter().all(|edge| {
-            grid.pathfind(&mut PathfindArgs::new(*edge, center).astar())
-                .is_some()
-        });
-
-        // Revert tentative change.
-        if let Some(old) = old_nav {
-            grid.set_nav(cell_uvec, old);
-        } else {
-            grid.set_nav(cell_uvec, Nav::Passable(1));
-        }
-        grid.build();
-
-        if !all_paths_exist {
+        if would_block_all_paths(&mut grid, cell_uvec, pile_state.center, &edge_midpoints) {
             is_valid = false;
         }
     }
@@ -385,7 +411,7 @@ pub fn sell_tower(
         return;
     };
 
-    let refund = cost.0 * SELL_REFUND_PERCENT / 100;
+    let refund = super::upgrade::sell_refund(cost.0);
     pile_scrap.amount += refund;
 
     if let Some(stats) = stats.as_mut() {
@@ -445,5 +471,113 @@ pub fn animate_sell_text(
         if sell.timer.is_finished() {
             commands.entity(entity).despawn();
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // -- is_cell_buildable --
+
+    #[test]
+    fn buildable_all_clear() {
+        assert!(is_cell_buildable(false, false, false, true));
+    }
+
+    #[test]
+    fn buildable_occupied() {
+        assert!(!is_cell_buildable(true, false, false, true));
+    }
+
+    #[test]
+    fn buildable_terrain() {
+        assert!(!is_cell_buildable(false, true, false, true));
+    }
+
+    #[test]
+    fn buildable_pile() {
+        assert!(!is_cell_buildable(false, false, true, true));
+    }
+
+    #[test]
+    fn buildable_cannot_afford() {
+        assert!(!is_cell_buildable(false, false, false, false));
+    }
+
+    // -- would_block_all_paths --
+
+    #[test]
+    fn open_grid_not_blocked() {
+        let settings = bevy_northstar::prelude::GridSettingsBuilder::new_2d(16, 16)
+            .chunk_size(8)
+            .build();
+        let mut grid = OrdinalGrid::new(&settings);
+        grid.build();
+
+        let center = UVec3::new(8, 8, 0);
+        let edges = [
+            UVec3::new(0, 8, 0),
+            UVec3::new(15, 8, 0),
+            UVec3::new(8, 0, 0),
+            UVec3::new(8, 15, 0),
+        ];
+        assert!(!would_block_all_paths(
+            &mut grid,
+            UVec3::new(4, 4, 0),
+            center,
+            &edges
+        ));
+    }
+
+    #[test]
+    fn chokepoint_blocked() {
+        let settings = bevy_northstar::prelude::GridSettingsBuilder::new_2d(16, 16)
+            .chunk_size(8)
+            .build();
+        let mut grid = OrdinalGrid::new(&settings);
+
+        // Create a wall across the grid leaving only cell (8, 8) open.
+        for x in 0..16 {
+            if x != 8 {
+                grid.set_nav(UVec3::new(x, 8, 0), Nav::Impassable);
+            }
+        }
+        // Also block diagonals around the gap.
+        for x in 0..16 {
+            if x != 8 {
+                grid.set_nav(UVec3::new(x, 7, 0), Nav::Impassable);
+                grid.set_nav(UVec3::new(x, 9, 0), Nav::Impassable);
+            }
+        }
+        grid.build();
+
+        let center = UVec3::new(8, 4, 0);
+        let edges = [UVec3::new(8, 15, 0)];
+        // Blocking the only gap should block all paths.
+        assert!(would_block_all_paths(
+            &mut grid,
+            UVec3::new(8, 8, 0),
+            center,
+            &edges
+        ));
+    }
+
+    #[test]
+    fn would_block_reverts_grid() {
+        let settings = bevy_northstar::prelude::GridSettingsBuilder::new_2d(16, 16)
+            .chunk_size(8)
+            .build();
+        let mut grid = OrdinalGrid::new(&settings);
+        grid.build();
+
+        let cell = UVec3::new(4, 4, 0);
+        let nav_before = grid.nav(cell);
+
+        let center = UVec3::new(8, 8, 0);
+        let edges = [UVec3::new(0, 8, 0)];
+        let _ = would_block_all_paths(&mut grid, cell, center, &edges);
+
+        assert_eq!(grid.nav(cell), nav_before, "grid state should be restored");
     }
 }

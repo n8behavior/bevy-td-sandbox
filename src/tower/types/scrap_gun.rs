@@ -73,7 +73,7 @@ fn register(mut registry: ResMut<TowerRegistry>) {
             cmds.insert((
                 MagnetTier(0),
                 BaseMagnetRange(collect_range),
-                MagnetAuraConfig {
+                CollectionAuraRingConfig {
                     range: collect_range,
                     color: MAGNET_AURA_COLOR,
                 },
