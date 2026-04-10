@@ -13,12 +13,6 @@ pub struct AoEPayload {
     pub damage: f32,
 }
 
-#[derive(Component)]
-pub struct SlowPayload {
-    pub factor: f32,
-    pub duration: f32,
-}
-
 /// Emits trail particles at intervals.
 #[derive(Component)]
 pub struct TrailEmitter {

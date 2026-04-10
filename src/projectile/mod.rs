@@ -1,3 +1,10 @@
+//! Projectile lifecycle: movement, hit detection, damage, and trail particles.
+//!
+//! Towers spawn projectiles via `spawn_projectile` in the tower module.
+//! Each `FixedUpdate`, projectiles move toward their target and are checked
+//! for hits. On impact, damage is applied (with optional AoE splash and armor
+//! reduction). Trail particles are spawned and faded in `Update` (visual only).
+
 pub mod components;
 pub mod systems;
 
