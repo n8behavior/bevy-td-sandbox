@@ -3,8 +3,7 @@ use bevy_northstar::prelude::*;
 use rand::prelude::IndexedRandom;
 use rand::seq::SliceRandom;
 
-use crate::audio::resources::SoundAssets;
-use crate::audio::systems::play_sound;
+use crate::audio::{GameSound, PlaySound};
 use crate::common::constants::GridConfig;
 use crate::economy::components::ScrapDrop;
 use crate::enemy::components::{Enemy, EnemyType};
@@ -54,7 +53,6 @@ pub fn spawn_enemies(
     grid_query: Query<Entity, With<OrdinalGrid>>,
     edge_cells: Res<EdgeCells>,
     pile_state: Res<PileState>,
-    sounds: Res<SoundAssets>,
 ) {
     let Ok(grid_entity) = grid_query.single() else {
         return;
@@ -80,7 +78,7 @@ pub fn spawn_enemies(
     let goal_pos = nearest_pile_cell(spawn_pos, &pile_state);
 
     if entry.boss_trait.is_some() {
-        play_sound(&mut commands, &sounds.boss_spawn, 0.6);
+        commands.trigger(PlaySound(GameSound::WaveBossSpawn));
     }
 
     spawn_enemy(
@@ -121,10 +119,9 @@ pub fn on_wave_complete(
     pile_scrap: Res<PileScrap>,
     mut next_phase: ResMut<NextState<PlayPhase>>,
     mut next_state: ResMut<NextState<GameState>>,
-    sounds: Res<SoundAssets>,
 ) {
     if pile_scrap.amount == 0 {
-        play_sound(&mut commands, &sounds.game_over, 0.6);
+        commands.trigger(PlaySound(GameSound::GameOver));
         next_state.set(GameState::GameOver);
     } else {
         wave_mgr.current_wave += 1;
@@ -132,8 +129,8 @@ pub fn on_wave_complete(
     }
 }
 
-pub fn play_wave_start_sound(mut commands: Commands, sounds: Res<SoundAssets>) {
-    play_sound(&mut commands, &sounds.wave_start, 0.5);
+pub fn play_wave_start_sound(mut commands: Commands) {
+    commands.trigger(PlaySound(GameSound::WaveStart));
 }
 
 pub fn handle_start_wave_input(

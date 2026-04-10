@@ -1,7 +1,6 @@
 use bevy::prelude::*;
 use std::collections::HashSet;
 
-use crate::audio::resources::SoundAssets;
 use crate::common::constants::GridConfig;
 use crate::pile::resources::{EdgeCells, PileScrap, PileState};
 use crate::pile::systems::{compute_pile_cells, pile_radius};
@@ -80,26 +79,5 @@ pub fn test_base_stats(cost: u32) -> crate::tower::components::BaseStats {
         aoe_damage: 0.0,
         slow_factor: 1.0,
         color: Color::srgb(0.5, 0.5, 0.5),
-    }
-}
-
-/// Mock SoundAssets with default (invalid) handles for headless tests.
-/// Systems that call play_sound will spawn AudioPlayer entities that do
-/// nothing without an audio backend.
-pub fn mock_sound_assets() -> SoundAssets {
-    SoundAssets {
-        tower_scrapgun: Handle::default(),
-        tower_explosive: Handle::default(),
-        tower_railgun: Handle::default(),
-        tower_chain_lightning: Handle::default(),
-        enemy_death: Handle::default(),
-        scrap_drop: Handle::default(),
-        scrap_collected: Handle::default(),
-        boss_spawn: Handle::default(),
-        wave_start: Handle::default(),
-        game_over: Handle::default(),
-        brute_attack: Handle::default(),
-        tower_destroyed: Handle::default(),
-        tower_repaired: Handle::default(),
     }
 }

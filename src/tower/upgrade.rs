@@ -3,8 +3,7 @@ use std::time::Duration;
 use bevy::prelude::*;
 use bevy::sprite_render::MeshMaterial2d;
 
-use crate::audio::resources::SoundAssets;
-use crate::audio::systems::play_sound;
+use crate::audio::{GameSound, PlaySound};
 use crate::common::constants::{GridConfig, TILE_SIZE};
 use crate::grid::components::GridCell;
 use crate::grid::systems::world_to_grid;
@@ -556,7 +555,6 @@ pub fn apply_repair(
     magnet_auras: Query<Entity, With<MagnetAura>>,
     mut pile_scrap: ResMut<PileScrap>,
     mut run_stats: Option<ResMut<RunStats>>,
-    sounds: Res<SoundAssets>,
 ) {
     if !keyboard.just_pressed(KeyCode::KeyR) {
         return;
@@ -651,7 +649,7 @@ pub fn apply_repair(
         target_color: healthy_color,
     });
 
-    play_sound(&mut commands, &sounds.tower_repaired, 0.4);
+    commands.trigger(PlaySound(GameSound::TowerRepaired));
 
     let pos = transform.translation.truncate();
     commands.spawn((

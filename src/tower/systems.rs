@@ -2,8 +2,7 @@ use std::time::Duration;
 
 use bevy::prelude::*;
 
-use crate::audio::resources::SoundAssets;
-use crate::audio::systems::play_sound;
+use crate::audio::{GameSound, PlaySound};
 use crate::common::constants::*;
 use crate::economy::components::ScrapDrop;
 use crate::enemy::components::{DamageFlash, Enemy, Health, SlowEffect};
@@ -244,7 +243,6 @@ pub fn turret_state_machine(
     time: Res<Time>,
     pile_state: Res<PileState>,
     config: Res<GridConfig>,
-    sounds: Res<SoundAssets>,
 ) {
     let pile_center_world = grid_to_world_cfg(pile_state.center, &config);
     for (
@@ -310,11 +308,11 @@ pub fn turret_state_machine(
                 state.cooldown.reset();
 
                 if is_scrapgun.is_some() {
-                    play_sound(&mut commands, &sounds.tower_scrapgun, 0.3);
+                    commands.trigger(PlaySound(GameSound::TowerScrapgun));
                 } else if is_explosive.is_some() {
-                    play_sound(&mut commands, &sounds.tower_explosive, 0.4);
+                    commands.trigger(PlaySound(GameSound::TowerExplosive));
                 } else if is_railgun.is_some() {
-                    play_sound(&mut commands, &sounds.tower_railgun, 0.3);
+                    commands.trigger(PlaySound(GameSound::TowerRailgun));
                 }
             }
         }
@@ -419,7 +417,6 @@ pub fn scrap_magnet_collect(
     mut commands: Commands,
     time: Res<Time>,
     mut stats: Option<ResMut<RunStats>>,
-    sounds: Res<SoundAssets>,
 ) {
     for (entity, drop, mut drop_tf) in &mut drops {
         let drop_pos = drop_tf.translation.truncate();
@@ -445,7 +442,7 @@ pub fn scrap_magnet_collect(
                 if let Some(stats) = stats.as_mut() {
                     stats.scrap_collected += drop.value;
                 }
-                play_sound(&mut commands, &sounds.scrap_collected, 0.2);
+                commands.trigger(PlaySound(GameSound::ScrapCollected));
                 commands.entity(entity).despawn();
             } else {
                 let direction = (col_pos - drop_pos).normalize();
@@ -480,7 +477,6 @@ pub fn chain_lightning_fire(
     time: Res<Time>,
     pile_state: Res<PileState>,
     config: Res<GridConfig>,
-    sounds: Res<SoundAssets>,
 ) {
     let pile_center_world = grid_to_world_cfg(pile_state.center, &config);
     for (tower_tf, stats, chain, mut cooldown, targeting, tower_health, tower_state) in &mut towers
@@ -512,7 +508,7 @@ pub fn chain_lightning_fire(
         };
 
         cooldown.timer.reset();
-        play_sound(&mut commands, &sounds.tower_chain_lightning, 0.3);
+        commands.trigger(PlaySound(GameSound::TowerChainLightning));
 
         // Build chain (read-only pass via .iter() / .get()).
         let mut chain_targets: Vec<(Entity, Vec2, f32)> = Vec::new();
@@ -659,7 +655,6 @@ pub fn on_tower_becomes_rubble(
     range_rings: Query<Entity, With<RangeRing>>,
     aura_visuals: Query<Entity, With<AuraVisual>>,
     magnet_auras: Query<Entity, With<MagnetAura>>,
-    sounds: Res<SoundAssets>,
 ) {
     for (entity, children, mut sprite, turret, state) in &mut rubble_towers {
         if *state != TowerState::Rubble {
@@ -684,7 +679,7 @@ pub fn on_tower_becomes_rubble(
         // Remove the UpgradeFlash so the rubble color sticks.
         commands.entity(entity).remove::<UpgradeFlash>();
 
-        play_sound(&mut commands, &sounds.tower_destroyed, 0.5);
+        commands.trigger(PlaySound(GameSound::TowerDestroyed));
     }
 }
 

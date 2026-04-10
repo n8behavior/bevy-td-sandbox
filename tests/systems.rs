@@ -1,5 +1,6 @@
 use bevy::prelude::*;
 use bevy_northstar::prelude::*;
+use bevy_td_sandbox::audio::{GameAudioPlugin, GameSound, PlaySound};
 use bevy_td_sandbox::camera::components::{CameraController, ScreenShake};
 use bevy_td_sandbox::camera::systems::{apply_screen_shake, camera_reset};
 use bevy_td_sandbox::common::constants::{
@@ -332,7 +333,6 @@ fn wave_app(scrap: u32) -> App {
     app.update();
 
     app.insert_resource(PileScrap { amount: scrap });
-    app.insert_resource(mock_sound_assets());
     app.insert_resource(WaveManager {
         current_wave: 0,
         waves: Vec::new(),
@@ -715,7 +715,6 @@ fn find_best_target_closest_mode() {
     // closest enemy.
     use bevy_td_sandbox::tower::systems::turret_state_machine;
 
-    app.insert_resource(mock_sound_assets());
     insert_pile(&mut app, 200);
 
     // Tower at origin.
@@ -1149,4 +1148,69 @@ fn reset_no_op_without_home_press() {
         Vec3::new(50.0, 75.0, 0.0),
         "translation should be unchanged without Home press"
     );
+}
+
+// ---------------------------------------------------------------------------
+// Audio: PlaySound observer
+// ---------------------------------------------------------------------------
+
+#[test]
+fn play_sound_observer_spawns_audio_player() {
+    let mut app = test_app_with_assets();
+    app.add_plugins((bevy::audio::AudioPlugin::default(), GameAudioPlugin));
+    app.update(); // Startup: init_sound_assets
+
+    app.world_mut()
+        .commands()
+        .trigger(PlaySound(GameSound::TowerScrapgun));
+    app.update();
+
+    let count = app
+        .world_mut()
+        .query::<&AudioPlayer<Pitch>>()
+        .iter(app.world())
+        .count();
+    assert_eq!(count, 1, "expected one AudioPlayer entity");
+}
+
+#[test]
+fn play_sound_multiple_triggers_spawn_multiple() {
+    let mut app = test_app_with_assets();
+    app.add_plugins((bevy::audio::AudioPlugin::default(), GameAudioPlugin));
+    app.update();
+
+    app.world_mut()
+        .commands()
+        .trigger(PlaySound(GameSound::EnemyDeath));
+    app.world_mut()
+        .commands()
+        .trigger(PlaySound(GameSound::WaveStart));
+    app.update();
+
+    let count = app
+        .world_mut()
+        .query::<&AudioPlayer<Pitch>>()
+        .iter(app.world())
+        .count();
+    assert_eq!(count, 2);
+}
+
+#[test]
+fn init_sound_assets_serves_all_variants() {
+    let mut app = test_app_with_assets();
+    app.add_plugins((bevy::audio::AudioPlugin::default(), GameAudioPlugin));
+    app.update();
+
+    // Trigger every variant — if any handle is missing, the observer panics.
+    for &sound in GameSound::ALL {
+        app.world_mut().commands().trigger(PlaySound(sound));
+    }
+    app.update();
+
+    let count = app
+        .world_mut()
+        .query::<&AudioPlayer<Pitch>>()
+        .iter(app.world())
+        .count();
+    assert_eq!(count, GameSound::ALL.len());
 }

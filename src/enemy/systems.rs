@@ -4,8 +4,7 @@ use rand::Rng;
 
 use bevy::sprite_render::MeshMaterial2d;
 
-use crate::audio::resources::SoundAssets;
-use crate::audio::systems::play_sound;
+use crate::audio::{GameSound, PlaySound};
 use crate::camera::components::ScreenShake;
 use crate::common::constants::{GridConfig, SCRAP_COLOR, TILE_SIZE};
 use crate::grid::systems::{grid_to_world_cfg, world_to_grid};
@@ -281,12 +280,8 @@ pub fn check_enemy_death(
     }
 }
 
-pub fn on_enemy_died_sound(
-    _trigger: On<EnemyDied>,
-    mut commands: Commands,
-    sounds: Res<SoundAssets>,
-) {
-    play_sound(&mut commands, &sounds.enemy_death, 0.4);
+pub fn on_enemy_died_sound(_trigger: On<EnemyDied>, mut commands: Commands) {
+    commands.trigger(PlaySound(GameSound::EnemyDeath));
 }
 
 pub fn on_enemy_died_particles(trigger: On<EnemyDied>, mut commands: Commands) {
@@ -576,7 +571,6 @@ pub fn brute_attack_towers(
     >,
     mut commands: Commands,
     time: Res<Time>,
-    sounds: Res<SoundAssets>,
 ) {
     for (brute_tf, mut attack) in &mut brutes {
         attack.cooldown.tick(time.delta());
@@ -609,7 +603,7 @@ pub fn brute_attack_towers(
         {
             health.current = (health.current - attack.damage).max(0.0);
 
-            play_sound(&mut commands, &sounds.brute_attack, 0.3);
+            commands.trigger(PlaySound(GameSound::EnemyBruteAttack));
 
             // Flash white then restore to degradation color.
             sprite.color = Color::WHITE;

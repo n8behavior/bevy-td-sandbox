@@ -3,29 +3,85 @@ use std::time::Duration;
 use bevy::audio::Volume;
 use bevy::prelude::*;
 
+use super::events::{GameSound, PlaySound};
 use super::resources::SoundAssets;
 
-pub fn init_sound_assets(mut commands: Commands, mut pitches: ResMut<Assets<Pitch>>) {
+pub(super) fn init_sound_assets(mut commands: Commands, mut pitches: ResMut<Assets<Pitch>>) {
+    let mut add = |sound: GameSound| -> Handle<Pitch> {
+        pitches.add(Pitch::new(
+            sound.pitch_hz(),
+            Duration::from_millis(sound.duration_ms()),
+        ))
+    };
     commands.insert_resource(SoundAssets {
-        tower_scrapgun: pitches.add(Pitch::new(880.0, Duration::from_millis(80))),
-        tower_explosive: pitches.add(Pitch::new(110.0, Duration::from_millis(250))),
-        tower_railgun: pitches.add(Pitch::new(2200.0, Duration::from_millis(50))),
-        tower_chain_lightning: pitches.add(Pitch::new(660.0, Duration::from_millis(120))),
-        enemy_death: pitches.add(Pitch::new(220.0, Duration::from_millis(150))),
-        scrap_drop: pitches.add(Pitch::new(1760.0, Duration::from_millis(60))),
-        scrap_collected: pitches.add(Pitch::new(1320.0, Duration::from_millis(100))),
-        boss_spawn: pitches.add(Pitch::new(55.0, Duration::from_millis(500))),
-        wave_start: pitches.add(Pitch::new(440.0, Duration::from_millis(200))),
-        game_over: pitches.add(Pitch::new(165.0, Duration::from_millis(400))),
-        brute_attack: pitches.add(Pitch::new(165.0, Duration::from_millis(100))),
-        tower_destroyed: pitches.add(Pitch::new(82.0, Duration::from_millis(300))),
-        tower_repaired: pitches.add(Pitch::new(550.0, Duration::from_millis(150))),
+        tower_scrapgun: add(GameSound::TowerScrapgun),
+        tower_explosive: add(GameSound::TowerExplosive),
+        tower_railgun: add(GameSound::TowerRailgun),
+        tower_chain_lightning: add(GameSound::TowerChainLightning),
+        tower_destroyed: add(GameSound::TowerDestroyed),
+        tower_repaired: add(GameSound::TowerRepaired),
+        enemy_death: add(GameSound::EnemyDeath),
+        enemy_brute_attack: add(GameSound::EnemyBruteAttack),
+        scrap_drop: add(GameSound::ScrapDrop),
+        scrap_collected: add(GameSound::ScrapCollected),
+        wave_boss_spawn: add(GameSound::WaveBossSpawn),
+        wave_start: add(GameSound::WaveStart),
+        game_over: add(GameSound::GameOver),
     });
 }
 
-pub fn play_sound(commands: &mut Commands, sound: &Handle<Pitch>, volume: f32) {
+pub(super) fn on_play_sound(
+    trigger: On<PlaySound>,
+    mut commands: Commands,
+    sounds: Res<SoundAssets>,
+) {
+    let game_sound = trigger.0;
+    let handle = sounds.get(game_sound);
     commands.spawn((
-        AudioPlayer::<Pitch>(sound.clone()),
-        PlaybackSettings::DESPAWN.with_volume(Volume::Linear(volume)),
+        AudioPlayer::<Pitch>(handle.clone()),
+        PlaybackSettings::DESPAWN.with_volume(Volume::Linear(game_sound.volume())),
     ));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn all_variants_covered() {
+        assert_eq!(GameSound::ALL.len(), 13);
+    }
+
+    #[test]
+    fn pitch_values_positive() {
+        for sound in GameSound::ALL {
+            assert!(sound.pitch_hz() > 0.0, "{sound:?} has non-positive pitch");
+        }
+    }
+
+    #[test]
+    fn duration_values_positive() {
+        for sound in GameSound::ALL {
+            assert!(sound.duration_ms() > 0, "{sound:?} has zero duration");
+        }
+    }
+
+    #[test]
+    fn volume_values_in_range() {
+        for sound in GameSound::ALL {
+            let v = sound.volume();
+            assert!(v > 0.0 && v <= 1.0, "{sound:?} volume {v} out of range");
+        }
+    }
+
+    #[test]
+    fn specific_sound_values() {
+        assert_eq!(GameSound::TowerScrapgun.pitch_hz(), 880.0);
+        assert_eq!(GameSound::TowerScrapgun.duration_ms(), 80);
+        assert_eq!(GameSound::TowerScrapgun.volume(), 0.3);
+
+        assert_eq!(GameSound::GameOver.pitch_hz(), 165.0);
+        assert_eq!(GameSound::GameOver.duration_ms(), 400);
+        assert_eq!(GameSound::GameOver.volume(), 0.6);
+    }
 }

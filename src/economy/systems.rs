@@ -1,8 +1,7 @@
 use bevy::prelude::*;
 use rand::Rng;
 
-use crate::audio::resources::SoundAssets;
-use crate::audio::systems::play_sound;
+use crate::audio::{GameSound, PlaySound};
 use crate::common::constants::*;
 use crate::enemy::components::SpawnAnimation;
 use crate::enemy::systems::EnemyDied;
@@ -74,16 +73,12 @@ pub fn on_enemy_died_spawn_drop(trigger: On<EnemyDied>, mut commands: Commands) 
 }
 
 /// Play the scrap-drop sound when loot is awarded.
-pub fn on_enemy_died_scrap_sound(
-    trigger: On<EnemyDied>,
-    mut commands: Commands,
-    sounds: Res<SoundAssets>,
-) {
+pub fn on_enemy_died_scrap_sound(trigger: On<EnemyDied>, mut commands: Commands) {
     let total_value = compute_scrap_value(trigger.loot_value, trigger.stolen_scrap);
     if total_value == 0 {
         return;
     }
-    play_sound(&mut commands, &sounds.scrap_drop, 0.25);
+    commands.trigger(PlaySound(GameSound::ScrapDrop));
 }
 
 /// Slowly rotate scrap drops for visual flair (diamond ↔ square oscillation).
