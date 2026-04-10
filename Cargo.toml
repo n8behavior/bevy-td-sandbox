@@ -14,18 +14,18 @@ rand = "0.9"
 getrandom = { version = "0.3", features = ["wasm_js"] }
 
 [features]
-default = ["dev_native"]
-dev = [
-    "bevy/dynamic_linking",
+default = ["native"]
+native = [
+    "web",
+    "bevy/file_watcher",
+    "bevy/embedded_watcher",
+]
+web = [
     "bevy/bevy_dev_tools",
     "bevy/bevy_ui_debug",
     "bevy/track_location",
 ]
-dev_native = [
-    "dev",
-    "bevy/file_watcher",
-    "bevy/embedded_watcher",
-]
+dynamic = ["bevy/dynamic_linking"]
 
 [package.metadata.bevy_cli.release]
 default-features = false
@@ -34,7 +34,7 @@ default-features = false
 default-features = false
 
 [package.metadata.bevy_cli.web.dev]
-features = ["dev"]
+features = ["web"]
 
 [lints.clippy]
 too_many_arguments = "allow"
