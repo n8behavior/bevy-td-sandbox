@@ -69,7 +69,7 @@ pub fn on_enemy_died_spawn_drop(trigger: On<EnemyDied>, mut commands: Commands) 
             Transform::from_translation(Vec3::new(0.0, 0.0, -0.1)),
         ));
 
-    spawn_scrap_sparkle(&mut commands, pos);
+    spawn_scrap_sparkle(&mut commands, pos, &mut rand::rng());
 }
 
 /// Play the scrap-drop sound when loot is awarded.

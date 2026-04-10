@@ -1,3 +1,9 @@
+//! Particle effects: short-lived sprites for visual feedback.
+//!
+//! **Lifecycle:** Other modules call spawn helpers (e.g. [`systems::spawn_impact_particles`])
+//! to create particle entities. Per-frame animation systems tick each particle's timer,
+//! update position/alpha/scale, and despawn the entity when the timer finishes.
+
 pub mod components;
 pub mod systems;
 

@@ -285,7 +285,12 @@ pub fn on_enemy_died_sound(_trigger: On<EnemyDied>, mut commands: Commands) {
 }
 
 pub fn on_enemy_died_particles(trigger: On<EnemyDied>, mut commands: Commands) {
-    spawn_death_particles(&mut commands, trigger.position, trigger.color);
+    spawn_death_particles(
+        &mut commands,
+        trigger.position,
+        trigger.color,
+        &mut rand::rng(),
+    );
 }
 
 pub fn on_enemy_died_shake(trigger: On<EnemyDied>, mut shake: ResMut<ScreenShake>) {

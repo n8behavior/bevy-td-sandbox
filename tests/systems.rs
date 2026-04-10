@@ -1214,3 +1214,179 @@ fn init_sound_assets_serves_all_variants() {
         .count();
     assert_eq!(count, GameSound::ALL.len());
 }
+
+// ---------------------------------------------------------------------------
+// Particle systems
+// ---------------------------------------------------------------------------
+
+#[test]
+fn impact_particles_despawn_after_timer() {
+    use bevy_td_sandbox::particles::components::ImpactParticle;
+    use bevy_td_sandbox::particles::systems::animate_impact_particles;
+
+    let mut app = test_app();
+    let mut timer = Timer::from_seconds(0.01, TimerMode::Once);
+    timer.tick(std::time::Duration::from_secs(1));
+    app.world_mut().spawn((
+        ImpactParticle {
+            timer,
+            velocity: Vec2::new(10.0, 0.0),
+        },
+        Sprite::from_color(Color::WHITE, Vec2::splat(3.0)),
+        Transform::default(),
+    ));
+    app.add_systems(Update, animate_impact_particles);
+    app.update();
+
+    let count = app
+        .world_mut()
+        .query::<&ImpactParticle>()
+        .iter(app.world())
+        .count();
+    assert_eq!(count, 0, "impact particle should be despawned after timer");
+}
+
+#[test]
+fn death_particles_despawn_after_timer() {
+    use bevy_td_sandbox::particles::components::DeathParticle;
+    use bevy_td_sandbox::particles::systems::animate_death_particles;
+
+    let mut app = test_app();
+    let mut timer = Timer::from_seconds(0.01, TimerMode::Once);
+    timer.tick(std::time::Duration::from_secs(1));
+    app.world_mut().spawn((
+        DeathParticle {
+            timer,
+            velocity: Vec2::new(10.0, 5.0),
+        },
+        Sprite::from_color(Color::WHITE, Vec2::splat(4.0)),
+        Transform::default(),
+    ));
+    app.add_systems(Update, animate_death_particles);
+    app.update();
+
+    let count = app
+        .world_mut()
+        .query::<&DeathParticle>()
+        .iter(app.world())
+        .count();
+    assert_eq!(count, 0, "death particle should be despawned after timer");
+}
+
+#[test]
+fn sparkle_particles_despawn_after_timer() {
+    use bevy_td_sandbox::particles::components::SparkleParticle;
+    use bevy_td_sandbox::particles::systems::animate_sparkle_particles;
+
+    let mut app = test_app();
+    let mut timer = Timer::from_seconds(0.01, TimerMode::Once);
+    timer.tick(std::time::Duration::from_secs(1));
+    app.world_mut().spawn((
+        SparkleParticle { timer },
+        Sprite::from_color(Color::WHITE, Vec2::splat(2.0)),
+        Transform::default(),
+    ));
+    app.add_systems(Update, animate_sparkle_particles);
+    app.update();
+
+    let count = app
+        .world_mut()
+        .query::<&SparkleParticle>()
+        .iter(app.world())
+        .count();
+    assert_eq!(count, 0, "sparkle particle should be despawned after timer");
+}
+
+#[test]
+fn spawn_impact_particles_count() {
+    use bevy_td_sandbox::particles::components::ImpactParticle;
+    use bevy_td_sandbox::particles::systems::spawn_impact_particles;
+    use rand::Rng;
+    use rand::SeedableRng;
+    use rand::rngs::SmallRng;
+
+    let mut app = test_app();
+
+    // Determine expected count from a parallel seeded RNG.
+    let mut rng_check = SmallRng::seed_from_u64(42);
+    let expected_count = rng_check.random_range(3u32..=5);
+
+    let mut rng = SmallRng::seed_from_u64(42);
+    spawn_impact_particles(
+        &mut app.world_mut().commands(),
+        Vec2::new(100.0, 50.0),
+        Color::WHITE,
+        &mut rng,
+    );
+    app.update(); // flush commands
+
+    let count = app
+        .world_mut()
+        .query::<&ImpactParticle>()
+        .iter(app.world())
+        .count();
+    assert_eq!(count, expected_count as usize);
+}
+
+#[test]
+fn death_particles_gravity_pulls_down() {
+    use bevy_td_sandbox::particles::components::DeathParticle;
+    use bevy_td_sandbox::particles::systems::animate_death_particles;
+
+    let mut app = test_app();
+    let initial_vel_y = 50.0;
+    app.world_mut().spawn((
+        DeathParticle {
+            timer: Timer::from_seconds(2.0, TimerMode::Once),
+            velocity: Vec2::new(0.0, initial_vel_y),
+        },
+        Sprite::from_color(Color::WHITE, Vec2::splat(4.0)),
+        Transform::default(),
+    ));
+    app.add_systems(Update, animate_death_particles);
+
+    // First update has dt=0, second has real dt.
+    app.update();
+    app.update();
+
+    let particle = app
+        .world_mut()
+        .query::<&DeathParticle>()
+        .single(app.world())
+        .unwrap();
+    assert!(
+        particle.velocity.y < initial_vel_y,
+        "gravity should reduce y velocity: got {}",
+        particle.velocity.y
+    );
+}
+
+#[test]
+fn sparkle_particles_float_upward() {
+    use bevy_td_sandbox::particles::components::SparkleParticle;
+    use bevy_td_sandbox::particles::systems::animate_sparkle_particles;
+
+    let mut app = test_app();
+    app.world_mut().spawn((
+        SparkleParticle {
+            timer: Timer::from_seconds(2.0, TimerMode::Once),
+        },
+        Sprite::from_color(Color::WHITE, Vec2::splat(2.0)),
+        Transform::from_translation(Vec3::new(0.0, 0.0, 3.0)),
+    ));
+    app.add_systems(Update, animate_sparkle_particles);
+
+    app.update();
+    app.update();
+
+    let tf = app
+        .world_mut()
+        .query_filtered::<&Transform, With<SparkleParticle>>()
+        .single(app.world())
+        .unwrap();
+    assert!(
+        tf.translation.y > 0.0,
+        "sparkle should float upward, got y={}",
+        tf.translation.y
+    );
+}

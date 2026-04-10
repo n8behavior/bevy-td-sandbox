@@ -154,6 +154,7 @@ pub fn projectile_hit_detection(
             &mut commands,
             hit.hit_pos.truncate(),
             Color::srgba(1.0, 0.95, 0.6, 0.9),
+            &mut rand::rng(),
         );
 
         if let Some((radius, aoe_damage)) = hit.aoe {
