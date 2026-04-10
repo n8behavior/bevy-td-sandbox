@@ -1,5 +1,7 @@
 use bevy::prelude::*;
 use bevy_northstar::prelude::*;
+use bevy_td_sandbox::camera::components::{CameraController, ScreenShake};
+use bevy_td_sandbox::camera::systems::{apply_screen_shake, camera_reset};
 use bevy_td_sandbox::common::constants::{
     PAPER_COLOR, PILE_COLLECTOR_RANGE, PILE_COLOR, PUDDLE_SLOW_FACTOR, SCRAP_MAGNET_RANGE,
 };
@@ -984,5 +986,167 @@ fn radioactive_no_damage_off_grid() {
         (health.current - 100.0).abs() < 0.01,
         "off-grid enemy should not take damage, got {}",
         health.current
+    );
+}
+
+// ---------------------------------------------------------------------------
+// apply_screen_shake
+// ---------------------------------------------------------------------------
+
+#[test]
+fn screen_shake_decays_over_updates() {
+    let mut app = test_app();
+    app.insert_resource(ScreenShake {
+        intensity: 10.0,
+        timer: Timer::from_seconds(2.0, TimerMode::Once),
+        decay: 0.5,
+        current_offset: Vec3::ZERO,
+    });
+    app.world_mut().spawn(Camera2d);
+    app.add_systems(Update, apply_screen_shake);
+
+    // Run several updates so time advances and decay kicks in.
+    for _ in 0..10 {
+        app.update();
+    }
+
+    let shake = app.world().resource::<ScreenShake>();
+    assert!(
+        shake.intensity < 10.0,
+        "intensity should have decayed, got {}",
+        shake.intensity
+    );
+}
+
+#[test]
+fn screen_shake_zero_intensity_no_offset() {
+    let mut app = test_app();
+    app.insert_resource(ScreenShake {
+        intensity: 0.0,
+        timer: Timer::from_seconds(1.0, TimerMode::Once),
+        decay: 0.5,
+        current_offset: Vec3::ZERO,
+    });
+    app.world_mut().spawn(Camera2d);
+    app.add_systems(Update, apply_screen_shake);
+    app.update();
+
+    let transform = app
+        .world_mut()
+        .query_filtered::<&Transform, With<Camera2d>>()
+        .single(app.world())
+        .unwrap();
+    assert_eq!(
+        transform.translation,
+        Vec3::ZERO,
+        "zero intensity should produce no offset"
+    );
+}
+
+#[test]
+fn screen_shake_undoes_offset_after_expiry() {
+    let mut app = test_app();
+    // Pre-tick the timer past its duration so the system sees it as finished.
+    let mut timer = Timer::from_seconds(0.01, TimerMode::Once);
+    timer.tick(std::time::Duration::from_secs(1));
+    app.insert_resource(ScreenShake {
+        intensity: 8.0,
+        timer,
+        decay: 0.01,
+        current_offset: Vec3::ZERO,
+    });
+    app.world_mut().spawn(Camera2d);
+    app.add_systems(Update, apply_screen_shake);
+
+    app.update();
+
+    let shake = app.world().resource::<ScreenShake>();
+    assert_eq!(
+        shake.intensity, 0.0,
+        "intensity should be zero after expiry"
+    );
+    assert_eq!(
+        shake.current_offset,
+        Vec3::ZERO,
+        "offset should be zero after expiry"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// camera_reset
+// ---------------------------------------------------------------------------
+
+#[test]
+fn reset_restores_home_position_and_scale() {
+    let mut app = test_app();
+    app.world_mut().spawn((
+        Camera2d,
+        Transform::from_translation(Vec3::new(100.0, 200.0, 0.0)),
+        CameraController {
+            min_scale: 0.1,
+            max_scale: 10.0,
+            zoom_step: 1.15,
+            home_translation: Vec3::ZERO,
+            home_scale: 1.0,
+        },
+    ));
+
+    // Simulate pressing the Home key.
+    let mut keys = ButtonInput::<KeyCode>::default();
+    keys.press(KeyCode::Home);
+    app.insert_resource(keys);
+
+    app.add_systems(Update, camera_reset);
+    app.update();
+
+    let (transform, projection) = app
+        .world_mut()
+        .query_filtered::<(&Transform, &Projection), With<Camera2d>>()
+        .single(app.world())
+        .unwrap();
+
+    assert_eq!(
+        transform.translation,
+        Vec3::ZERO,
+        "translation should be reset to home"
+    );
+    if let Projection::Orthographic(ortho) = projection {
+        assert_eq!(ortho.scale, 1.0, "scale should be reset to home_scale");
+    } else {
+        panic!("expected orthographic projection");
+    }
+}
+
+#[test]
+fn reset_no_op_without_home_press() {
+    let mut app = test_app();
+    app.world_mut().spawn((
+        Camera2d,
+        Transform::from_translation(Vec3::new(50.0, 75.0, 0.0)),
+        CameraController {
+            min_scale: 0.1,
+            max_scale: 10.0,
+            zoom_step: 1.15,
+            home_translation: Vec3::ZERO,
+            home_scale: 1.0,
+        },
+    ));
+
+    // Insert empty key input (no Home press).
+    app.insert_resource(ButtonInput::<KeyCode>::default());
+
+    app.add_systems(Update, camera_reset);
+    app.update();
+
+    let transform = app
+        .world_mut()
+        .query_filtered::<&Transform, With<Camera2d>>()
+        .single(app.world())
+        .unwrap();
+
+    assert_eq!(
+        transform.translation,
+        Vec3::new(50.0, 75.0, 0.0),
+        "translation should be unchanged without Home press"
     );
 }
