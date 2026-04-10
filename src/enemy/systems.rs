@@ -717,4 +717,129 @@ mod tests {
     fn edge_corner() {
         assert!(is_at_map_edge(Vec2::new(-380.0, -300.0), 40, 32));
     }
+
+    // -- spawn_enemy integration tests --
+
+    use crate::test_helpers::test_grid_config;
+    use crate::wave::resources::BossTrait;
+
+    /// Helper: spawn a single enemy via a startup system, return the App.
+    fn spawn_test_app(
+        enemy_type: EnemyType,
+        health_mult: f32,
+        speed_mult: f32,
+        boss_trait: Option<BossTrait>,
+    ) -> App {
+        let mut app = crate::test_helpers::test_app();
+        let config = test_grid_config();
+        let et = enemy_type;
+        let bt = boss_trait;
+        app.add_systems(Startup, move |mut commands: Commands| {
+            let grid_entity = commands.spawn_empty().id();
+            spawn_enemy(
+                &mut commands,
+                et,
+                UVec3::ZERO,
+                UVec3::new(20, 16, 0),
+                grid_entity,
+                health_mult,
+                speed_mult,
+                &config,
+                bt,
+            );
+        });
+        app.update();
+        app
+    }
+
+    #[test]
+    fn spawn_shambler_has_core_components() {
+        let mut app = spawn_test_app(EnemyType::Shambler, 1.0, 1.0, None);
+        let mut query = app.world_mut().query_filtered::<Entity, With<Enemy>>();
+        let entities: Vec<Entity> = query.iter(app.world()).collect();
+        assert_eq!(entities.len(), 1, "should spawn exactly one enemy");
+
+        let e = entities[0];
+        let world = app.world();
+        assert!(world.get::<Enemy>(e).is_some());
+        assert_eq!(*world.get::<EnemyType>(e).unwrap(), EnemyType::Shambler);
+        assert!(world.get::<Health>(e).is_some());
+        assert!(world.get::<MoveSpeed>(e).is_some());
+        assert!(world.get::<LootValue>(e).is_some());
+        assert!(world.get::<CellJitter>(e).is_some());
+        assert!(world.get::<SpawnAnimation>(e).is_some());
+        assert_eq!(
+            *world.get::<EnemyState>(e).unwrap(),
+            EnemyState::Approaching
+        );
+    }
+
+    #[test]
+    fn spawn_health_scales_with_multiplier() {
+        let mut app = spawn_test_app(EnemyType::Shambler, 2.0, 1.0, None);
+        let mut query = app.world_mut().query::<&Health>();
+        let health = query.single(app.world()).unwrap();
+        let expected = EnemyType::Shambler.base_health() * 2.0;
+        assert!((health.max - expected).abs() < f32::EPSILON);
+        assert!((health.current - expected).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn spawn_speed_scales_with_multiplier() {
+        let mut app = spawn_test_app(EnemyType::Runner, 1.0, 1.5, None);
+        let mut query = app.world_mut().query::<&MoveSpeed>();
+        let speed = query.single(app.world()).unwrap();
+        let expected = EnemyType::Runner.base_speed() * 1.5;
+        assert!((speed.base - expected).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn spawn_brute_has_brute_attack() {
+        let mut app = spawn_test_app(EnemyType::Brute, 1.0, 1.0, None);
+        let mut query = app.world_mut().query_filtered::<Entity, With<Enemy>>();
+        let e = query.single(app.world()).unwrap();
+        assert!(app.world().get::<BruteAttack>(e).is_some());
+    }
+
+    #[test]
+    fn spawn_non_brute_no_brute_attack() {
+        let mut app = spawn_test_app(EnemyType::Shambler, 1.0, 1.0, None);
+        let mut query = app.world_mut().query_filtered::<Entity, With<Enemy>>();
+        let e = query.single(app.world()).unwrap();
+        assert!(app.world().get::<BruteAttack>(e).is_none());
+    }
+
+    #[test]
+    fn spawn_boss_regeneration_trait() {
+        let mut app = spawn_test_app(EnemyType::Boss, 1.0, 1.0, Some(BossTrait::Regeneration));
+        let mut query = app.world_mut().query_filtered::<Entity, With<Enemy>>();
+        let e = query.single(app.world()).unwrap();
+        assert!(app.world().get::<Regeneration>(e).is_some());
+        assert!(app.world().get::<Armor>(e).is_none());
+        assert!(app.world().get::<SplitsOnDeath>(e).is_none());
+    }
+
+    #[test]
+    fn spawn_boss_armor_trait() {
+        let mut app = spawn_test_app(EnemyType::Boss, 1.0, 1.0, Some(BossTrait::Armor));
+        let mut query = app.world_mut().query_filtered::<Entity, With<Enemy>>();
+        let e = query.single(app.world()).unwrap();
+        assert!(app.world().get::<Armor>(e).is_some());
+    }
+
+    #[test]
+    fn spawn_boss_splitting_trait() {
+        let mut app = spawn_test_app(EnemyType::Boss, 1.0, 1.0, Some(BossTrait::Splitting));
+        let mut query = app.world_mut().query_filtered::<Entity, With<Enemy>>();
+        let e = query.single(app.world()).unwrap();
+        assert!(app.world().get::<SplitsOnDeath>(e).is_some());
+    }
+
+    #[test]
+    fn spawn_loot_matches_type() {
+        let mut app = spawn_test_app(EnemyType::Runner, 1.0, 1.0, None);
+        let mut query = app.world_mut().query::<&LootValue>();
+        let loot = query.single(app.world()).unwrap();
+        assert_eq!(loot.0, EnemyType::Runner.loot_value());
+    }
 }
