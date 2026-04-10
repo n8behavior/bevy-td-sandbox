@@ -79,6 +79,16 @@ pub const PUDDLE_SLOW_FACTOR: f32 = 0.70;
 /// Radioactive damage per second.
 pub const RADIOACTIVE_DPS: f32 = 8.0;
 
+/// Buffer radius (in tiles) around pile center excluded from terrain generation.
+pub const PILE_BUFFER_RADIUS: i32 = 3;
+
+/// Base probability for a frontier cell to join a growing cluster.
+pub const CLUSTER_GROWTH_BASE: f32 = 0.85;
+
+/// How much growth probability decays as cluster approaches target size.
+/// Effective chance = `CLUSTER_GROWTH_BASE - (current / target) * CLUSTER_GROWTH_DECAY`.
+pub const CLUSTER_GROWTH_DECAY: f32 = 0.3;
+
 // ---------------------------------------------------------------------------
 // Tower health & degradation
 // ---------------------------------------------------------------------------

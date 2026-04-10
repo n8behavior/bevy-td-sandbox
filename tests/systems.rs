@@ -1,17 +1,19 @@
 use bevy::prelude::*;
 use bevy_northstar::prelude::*;
 use bevy_td_sandbox::common::constants::{
-    PAPER_COLOR, PILE_COLLECTOR_RANGE, PILE_COLOR, SCRAP_MAGNET_RANGE,
+    PAPER_COLOR, PILE_COLLECTOR_RANGE, PILE_COLOR, PUDDLE_SLOW_FACTOR, SCRAP_MAGNET_RANGE,
 };
 use bevy_td_sandbox::economy::components::ScrapDrop;
 use bevy_td_sandbox::enemy::components::*;
 use bevy_td_sandbox::grid::components::GridCell;
+use bevy_td_sandbox::grid::systems::grid_to_world_cfg;
 use bevy_td_sandbox::pathfinding::systems::recalculate_enemy_paths;
 use bevy_td_sandbox::pile::components::PileCell;
 use bevy_td_sandbox::pile::resources::{PileScrap, PileState};
 use bevy_td_sandbox::pile::systems::{update_pile_state, update_pile_visuals};
 use bevy_td_sandbox::states::{GameState, PlayPhase};
-use bevy_td_sandbox::terrain::components::Terrain;
+use bevy_td_sandbox::terrain::components::{Terrain, TerrainMap};
+use bevy_td_sandbox::terrain::systems::{apply_puddle_slow, apply_radioactive_damage};
 use bevy_td_sandbox::test_helpers::*;
 use bevy_td_sandbox::tower::components::*;
 use bevy_td_sandbox::tower::systems::slow_aura;
@@ -776,4 +778,211 @@ fn find_best_target_closest_mode() {
         TurretPhase::Acquiring { target } => assert_eq!(target, close),
         _ => panic!("expected Acquiring phase, got Idle or Tracking"),
     }
+}
+
+// ---------------------------------------------------------------------------
+// apply_puddle_slow
+// ---------------------------------------------------------------------------
+
+#[test]
+fn puddle_slow_reduces_speed() {
+    let mut app = test_app();
+    let config = test_grid_config();
+
+    // Place puddle at cell (5, 5).
+    let mut terrain_map = TerrainMap::default();
+    terrain_map.cells.insert(IVec2::new(5, 5), Terrain::Puddle);
+
+    let world_pos = grid_to_world_cfg(UVec3::new(5, 5, 0), &config);
+
+    app.insert_resource(config);
+    app.insert_resource(terrain_map);
+
+    let enemy = app
+        .world_mut()
+        .spawn((
+            Enemy,
+            EnemyState::Approaching,
+            Transform::from_translation(world_pos.extend(0.0)),
+            MoveSpeed {
+                base: 100.0,
+                current: 100.0,
+            },
+        ))
+        .id();
+
+    app.add_systems(Update, apply_puddle_slow);
+    app.update();
+
+    let speed = app.world().get::<MoveSpeed>(enemy).unwrap();
+    let expected = 100.0 * PUDDLE_SLOW_FACTOR;
+    assert!(
+        (speed.current - expected).abs() < 0.01,
+        "speed should be {expected}, got {}",
+        speed.current
+    );
+}
+
+#[test]
+fn puddle_no_effect_off_puddle() {
+    let mut app = test_app();
+    let config = test_grid_config();
+
+    // Terrain map has a puddle, but the enemy is on a different cell.
+    let mut terrain_map = TerrainMap::default();
+    terrain_map.cells.insert(IVec2::new(5, 5), Terrain::Puddle);
+
+    let world_pos = grid_to_world_cfg(UVec3::new(10, 10, 0), &config);
+
+    app.insert_resource(config);
+    app.insert_resource(terrain_map);
+
+    let enemy = app
+        .world_mut()
+        .spawn((
+            Enemy,
+            EnemyState::Approaching,
+            Transform::from_translation(world_pos.extend(0.0)),
+            MoveSpeed {
+                base: 100.0,
+                current: 100.0,
+            },
+        ))
+        .id();
+
+    app.add_systems(Update, apply_puddle_slow);
+    app.update();
+
+    let speed = app.world().get::<MoveSpeed>(enemy).unwrap();
+    assert!(
+        (speed.current - 100.0).abs() < 0.01,
+        "speed should be unchanged, got {}",
+        speed.current
+    );
+}
+
+#[test]
+fn puddle_slow_idempotent_across_frames() {
+    let mut app = test_app();
+    let config = test_grid_config();
+
+    let mut terrain_map = TerrainMap::default();
+    terrain_map.cells.insert(IVec2::new(5, 5), Terrain::Puddle);
+
+    let world_pos = grid_to_world_cfg(UVec3::new(5, 5, 0), &config);
+
+    app.insert_resource(config);
+    app.insert_resource(terrain_map);
+
+    let enemy = app
+        .world_mut()
+        .spawn((
+            Enemy,
+            EnemyState::Approaching,
+            Transform::from_translation(world_pos.extend(0.0)),
+            MoveSpeed {
+                base: 100.0,
+                current: 100.0,
+            },
+        ))
+        .id();
+
+    app.add_systems(Update, apply_puddle_slow);
+
+    // Run multiple frames.
+    for _ in 0..5 {
+        app.update();
+    }
+
+    let speed = app.world().get::<MoveSpeed>(enemy).unwrap();
+    let expected = 100.0 * PUDDLE_SLOW_FACTOR;
+    assert!(
+        (speed.current - expected).abs() < 0.01,
+        "speed should stabilize at {expected}, got {}",
+        speed.current
+    );
+}
+
+// ---------------------------------------------------------------------------
+// apply_radioactive_damage
+// ---------------------------------------------------------------------------
+
+#[test]
+fn radioactive_damage_reduces_health() {
+    let mut app = test_app();
+    let config = test_grid_config();
+
+    let mut terrain_map = TerrainMap::default();
+    terrain_map
+        .cells
+        .insert(IVec2::new(5, 5), Terrain::Radioactive);
+
+    let world_pos = grid_to_world_cfg(UVec3::new(5, 5, 0), &config);
+
+    app.insert_resource(config);
+    app.insert_resource(terrain_map);
+
+    let enemy = app
+        .world_mut()
+        .spawn((
+            Enemy,
+            EnemyState::Approaching,
+            Transform::from_translation(world_pos.extend(0.0)),
+            Health {
+                current: 100.0,
+                max: 100.0,
+            },
+        ))
+        .id();
+
+    app.add_systems(Update, apply_radioactive_damage);
+
+    // First update initializes time (delta=0), second has a real delta.
+    app.update();
+    app.update();
+
+    let health = app.world().get::<Health>(enemy).unwrap();
+    assert!(
+        health.current < 100.0,
+        "health should decrease from radioactive damage, got {}",
+        health.current
+    );
+}
+
+#[test]
+fn radioactive_no_damage_off_grid() {
+    let mut app = test_app();
+    let config = test_grid_config();
+
+    let mut terrain_map = TerrainMap::default();
+    terrain_map
+        .cells
+        .insert(IVec2::new(5, 5), Terrain::Radioactive);
+
+    app.insert_resource(config);
+    app.insert_resource(terrain_map);
+
+    // Enemy far off-grid.
+    let enemy = app
+        .world_mut()
+        .spawn((
+            Enemy,
+            EnemyState::Approaching,
+            Transform::from_translation(Vec3::new(10000.0, 10000.0, 0.0)),
+            Health {
+                current: 100.0,
+                max: 100.0,
+            },
+        ))
+        .id();
+
+    app.add_systems(Update, apply_radioactive_damage);
+    app.update();
+
+    let health = app.world().get::<Health>(enemy).unwrap();
+    assert!(
+        (health.current - 100.0).abs() < 0.01,
+        "off-grid enemy should not take damage, got {}",
+        health.current
+    );
 }
