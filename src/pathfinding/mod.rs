@@ -1,10 +1,16 @@
+//! Pathfinding subsystem — recalculates enemy paths when the grid changes.
+//!
+//! Listens for [`GridChanged`] events (triggered by tower placement/sale) and
+//! recomputes goals for all active enemies based on their
+//! [`EnemyState`](crate::enemy::components::EnemyState).
+
 pub mod systems;
 
-use crate::enemy::components::{Enemy, EnemyState};
-use crate::pile::resources::{EdgeCells, PileState};
 use bevy::prelude::*;
-use bevy_northstar::prelude::AgentPos;
 
+/// Fired when the navigation grid changes (tower placed or sold).
+///
+/// Triggers [`systems::on_grid_changed`] which recalculates paths for all enemies.
 #[derive(Event)]
 pub struct GridChanged;
 
@@ -12,14 +18,6 @@ pub struct PathfindingPlugin;
 
 impl Plugin for PathfindingPlugin {
     fn build(&self, app: &mut App) {
-        app.add_observer(
-            |_trigger: On<GridChanged>,
-             commands: Commands,
-             enemies: Query<(Entity, &AgentPos, &EnemyState), With<Enemy>>,
-             pile_state: Res<PileState>,
-             edge_cells: Res<EdgeCells>| {
-                systems::recalculate_enemy_paths(commands, enemies, pile_state, edge_cells);
-            },
-        );
+        app.add_observer(systems::on_grid_changed);
     }
 }
