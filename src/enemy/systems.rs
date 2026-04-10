@@ -41,6 +41,23 @@ pub fn random_cell_jitter(rng: &mut impl Rng) -> Vec2 {
     )
 }
 
+/// How much scrap an enemy steals: the lesser of its loot capacity and
+/// the pile's current amount.
+pub fn compute_steal_amount(loot_value: u32, pile_amount: u32) -> u32 {
+    loot_value.min(pile_amount)
+}
+
+/// Whether a world-space position is within one tile of the map boundary.
+pub fn is_at_map_edge(pos: Vec2, grid_width: u32, grid_height: u32) -> bool {
+    let half_w = grid_width as f32 * TILE_SIZE / 2.0;
+    let half_h = grid_height as f32 * TILE_SIZE / 2.0;
+    let margin = TILE_SIZE;
+    pos.x <= -half_w + margin
+        || pos.x >= half_w - margin
+        || pos.y <= -half_h + margin
+        || pos.y >= half_h - margin
+}
+
 #[derive(Event)]
 pub struct EnemyDied {
     pub position: Vec2,
@@ -170,7 +187,7 @@ pub fn enemy_reached_pile(
             continue;
         }
 
-        let steal_amount = loot.0.min(pile_scrap.amount);
+        let steal_amount = compute_steal_amount(loot.0, pile_scrap.amount);
         pile_scrap.amount = pile_scrap.amount.saturating_sub(steal_amount);
 
         let flee_target = nearest_edge_cell(agent_pos.0, &edge_cells.0);
@@ -210,14 +227,7 @@ pub fn enemy_escaped(
             continue;
         }
         let pos = transform.translation.truncate();
-        let half_w = config.width as f32 * TILE_SIZE / 2.0;
-        let half_h = config.height as f32 * TILE_SIZE / 2.0;
-        let margin = TILE_SIZE;
-        let is_edge = pos.x <= -half_w + margin
-            || pos.x >= half_w - margin
-            || pos.y <= -half_h + margin
-            || pos.y >= half_h - margin;
-        if !is_edge {
+        if !is_at_map_edge(pos, config.width, config.height) {
             continue;
         }
         // Stolen scrap is permanently lost — already subtracted from pile.
@@ -646,5 +656,65 @@ mod tests {
         let mut rng1 = SmallRng::seed_from_u64(123);
         let mut rng2 = SmallRng::seed_from_u64(123);
         assert_eq!(random_cell_jitter(&mut rng1), random_cell_jitter(&mut rng2));
+    }
+
+    // -- compute_steal_amount --
+
+    #[test]
+    fn steal_amount_clamped_to_pile() {
+        assert_eq!(compute_steal_amount(10, 3), 3);
+    }
+
+    #[test]
+    fn steal_amount_clamped_to_loot() {
+        assert_eq!(compute_steal_amount(10, 100), 10);
+    }
+
+    #[test]
+    fn steal_amount_zero_pile() {
+        assert_eq!(compute_steal_amount(10, 0), 0);
+    }
+
+    #[test]
+    fn steal_amount_zero_loot() {
+        assert_eq!(compute_steal_amount(0, 100), 0);
+    }
+
+    // -- is_at_map_edge --
+
+    #[test]
+    fn edge_center_is_not_edge() {
+        assert!(!is_at_map_edge(Vec2::ZERO, 40, 32));
+    }
+
+    #[test]
+    fn edge_left_boundary() {
+        // half_w = 40 * 20 / 2 = 400; margin = 20; threshold = -380
+        assert!(is_at_map_edge(Vec2::new(-380.0, 0.0), 40, 32));
+        assert!(!is_at_map_edge(Vec2::new(-379.0, 0.0), 40, 32));
+    }
+
+    #[test]
+    fn edge_right_boundary() {
+        assert!(is_at_map_edge(Vec2::new(380.0, 0.0), 40, 32));
+        assert!(!is_at_map_edge(Vec2::new(379.0, 0.0), 40, 32));
+    }
+
+    #[test]
+    fn edge_top_boundary() {
+        // half_h = 32 * 20 / 2 = 320; margin = 20; threshold = 300
+        assert!(is_at_map_edge(Vec2::new(0.0, 300.0), 40, 32));
+        assert!(!is_at_map_edge(Vec2::new(0.0, 299.0), 40, 32));
+    }
+
+    #[test]
+    fn edge_bottom_boundary() {
+        assert!(is_at_map_edge(Vec2::new(0.0, -300.0), 40, 32));
+        assert!(!is_at_map_edge(Vec2::new(0.0, -299.0), 40, 32));
+    }
+
+    #[test]
+    fn edge_corner() {
+        assert!(is_at_map_edge(Vec2::new(-380.0, -300.0), 40, 32));
     }
 }
