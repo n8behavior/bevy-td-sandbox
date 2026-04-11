@@ -74,6 +74,19 @@ doctests work correctly.
 | `release`      | Native release                                | LTO thin, 1 codegen unit             |
 | `web-release`  | WASM release (`bevy build --release web`)     | `opt-level = "s"`, strip debuginfo    |
 
+### Tracing & debugging
+
+Bevy uses the `tracing` crate for logging. Set `RUST_LOG` to see game
+diagnostics:
+
+```bash
+RUST_LOG=bevy_td_sandbox=debug just run                 # all game diagnostics
+RUST_LOG=bevy_td_sandbox::tower=debug just run           # tower placement only
+RUST_LOG=bevy_td_sandbox::enemy=debug just run           # enemy spawns & movement
+RUST_LOG=bevy_td_sandbox::pathfinding=warn just run      # pathfinding failures & stuck enemies
+RUST_LOG=debug just run                                  # everything (very noisy)
+```
+
 ### Web / WASM builds
 
 The game compiles to WASM for browser play. Web builds require the
