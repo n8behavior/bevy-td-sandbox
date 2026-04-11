@@ -5,6 +5,7 @@ use crate::common::constants::GridConfig;
 use crate::pile::resources::{EdgeCells, PileScrap, PileState};
 use crate::pile::systems::{compute_pile_cells, pile_radius};
 use crate::stats::resources::RunStats;
+use crate::wave::resources::WaveManager;
 
 /// Minimal headless App for testing (time ticking, no window/renderer).
 pub fn test_app() -> App {
@@ -60,6 +61,16 @@ pub fn insert_empty_pile(app: &mut App, scrap: u32, config: GridConfig) {
     });
     app.insert_resource(EdgeCells(Vec::new()));
     app.insert_resource(config);
+}
+
+/// Default WaveManager for tests: wave 0, no queue, 1s timer.
+pub fn test_wave_manager() -> WaveManager {
+    WaveManager {
+        current_wave: 0,
+        waves: Vec::new(),
+        spawn_timer: Timer::from_seconds(1.0, TimerMode::Repeating),
+        spawn_queue: Vec::new(),
+    }
 }
 
 /// `RunStats` with `start_time = 0` and all counters zeroed.

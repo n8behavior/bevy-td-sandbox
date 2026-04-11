@@ -235,6 +235,26 @@ mod tests {
     use super::*;
 
     #[test]
+    fn wave_active_with_nonempty_queue() {
+        assert!(is_wave_active(false, true, true));
+    }
+
+    #[test]
+    fn wave_active_with_alive_enemies() {
+        assert!(is_wave_active(true, false, true));
+    }
+
+    #[test]
+    fn wave_active_with_pending_drops() {
+        assert!(is_wave_active(true, true, false));
+    }
+
+    #[test]
+    fn wave_inactive_when_all_empty() {
+        assert!(!is_wave_active(true, true, true));
+    }
+
+    #[test]
     fn generate_waves_produces_twenty() {
         let waves = generate_waves();
         assert_eq!(waves.len(), TOTAL_WAVES as usize);

@@ -21,7 +21,7 @@ use bevy_td_sandbox::test_helpers::*;
 use bevy_td_sandbox::tower::components::*;
 use bevy_td_sandbox::tower::systems::slow_aura;
 use bevy_td_sandbox::wave::resources::WaveManager;
-use bevy_td_sandbox::wave::systems::{check_wave_complete, on_wave_complete};
+use bevy_td_sandbox::wave::systems::{check_wave_complete, on_wave_complete, spawn_enemies};
 
 // ---------------------------------------------------------------------------
 // update_pile_state
@@ -333,12 +333,7 @@ fn wave_app(scrap: u32) -> App {
     app.update();
 
     app.insert_resource(PileScrap { amount: scrap });
-    app.insert_resource(WaveManager {
-        current_wave: 0,
-        waves: Vec::new(),
-        spawn_timer: Timer::from_seconds(1.0, TimerMode::Repeating),
-        spawn_queue: Vec::new(),
-    });
+    app.insert_resource(test_wave_manager());
 
     app.add_observer(on_wave_complete);
     app.add_systems(
@@ -443,6 +438,155 @@ fn regression_10_escaped_enemy_with_stolen_scrap() {
     app.update();
     // No Enemy entities → wave resolves → pile=0 → game over.
     assert_eq!(game_state(&app), GameState::GameOver);
+}
+
+/// Non-empty spawn queue prevents wave from completing.
+#[test]
+fn wave_does_not_resolve_with_nonempty_queue() {
+    let mut app = wave_app(100);
+    app.world_mut()
+        .resource_mut::<WaveManager>()
+        .spawn_queue
+        .push(bevy_td_sandbox::wave::resources::SpawnEntry {
+            enemy_type: EnemyType::Shambler,
+            health_multiplier: 1.0,
+            speed_multiplier: 1.0,
+            boss_trait: None,
+        });
+    app.update();
+    app.update();
+    assert_eq!(
+        *app.world().resource::<State<PlayPhase>>().get(),
+        PlayPhase::Defending,
+        "wave should not resolve while spawn queue has entries"
+    );
+}
+
+/// on_wave_complete advances current_wave when scrap > 0.
+#[test]
+fn on_wave_complete_increments_wave() {
+    let mut app = wave_app(100);
+    app.update();
+    app.update();
+    let wave_mgr = app.world().resource::<WaveManager>();
+    assert_eq!(
+        wave_mgr.current_wave, 1,
+        "current_wave should advance from 0 to 1"
+    );
+}
+
+/// Completing the last wave still transitions to Building (game continues until pile runs out).
+#[test]
+fn on_wave_complete_past_final_wave() {
+    let mut app = wave_app(100);
+    app.world_mut().resource_mut::<WaveManager>().current_wave = 19;
+    app.update();
+    app.update();
+    let wave_mgr = app.world().resource::<WaveManager>();
+    assert_eq!(
+        wave_mgr.current_wave, 20,
+        "current_wave should be 20 after completing wave 19"
+    );
+    assert_eq!(
+        *app.world().resource::<State<PlayPhase>>().get(),
+        PlayPhase::Building,
+    );
+}
+
+// ---------------------------------------------------------------------------
+// spawn_enemies
+// ---------------------------------------------------------------------------
+
+/// Helper: app with all resources needed by spawn_enemies.
+fn spawn_enemies_app() -> App {
+    use bevy_td_sandbox::common::constants::CHUNK_SIZE;
+    use bevy_td_sandbox::wave::resources::SpawnEntry;
+
+    let mut app = test_app();
+    let config = test_grid_config();
+
+    insert_pile(&mut app, 200);
+
+    // Override EdgeCells with a known edge cell (insert_pile sets empty).
+    app.insert_resource(bevy_td_sandbox::pile::resources::EdgeCells(vec![
+        UVec3::new(0, 0, 0),
+    ]));
+
+    let settings = GridSettingsBuilder::new_2d(config.width, config.height)
+        .chunk_size(CHUNK_SIZE)
+        .build();
+    let mut grid = OrdinalGrid::new(&settings);
+    for x in 0..config.width {
+        for y in 0..config.height {
+            grid.set_nav(UVec3::new(x, y, 0), Nav::Passable(1));
+        }
+    }
+    grid.build();
+    app.world_mut().spawn(grid);
+
+    let mut mgr = test_wave_manager();
+    mgr.spawn_queue.push(SpawnEntry {
+        enemy_type: EnemyType::Shambler,
+        health_multiplier: 1.0,
+        speed_multiplier: 1.0,
+        boss_trait: None,
+    });
+    mgr.spawn_timer = Timer::from_seconds(0.0, TimerMode::Repeating);
+    app.insert_resource(mgr);
+
+    // Use Update (not FixedUpdate) so the system runs with real time deltas
+    // in test. FixedUpdate doesn't accumulate enough wall-clock time between
+    // app.update() calls in a test harness.
+    app.add_systems(Update, spawn_enemies);
+    app
+}
+
+/// Timer not finished → no enemy spawned, queue intact.
+#[test]
+fn spawn_enemies_timer_gates_spawning() {
+    let mut app = spawn_enemies_app();
+    app.world_mut().resource_mut::<WaveManager>().spawn_timer =
+        Timer::from_seconds(999.0, TimerMode::Repeating);
+
+    app.update();
+
+    let enemy_count = app
+        .world_mut()
+        .query_filtered::<(), With<Enemy>>()
+        .iter(app.world())
+        .count();
+    assert_eq!(
+        enemy_count, 0,
+        "no enemy should spawn before timer finishes"
+    );
+    assert_eq!(
+        app.world().resource::<WaveManager>().spawn_queue.len(),
+        1,
+        "queue should still have the entry"
+    );
+}
+
+/// Timer fires → enemy entity spawned, queue emptied.
+#[test]
+fn spawn_enemies_pops_queue_and_spawns() {
+    let mut app = spawn_enemies_app();
+
+    // Multiple updates: first has dt=0, subsequent have real deltas
+    // that will exceed the 0.01s timer.
+    for _ in 0..3 {
+        app.update();
+    }
+
+    let enemy_count = app
+        .world_mut()
+        .query_filtered::<(), With<Enemy>>()
+        .iter(app.world())
+        .count();
+    assert_eq!(enemy_count, 1, "one enemy should be spawned from the queue");
+    assert!(
+        app.world().resource::<WaveManager>().spawn_queue.is_empty(),
+        "queue should be empty after spawning"
+    );
 }
 
 // ---------------------------------------------------------------------------
