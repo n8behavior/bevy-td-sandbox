@@ -1352,9 +1352,8 @@ fn sparkle_particles_despawn_after_timer() {
 fn spawn_impact_particles_count() {
     use bevy_td_sandbox::particles::components::ImpactParticle;
     use bevy_td_sandbox::particles::systems::spawn_impact_particles;
-    use rand::Rng;
-    use rand::SeedableRng;
     use rand::rngs::SmallRng;
+    use rand::{RngExt, SeedableRng};
 
     let mut app = test_app();
 
@@ -2040,8 +2039,7 @@ fn regression_66_three_sided_towers_enemy_still_pathfinds() {
             UVec3::new(size / 2, 0, 0),
             UVec3::new(size / 2, size - 1, 0),
         ];
-        let would_block =
-            would_block_all_paths(&mut grid, new_tower, center, &edge_midpoints);
+        let would_block = would_block_all_paths(&mut grid, new_tower, center, &edge_midpoints);
         assert!(
             !would_block,
             "placing tower at {:?} should not block all paths — south opening \

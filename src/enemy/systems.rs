@@ -1,6 +1,6 @@
 use bevy::prelude::*;
 use bevy_northstar::prelude::*;
-use rand::Rng;
+use rand::{Rng, RngExt};
 
 use bevy::sprite_render::MeshMaterial2d;
 

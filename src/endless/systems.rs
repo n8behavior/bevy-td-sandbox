@@ -1,7 +1,7 @@
 use bevy::prelude::*;
 use bevy_northstar::prelude::*;
-use rand::Rng;
 use rand::prelude::IndexedRandom;
+use rand::{Rng, RngExt};
 
 use crate::common::constants::GridConfig;
 use crate::economy::components::ScrapDrop;
@@ -294,7 +294,37 @@ pub fn pick_enemy_type(elapsed: f32, rng: &mut impl Rng) -> (EnemyType, Option<B
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rand::rngs::mock::StepRng;
+    use core::convert::Infallible;
+
+    /// Deterministic RNG replacing `StepRng` (removed in rand 0.10).
+    struct MockRng {
+        value: u64,
+        step: u64,
+    }
+
+    impl MockRng {
+        fn new(value: u64, step: u64) -> Self {
+            Self { value, step }
+        }
+    }
+
+    impl rand::TryRng for MockRng {
+        type Error = Infallible;
+
+        fn try_next_u32(&mut self) -> Result<u32, Infallible> {
+            Ok(self.try_next_u64()? as u32)
+        }
+
+        fn try_next_u64(&mut self) -> Result<u64, Infallible> {
+            let v = self.value;
+            self.value = self.value.wrapping_add(self.step);
+            Ok(v)
+        }
+
+        fn try_fill_bytes(&mut self, dst: &mut [u8]) -> Result<(), Infallible> {
+            rand::rand_core::utils::fill_bytes_via_next_word(dst, || self.try_next_u64())
+        }
+    }
 
     // -----------------------------------------------------------------------
     // can_recover
@@ -427,17 +457,17 @@ mod tests {
     }
 
     // -----------------------------------------------------------------------
-    // pick_enemy_type — deterministic tests via StepRng
+    // pick_enemy_type — deterministic tests via MockRng
     // -----------------------------------------------------------------------
 
-    /// StepRng that always returns 0.0 from `random_range` — every roll hits.
-    fn always_hit_rng() -> StepRng {
-        StepRng::new(0, 0)
+    /// MockRng that always returns 0.0 from `random_range` — every roll hits.
+    fn always_hit_rng() -> MockRng {
+        MockRng::new(0, 0)
     }
 
-    /// StepRng that always returns ~1.0 from `random_range` — every roll misses.
-    fn always_miss_rng() -> StepRng {
-        StepRng::new(u64::MAX, 0)
+    /// MockRng that always returns ~1.0 from `random_range` — every roll misses.
+    fn always_miss_rng() -> MockRng {
+        MockRng::new(u64::MAX, 0)
     }
 
     // -- threshold: 0 s (only Shambler) --
@@ -523,7 +553,7 @@ mod tests {
             BossTrait::Splitting,
         ];
         for seed in 0..20u64 {
-            let mut rng = StepRng::new(seed, seed.wrapping_add(1));
+            let mut rng = MockRng::new(seed, seed.wrapping_add(1));
             let (ty, boss) = pick_enemy_type(600.0, &mut rng);
             if ty == EnemyType::Boss {
                 assert!(

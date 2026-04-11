@@ -1,5 +1,5 @@
 use bevy::prelude::*;
-use rand::Rng;
+use rand::{Rng, RngExt};
 
 use super::components::*;
 

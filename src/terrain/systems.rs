@@ -12,7 +12,7 @@ use std::collections::HashSet;
 
 use bevy::prelude::*;
 use bevy_northstar::prelude::*;
-use rand::Rng;
+use rand::{Rng, RngExt};
 
 use crate::common::constants::*;
 use crate::enemy::components::{Enemy, Health, MoveSpeed};

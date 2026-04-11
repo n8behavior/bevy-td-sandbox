@@ -1,17 +1,17 @@
 [package]
 name = "bevy-td-sandbox"
-version = "0.1.0"
+version = "0.3.0"
 edition = "2024"
 
 [dependencies]
 bevy = { version = "0.18", features = ["2d", "bevy_audio", "wav"] }
 bevy_northstar = "0.6"
-rand = "0.9"
+rand = "0.10"
 
 # getrandom 0.3 (pulled in by rand) needs the wasm_js backend on WASM.
 # You must also pass `--cfg getrandom_backend="wasm_js"` in RUSTFLAGS for web builds.
 [target.wasm32-unknown-unknown.dependencies]
-getrandom = { version = "0.3", features = ["wasm_js"] }
+getrandom = { version = "0.4", features = ["wasm_js"] }
 
 [features]
 default = ["native"]

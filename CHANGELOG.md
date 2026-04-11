@@ -1,5 +1,40 @@
 # Changelog
 
+## v0.3.0 — Codebase Quality Pass
+
+### Bug Fixes
+
+- **Fixed enemy freeze on mid-game tower placement** (#66) — Enemies froze when towers were placed during the defend phase. Root cause: `recalculate_enemy_paths` wasn't clearing stale path state correctly.
+- **Fixed camera pan jump when cursor re-enters window** (#25) — Camera snapped unexpectedly when the mouse pointer moved back into the window.
+- **Fixed negative grid coords in pile visual update** (#46) — Guard against underflow when updating pile visuals near grid edges.
+- **Fixed leaked particle and AoE burst entities** (#51) — Particle and burst entities were never despawned, accumulating indefinitely.
+- **Balanced first boss wave to be winnable** (#13) — Tuned boss wave parameters so the first boss encounter is survivable.
+- **Fixed hardcoded sell refund and tier index bounds** (#15) — Sell refund now uses actual tower cost; added bounds check on upgrade tier index.
+
+### UI Polish
+
+- **Targeting legend, ESC quit confirmation, HUD toggle** (#12, #70, #72) — Added a targeting-mode legend overlay, ESC key quit confirmation dialog, and a key to toggle the HUD.
+
+### Refactors
+
+- **Codebase-wide pure-function extraction** — Extracted testable pure functions from ECS systems across every module: enemy, tower, economy, wave, particles, audio, camera, terrain, pathfinding, projectile, shader, grid, stats, UI, endless, and pile.
+- **Data-driven enemy stats** (#33) — Consolidated `EnemyType` stats into a single data-driven lookup table.
+- **Event-based audio** (#19, #20, #21) — Refactored audio to trigger from events/observers instead of inline system logic.
+- **Entity builders in test helpers** (#26) — Builder pattern for spawning test entities, reducing boilerplate.
+- **Shared 2D rotation helpers** — Extracted common rotation logic, adopted official Bevy pattern.
+- **Named constants, dead code removal, DRY helpers** — Across all modules: magic numbers replaced with named constants, unused code deleted, duplicated helpers consolidated.
+
+### Infrastructure
+
+- **Justfile build system** — Added `just run/check/clippy/test/ci/doc` recipes with dynamic linking for fast recompiles.
+- **Upgraded rand 0.9 → 0.10, getrandom 0.3 → 0.4**
+- **CI fixes** — Consolidated duplicate workflows, fixed doctest linker errors.
+- **README updates** — Added Fedora/Arch Linux prerequisites and tracing tips.
+
+### Testing
+
+- **364 tests** (up from 62) — Unit and integration test coverage added to every module.
+
 ## v0.2.2 — Pathing Fix & Event Cleanup
 
 ### Bug Fixes

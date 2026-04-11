@@ -59,7 +59,14 @@ pub fn log_pathfinding_failures(
 /// Periodic check (every 2 s) for enemies stuck without any pathfinding state.
 pub fn check_stuck_enemies(
     enemies: Query<
-        (Entity, &AgentPos, &EnemyState, Has<Pathfind>, Has<Path>, Has<NextPos>),
+        (
+            Entity,
+            &AgentPos,
+            &EnemyState,
+            Has<Pathfind>,
+            Has<Path>,
+            Has<NextPos>,
+        ),
         With<Enemy>,
     >,
     time: Res<Time>,
@@ -142,11 +149,7 @@ mod tests {
 
         let enemy = app
             .world_mut()
-            .spawn((
-                Enemy,
-                EnemyState::Fleeing,
-                AgentPos(UVec3::new(38, 1, 0)),
-            ))
+            .spawn((Enemy, EnemyState::Fleeing, AgentPos(UVec3::new(38, 1, 0))))
             .id();
 
         app.add_systems(Update, recalculate_enemy_paths);
@@ -209,11 +212,7 @@ mod tests {
             .id();
         let fleeing = app
             .world_mut()
-            .spawn((
-                Enemy,
-                EnemyState::Fleeing,
-                AgentPos(UVec3::new(1, 1, 0)),
-            ))
+            .spawn((Enemy, EnemyState::Fleeing, AgentPos(UVec3::new(1, 1, 0))))
             .id();
 
         app.add_systems(Update, recalculate_enemy_paths);

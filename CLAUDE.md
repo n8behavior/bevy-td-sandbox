@@ -8,7 +8,7 @@ Post-apocalyptic tower defense game. Open-field mazing, scavenging economy, wave
 
 - **Bevy 0.18.1** (2D feature set)
 - **bevy_northstar 0.6.1** (grid-based A* pathfinding)
-- **rand 0.9**
+- **rand 0.10**
 
 ## CRITICAL: Bevy 0.18 API Patterns
 

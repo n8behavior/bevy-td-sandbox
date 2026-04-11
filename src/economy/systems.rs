@@ -1,5 +1,5 @@
 use bevy::prelude::*;
-use rand::Rng;
+use rand::{Rng, RngExt};
 
 use crate::audio::{GameSound, PlaySound};
 use crate::common::constants::*;
