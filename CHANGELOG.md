@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.3.2 — Release Process
+
+### Infrastructure
+
+- **Release flight-check recipe** — `just release vX.Y.Z` validates clean tree, tag, version, changelog, and CI before creating GitHub release.
+- **Local web testing** — `just web-serve` serves web build at localhost:4000 for browser testing.
+- **Release workflow trigger** — Changed from tag push to GitHub release publish, gating itch.io deploys behind explicit human action.
+- **RELEASING.md** — Documented pre-release, cut, and post-release checklists.
+
 ## v0.3.1 — WASM Terrain Fix
 
 ### Bug Fixes
