@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.3.1 — WASM Terrain Fix
+
+### Bug Fixes
+
+- **Fixed terrain not generating on WASM/web builds** — `generate_terrain` queried for the `OrdinalGrid` entity before `spawn_nav_grid`'s deferred commands were applied. The single-threaded WASM executor scheduled these without a sync point, causing a silent early return. Fix: added explicit `.after(spawn_nav_grid)` ordering.
+
 ## v0.3.0 — Codebase Quality Pass
 
 ### Bug Fixes
