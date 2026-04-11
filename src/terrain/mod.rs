@@ -11,7 +11,9 @@ impl Plugin for TerrainPlugin {
         app.init_resource::<components::TerrainMap>()
             .add_systems(
                 OnEnter(GameState::Playing),
-                systems::generate_terrain.after(crate::pile::init_pile),
+                systems::generate_terrain
+                    .after(crate::pile::init_pile)
+                    .after(crate::grid::systems::spawn_nav_grid),
             )
             .add_systems(
                 FixedUpdate,
