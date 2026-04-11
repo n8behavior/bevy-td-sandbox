@@ -4,6 +4,7 @@ use bevy::prelude::*;
 
 use crate::audio::{GameSound, PlaySound};
 use crate::common::constants::*;
+use crate::common::math::{angle_to_dir, rotate_toward};
 use crate::economy::components::ScrapDrop;
 use crate::enemy::components::{DamageFlash, Enemy, Health, SlowEffect};
 use crate::grid::systems::grid_to_world_cfg;
@@ -86,9 +87,8 @@ pub(crate) fn is_aimed_at(
     tower_pos: Vec2,
     tolerance: f32,
 ) -> bool {
-    let to_target = target_tf.translation.truncate() - tower_pos;
-    let desired = Quat::from_rotation_z(to_target.y.atan2(to_target.x));
-    tower_tf.rotation.angle_between(desired) <= tolerance
+    let to_target = (target_tf.translation.truncate() - tower_pos).normalize();
+    angle_to_dir(tower_tf, to_target) <= tolerance
 }
 
 /// Check whether a target entity is still alive and in range.
@@ -376,31 +376,15 @@ pub fn rotate_towers_to_target(
         if !tower_state.is_placed() {
             continue;
         }
-        let target_angle =
-            turret_state
-                .target()
-                .and_then(|e| targets.get(e).ok())
-                .map(|target_tf| {
-                    let dir = target_tf.translation.truncate() - tower_tf.translation.truncate();
-                    dir.y.atan2(dir.x)
-                });
+        let target_dir = turret_state
+            .target()
+            .and_then(|e| targets.get(e).ok())
+            .map(|target_tf| {
+                (target_tf.translation.truncate() - tower_tf.translation.truncate()).normalize()
+            });
 
-        let goal = match target_angle {
-            Some(angle) => Quat::from_rotation_z(angle),
-            None => Quat::IDENTITY,
-        };
-
-        // Shortest-arc slerp.
-        let dot = tower_tf.rotation.dot(goal);
-        let goal = if dot < 0.0 { -goal } else { goal };
-        let angle_remaining = tower_tf.rotation.angle_between(goal);
-        let max_step = TOWER_ROTATION_SPEED * time.delta_secs();
-        let t = if angle_remaining > 0.0 {
-            (max_step / angle_remaining).min(1.0)
-        } else {
-            1.0
-        };
-        tower_tf.rotation = tower_tf.rotation.slerp(goal, t);
+        let dir = target_dir.unwrap_or(Vec2::X);
+        rotate_toward(&mut tower_tf, dir, TOWER_ROTATION_SPEED, time.delta_secs());
     }
 }
 

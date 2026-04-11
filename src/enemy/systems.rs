@@ -7,6 +7,7 @@ use bevy::sprite_render::MeshMaterial2d;
 use crate::audio::{GameSound, PlaySound};
 use crate::camera::components::ScreenShake;
 use crate::common::constants::{GridConfig, SCRAP_COLOR, TILE_SIZE};
+use crate::common::math::rotate_toward;
 use crate::grid::systems::{grid_to_world_cfg, world_to_grid};
 use crate::particles::systems::spawn_death_particles;
 use crate::pile::resources::{EdgeCells, PileScrap, PileState};
@@ -95,29 +96,31 @@ pub fn enemy_movement(
 ) {
     let mut rng = rand::rng();
     for (entity, mut agent_pos, next_pos, mut transform, speed, jitter) in &mut query {
+        // Each enemy walks toward a jittered point within the next grid cell
+        // so that enemies on the same path don't stack on identical pixels.
         let jitter_vec = jitter.as_deref().map_or(Vec2::ZERO, |j| j.0);
         let target_world = (grid_to_world_cfg(next_pos.0, &config) + jitter_vec).extend(1.0);
-        let current = transform.translation;
-        let direction = target_world - current;
+        let direction = target_world - transform.translation;
         let distance = direction.length();
 
         // Rotate toward direction of travel.
         if distance > 1.0 {
-            let dir2 = direction.truncate();
-            let goal = Quat::from_rotation_z(dir2.y.atan2(dir2.x));
-            let dot = transform.rotation.dot(goal);
-            let goal = if dot < 0.0 { -goal } else { goal };
-            let angle_remaining = transform.rotation.angle_between(goal);
-            let max_step = ENEMY_ROTATION_SPEED * time.delta_secs();
-            let t = if angle_remaining > 0.0 {
-                (max_step / angle_remaining).min(1.0)
-            } else {
-                1.0
-            };
-            transform.rotation = transform.rotation.slerp(goal, t);
+            let to_target = direction.truncate().normalize();
+            rotate_toward(
+                &mut transform,
+                to_target,
+                ENEMY_ROTATION_SPEED,
+                time.delta_secs(),
+            );
         }
 
-        if distance < 1.0 {
+        // Move toward the jittered target; snap on arrival.
+        let step_size = speed.current * time.delta_secs();
+        let arrived = distance < 1.0 || step_size >= distance;
+
+        if arrived {
+            // Snap to cell, advance pathfinding, and roll a fresh jitter
+            // offset for the next leg.
             agent_pos.0 = next_pos.0;
             transform.translation = target_world;
             commands.entity(entity).remove::<NextPos>();
@@ -125,17 +128,7 @@ pub fn enemy_movement(
                 .entity(entity)
                 .insert(CellJitter(random_cell_jitter(&mut rng)));
         } else {
-            let step = direction.normalize() * speed.current * time.delta_secs();
-            if step.length() >= distance {
-                agent_pos.0 = next_pos.0;
-                transform.translation = target_world;
-                commands.entity(entity).remove::<NextPos>();
-                commands
-                    .entity(entity)
-                    .insert(CellJitter(random_cell_jitter(&mut rng)));
-            } else {
-                transform.translation += step;
-            }
+            transform.translation += direction / distance * step_size;
         }
     }
 }
