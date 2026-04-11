@@ -8,11 +8,40 @@ const LABEL_COLOR: Color = Color::srgb(0.95, 0.85, 0.5);
 const HINT_COLOR: Color = Color::srgb(0.7, 0.65, 0.5);
 const STAT_COLOR: Color = Color::srgb(0.6, 0.6, 0.55);
 
+/// Index into the tower palette, stored on each tower-selection button.
 #[derive(Component)]
-pub struct TowerButton(pub usize);
+pub struct TowerPaletteIndex(pub usize);
 
+/// Marker for the wave preview panel (right side of screen).
 #[derive(Component)]
 pub struct WavePreviewPanel;
+
+/// Which screen edge a UI panel is anchored to.
+enum PanelSide {
+    Left,
+    Right,
+}
+
+/// Builds the common component bundle for a bottom-anchored UI panel.
+fn panel_node(side: PanelSide) -> (Node, BackgroundColor, DespawnOnExit<GameState>) {
+    let mut node = Node {
+        position_type: PositionType::Absolute,
+        bottom: Val::Px(10.0),
+        flex_direction: FlexDirection::Column,
+        row_gap: Val::Px(4.0),
+        padding: UiRect::all(Val::Px(10.0)),
+        ..default()
+    };
+    match side {
+        PanelSide::Left => node.left = Val::Px(10.0),
+        PanelSide::Right => node.right = Val::Px(10.0),
+    }
+    (
+        node,
+        BackgroundColor(Color::srgba(0.12, 0.1, 0.08, 0.85)),
+        DespawnOnExit(GameState::Playing),
+    )
+}
 
 pub fn setup_tower_palette(
     mut commands: Commands,
@@ -20,19 +49,7 @@ pub fn setup_tower_palette(
     game_mode: Res<GameMode>,
 ) {
     commands
-        .spawn((
-            Node {
-                position_type: PositionType::Absolute,
-                bottom: Val::Px(10.0),
-                left: Val::Px(10.0),
-                flex_direction: FlexDirection::Column,
-                row_gap: Val::Px(4.0),
-                padding: UiRect::all(Val::Px(10.0)),
-                ..default()
-            },
-            BackgroundColor(Color::srgba(0.12, 0.1, 0.08, 0.85)),
-            DespawnOnExit(GameState::Playing),
-        ))
+        .spawn(panel_node(PanelSide::Left))
         .with_children(|parent| {
             parent.spawn((
                 Text::new(format!("TOWERS (1-{})", registry.blueprints.len())),
@@ -62,7 +79,7 @@ pub fn setup_tower_palette(
                             flex_direction: FlexDirection::Column,
                             ..default()
                         },
-                        TowerButton(i),
+                        TowerPaletteIndex(i),
                     ))
                     .with_children(|btn| {
                         btn.spawn((
@@ -98,25 +115,15 @@ pub fn setup_tower_palette(
 
     // Wave preview panel (right side, shown during Building phase)
     commands.spawn((
-        Node {
-            position_type: PositionType::Absolute,
-            bottom: Val::Px(10.0),
-            right: Val::Px(10.0),
-            flex_direction: FlexDirection::Column,
-            row_gap: Val::Px(4.0),
-            padding: UiRect::all(Val::Px(10.0)),
-            ..default()
-        },
-        BackgroundColor(Color::srgba(0.12, 0.1, 0.08, 0.85)),
+        panel_node(PanelSide::Right),
         Visibility::Hidden,
         WavePreviewPanel,
-        DespawnOnExit(GameState::Playing),
     ));
 }
 
 pub fn highlight_selected_tower(
     selected: Res<SelectedTower>,
-    mut buttons: Query<(&TowerButton, &mut BackgroundColor)>,
+    mut buttons: Query<(&TowerPaletteIndex, &mut BackgroundColor)>,
 ) {
     for (btn, mut bg) in &mut buttons {
         if selected.index == Some(btn.0) {

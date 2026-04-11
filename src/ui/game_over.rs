@@ -53,12 +53,11 @@ pub fn setup_main_menu(mut commands: Commands) {
         });
 }
 
-#[cfg(not(target_arch = "wasm32"))]
-pub fn handle_main_menu_input(
-    keyboard: Res<ButtonInput<KeyCode>>,
-    mut next_state: ResMut<NextState<GameState>>,
-    mut game_mode: ResMut<GameMode>,
-    mut exit: MessageWriter<AppExit>,
+/// Shared main-menu key handling: Space → Classic, E → Endless.
+fn apply_main_menu_keys(
+    keyboard: &ButtonInput<KeyCode>,
+    next_state: &mut NextState<GameState>,
+    game_mode: &mut GameMode,
 ) {
     if keyboard.just_pressed(KeyCode::Space) {
         *game_mode = GameMode::Classic;
@@ -68,6 +67,16 @@ pub fn handle_main_menu_input(
         *game_mode = GameMode::Endless;
         next_state.set(GameState::Playing);
     }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+pub fn handle_main_menu_input(
+    keyboard: Res<ButtonInput<KeyCode>>,
+    mut next_state: ResMut<NextState<GameState>>,
+    mut game_mode: ResMut<GameMode>,
+    mut exit: MessageWriter<AppExit>,
+) {
+    apply_main_menu_keys(&keyboard, &mut next_state, &mut game_mode);
     if keyboard.just_pressed(KeyCode::Escape) {
         exit.write(AppExit::Success);
     }
@@ -79,14 +88,7 @@ pub fn handle_main_menu_input(
     mut next_state: ResMut<NextState<GameState>>,
     mut game_mode: ResMut<GameMode>,
 ) {
-    if keyboard.just_pressed(KeyCode::Space) {
-        *game_mode = GameMode::Classic;
-        next_state.set(GameState::Playing);
-    }
-    if keyboard.just_pressed(KeyCode::KeyE) {
-        *game_mode = GameMode::Endless;
-        next_state.set(GameState::Playing);
-    }
+    apply_main_menu_keys(&keyboard, &mut next_state, &mut game_mode);
 }
 
 pub fn setup_game_over(
@@ -206,15 +208,20 @@ pub fn setup_game_over(
         });
 }
 
+/// Shared game-over key handling: Space → MainMenu.
+fn apply_game_over_keys(keyboard: &ButtonInput<KeyCode>, next_state: &mut NextState<GameState>) {
+    if keyboard.just_pressed(KeyCode::Space) {
+        next_state.set(GameState::MainMenu);
+    }
+}
+
 #[cfg(not(target_arch = "wasm32"))]
 pub fn handle_game_over_input(
     keyboard: Res<ButtonInput<KeyCode>>,
     mut next_state: ResMut<NextState<GameState>>,
     mut exit: MessageWriter<AppExit>,
 ) {
-    if keyboard.just_pressed(KeyCode::Space) {
-        next_state.set(GameState::MainMenu);
-    }
+    apply_game_over_keys(&keyboard, &mut next_state);
     if keyboard.just_pressed(KeyCode::Escape) {
         exit.write(AppExit::Success);
     }
@@ -225,7 +232,72 @@ pub fn handle_game_over_input(
     keyboard: Res<ButtonInput<KeyCode>>,
     mut next_state: ResMut<NextState<GameState>>,
 ) {
-    if keyboard.just_pressed(KeyCode::Space) {
-        next_state.set(GameState::MainMenu);
+    apply_game_over_keys(&keyboard, &mut next_state);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn main_menu_space_selects_classic() {
+        let mut keys = ButtonInput::<KeyCode>::default();
+        keys.press(KeyCode::Space);
+        let mut next_state = NextState::<GameState>::default();
+        let mut game_mode = GameMode::default();
+
+        apply_main_menu_keys(&keys, &mut next_state, &mut game_mode);
+
+        assert_eq!(game_mode, GameMode::Classic);
+        assert!(matches!(next_state, NextState::Pending(GameState::Playing)));
+    }
+
+    #[test]
+    fn main_menu_e_selects_endless() {
+        let mut keys = ButtonInput::<KeyCode>::default();
+        keys.press(KeyCode::KeyE);
+        let mut next_state = NextState::<GameState>::default();
+        let mut game_mode = GameMode::default();
+
+        apply_main_menu_keys(&keys, &mut next_state, &mut game_mode);
+
+        assert_eq!(game_mode, GameMode::Endless);
+        assert!(matches!(next_state, NextState::Pending(GameState::Playing)));
+    }
+
+    #[test]
+    fn main_menu_no_key_is_noop() {
+        let keys = ButtonInput::<KeyCode>::default();
+        let mut next_state = NextState::<GameState>::default();
+        let mut game_mode = GameMode::default();
+
+        apply_main_menu_keys(&keys, &mut next_state, &mut game_mode);
+
+        assert_eq!(game_mode, GameMode::Classic); // unchanged default
+        assert!(matches!(next_state, NextState::Unchanged));
+    }
+
+    #[test]
+    fn game_over_space_returns_to_menu() {
+        let mut keys = ButtonInput::<KeyCode>::default();
+        keys.press(KeyCode::Space);
+        let mut next_state = NextState::<GameState>::default();
+
+        apply_game_over_keys(&keys, &mut next_state);
+
+        assert!(matches!(
+            next_state,
+            NextState::Pending(GameState::MainMenu)
+        ));
+    }
+
+    #[test]
+    fn game_over_no_key_is_noop() {
+        let keys = ButtonInput::<KeyCode>::default();
+        let mut next_state = NextState::<GameState>::default();
+
+        apply_game_over_keys(&keys, &mut next_state);
+
+        assert!(matches!(next_state, NextState::Unchanged));
     }
 }

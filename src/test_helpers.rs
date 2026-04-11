@@ -4,6 +4,7 @@ use std::collections::HashSet;
 use crate::common::constants::GridConfig;
 use crate::pile::resources::{EdgeCells, PileScrap, PileState};
 use crate::pile::systems::{compute_pile_cells, pile_radius};
+use crate::states::{GameMode, GameState, PlayPhase};
 use crate::stats::resources::RunStats;
 use crate::wave::resources::WaveManager;
 
@@ -76,6 +77,28 @@ pub fn test_wave_manager() -> WaveManager {
 /// `RunStats` with `start_time = 0` and all counters zeroed.
 pub fn make_test_stats() -> RunStats {
     RunStats::new(0.0)
+}
+
+/// Minimal headless App for UI system testing.
+///
+/// Sets up states ([`GameState`], [`PlayPhase`]) and [`GameMode`] resource,
+/// then transitions to `Playing` / `Building` so UI systems can run.
+pub fn ui_app() -> App {
+    let mut app = test_app();
+    app.init_state::<GameState>();
+    app.add_sub_state::<PlayPhase>();
+    app.init_resource::<GameMode>();
+
+    app.world_mut()
+        .resource_mut::<NextState<GameState>>()
+        .set(GameState::Playing);
+    app.update();
+    app.world_mut()
+        .resource_mut::<NextState<PlayPhase>>()
+        .set(PlayPhase::Building);
+    app.update();
+
+    app
 }
 
 /// Sensible `BaseStats` defaults for unit tests. Only `cost` varies; other

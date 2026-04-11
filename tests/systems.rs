@@ -7,6 +7,7 @@ use bevy_td_sandbox::common::constants::{
     PAPER_COLOR, PILE_COLLECTOR_RANGE, PILE_COLOR, PUDDLE_SLOW_FACTOR, SCRAP_MAGNET_RANGE,
 };
 use bevy_td_sandbox::economy::components::ScrapDrop;
+use bevy_td_sandbox::endless::resources::EndlessSpawner;
 use bevy_td_sandbox::enemy::components::*;
 use bevy_td_sandbox::grid::components::GridCell;
 use bevy_td_sandbox::grid::systems::grid_to_world_cfg;
@@ -14,13 +15,16 @@ use bevy_td_sandbox::pathfinding::systems::recalculate_enemy_paths;
 use bevy_td_sandbox::pile::components::PileCell;
 use bevy_td_sandbox::pile::resources::{PileScrap, PileState};
 use bevy_td_sandbox::pile::systems::{update_pile_state, update_pile_visuals};
-use bevy_td_sandbox::states::{GameState, PlayPhase};
+use bevy_td_sandbox::states::{GameMode, GameState, PlayPhase};
 use bevy_td_sandbox::terrain::components::{Terrain, TerrainMap};
 use bevy_td_sandbox::terrain::systems::{apply_puddle_slow, apply_radioactive_damage};
 use bevy_td_sandbox::test_helpers::*;
 use bevy_td_sandbox::tower::components::*;
+use bevy_td_sandbox::tower::placement::SelectedTower;
 use bevy_td_sandbox::tower::systems::slow_aura;
-use bevy_td_sandbox::wave::resources::WaveManager;
+use bevy_td_sandbox::ui::hud::*;
+use bevy_td_sandbox::ui::tower_menu::{TowerPaletteIndex, highlight_selected_tower};
+use bevy_td_sandbox::wave::resources::{WaveConfig, WaveManager};
 use bevy_td_sandbox::wave::systems::{check_wave_complete, on_wave_complete, spawn_enemies};
 
 // ---------------------------------------------------------------------------
@@ -1532,4 +1536,268 @@ fn sparkle_particles_float_upward() {
         "sparkle should float upward, got y={}",
         tf.translation.y
     );
+}
+
+// ---------------------------------------------------------------------------
+// update_hud — wiring verification
+// Verifies the system reads resources/queries and writes to the correct Text
+// entities. Formatting correctness is covered by unit tests in hud::tests.
+// ---------------------------------------------------------------------------
+
+/// Spawn all five HUD marker entities so the `Without<>` queries resolve.
+fn spawn_hud_text(app: &mut App) {
+    app.world_mut()
+        .spawn((Text::new(""), TextColor::default(), ScrapText));
+    app.world_mut()
+        .spawn((Text::new(""), TextColor::default(), GroundScrapText));
+    app.world_mut()
+        .spawn((Text::new(""), TextColor::default(), StolenScrapText));
+    app.world_mut()
+        .spawn((Text::new(""), TextColor::default(), WaveText));
+    app.world_mut()
+        .spawn((Text::new(""), TextColor::default(), PhaseText));
+}
+
+#[test]
+fn hud_updates_scrap_texts() {
+    let mut app = ui_app();
+    app.insert_resource(PileScrap { amount: 42 });
+    app.insert_resource(test_wave_manager());
+    spawn_hud_text(&mut app);
+
+    // Spawn some ground drops and stolen-scrap enemies.
+    app.world_mut().spawn(ScrapDrop {
+        value: 10,
+        lifetime: Timer::from_seconds(5.0, TimerMode::Once),
+    });
+    app.world_mut().spawn(ScrapDrop {
+        value: 5,
+        lifetime: Timer::from_seconds(5.0, TimerMode::Once),
+    });
+    app.world_mut().spawn((Enemy, StolenScrap(7)));
+
+    app.add_systems(Update, update_hud.run_if(in_state(GameState::Playing)));
+    app.update();
+
+    let scrap = app
+        .world_mut()
+        .query_filtered::<&Text, With<ScrapText>>()
+        .single(app.world())
+        .unwrap();
+    assert_eq!(**scrap, "Pile: 42");
+
+    let ground = app
+        .world_mut()
+        .query_filtered::<&Text, With<GroundScrapText>>()
+        .single(app.world())
+        .unwrap();
+    assert_eq!(**ground, "Ground: 15");
+
+    let stolen = app
+        .world_mut()
+        .query_filtered::<&Text, With<StolenScrapText>>()
+        .single(app.world())
+        .unwrap();
+    assert_eq!(**stolen, "Stolen: 7");
+}
+
+#[test]
+fn hud_scrap_texts_empty_world() {
+    let mut app = ui_app();
+    app.insert_resource(PileScrap { amount: 0 });
+    app.insert_resource(test_wave_manager());
+    spawn_hud_text(&mut app);
+
+    app.add_systems(Update, update_hud.run_if(in_state(GameState::Playing)));
+    app.update();
+
+    let ground = app
+        .world_mut()
+        .query_filtered::<&Text, With<GroundScrapText>>()
+        .single(app.world())
+        .unwrap();
+    assert_eq!(**ground, "Ground: 0");
+
+    let stolen = app
+        .world_mut()
+        .query_filtered::<&Text, With<StolenScrapText>>()
+        .single(app.world())
+        .unwrap();
+    assert_eq!(**stolen, "Stolen: 0");
+}
+
+#[test]
+fn hud_wave_text_classic_mode() {
+    let mut app = ui_app();
+    app.insert_resource(PileScrap { amount: 100 });
+    let mut wm = test_wave_manager();
+    wm.current_wave = 4;
+    wm.waves = (0..20)
+        .map(|_| WaveConfig {
+            enemies: Vec::new(),
+            spawn_interval: 1.0,
+        })
+        .collect();
+    app.insert_resource(wm);
+    spawn_hud_text(&mut app);
+
+    app.add_systems(Update, update_hud.run_if(in_state(GameState::Playing)));
+    app.update();
+
+    let wave = app
+        .world_mut()
+        .query_filtered::<&Text, With<WaveText>>()
+        .single(app.world())
+        .unwrap();
+    assert_eq!(**wave, "Wave: 5 / 20");
+}
+
+#[test]
+fn hud_wave_text_endless_mode() {
+    let mut app = ui_app();
+    app.insert_resource(GameMode::Endless);
+    app.insert_resource(PileScrap { amount: 100 });
+    app.insert_resource(EndlessSpawner {
+        elapsed_time: 125.0,
+        spawn_timer: Timer::from_seconds(1.0, TimerMode::Repeating),
+        enemies_spawned: 0,
+    });
+    spawn_hud_text(&mut app);
+
+    app.add_systems(Update, update_hud.run_if(in_state(GameState::Playing)));
+    app.update();
+
+    let wave = app
+        .world_mut()
+        .query_filtered::<&Text, With<WaveText>>()
+        .single(app.world())
+        .unwrap();
+    assert_eq!(**wave, "Time: 02:05");
+}
+
+#[test]
+fn hud_phase_text_building() {
+    let mut app = ui_app();
+    app.insert_resource(PileScrap { amount: 100 });
+    app.insert_resource(test_wave_manager());
+    spawn_hud_text(&mut app);
+
+    app.add_systems(Update, update_hud.run_if(in_state(GameState::Playing)));
+    app.update();
+
+    let (text, color) = app
+        .world_mut()
+        .query_filtered::<(&Text, &TextColor), With<PhaseText>>()
+        .single(app.world())
+        .unwrap();
+    assert_eq!(**text, "BUILDING [Enter]");
+    assert_eq!(color.0, Color::srgb(0.3, 0.9, 0.3));
+}
+
+#[test]
+fn hud_phase_text_defending() {
+    let mut app = ui_app();
+    // Transition to Defending phase.
+    app.world_mut()
+        .resource_mut::<NextState<PlayPhase>>()
+        .set(PlayPhase::Defending);
+    app.update();
+
+    app.insert_resource(PileScrap { amount: 100 });
+    app.insert_resource(test_wave_manager());
+    spawn_hud_text(&mut app);
+
+    app.add_systems(Update, update_hud.run_if(in_state(GameState::Playing)));
+    app.update();
+
+    let (text, color) = app
+        .world_mut()
+        .query_filtered::<(&Text, &TextColor), With<PhaseText>>()
+        .single(app.world())
+        .unwrap();
+    assert_eq!(**text, "DEFENDING");
+    assert_eq!(color.0, Color::srgb(0.9, 0.3, 0.3));
+}
+
+#[test]
+fn hud_phase_text_endless() {
+    let mut app = ui_app();
+    app.insert_resource(GameMode::Endless);
+    app.insert_resource(PileScrap { amount: 100 });
+    app.insert_resource(EndlessSpawner {
+        elapsed_time: 0.0,
+        spawn_timer: Timer::from_seconds(1.0, TimerMode::Repeating),
+        enemies_spawned: 0,
+    });
+    spawn_hud_text(&mut app);
+
+    app.add_systems(Update, update_hud.run_if(in_state(GameState::Playing)));
+    app.update();
+
+    let (text, color) = app
+        .world_mut()
+        .query_filtered::<(&Text, &TextColor), With<PhaseText>>()
+        .single(app.world())
+        .unwrap();
+    assert_eq!(**text, "ENDLESS");
+    assert_eq!(color.0, Color::srgb(0.9, 0.6, 0.2));
+}
+
+// ---------------------------------------------------------------------------
+// highlight_selected_tower — wiring verification
+// ---------------------------------------------------------------------------
+
+#[test]
+fn tower_highlight_selected() {
+    let mut app = ui_app();
+    app.insert_resource(SelectedTower {
+        index: Some(1),
+        entity: None,
+    });
+
+    app.world_mut()
+        .spawn((TowerPaletteIndex(0), BackgroundColor(Color::NONE)));
+    app.world_mut()
+        .spawn((TowerPaletteIndex(1), BackgroundColor(Color::NONE)));
+
+    app.add_systems(Update, highlight_selected_tower);
+    app.update();
+
+    let mut results: Vec<(usize, BackgroundColor)> = app
+        .world_mut()
+        .query::<(&TowerPaletteIndex, &BackgroundColor)>()
+        .iter(app.world())
+        .map(|(idx, bg)| (idx.0, *bg))
+        .collect();
+    results.sort_by_key(|(idx, _)| *idx);
+
+    assert_eq!(results[0].1, BackgroundColor(Color::NONE));
+    assert_eq!(
+        results[1].1,
+        BackgroundColor(Color::srgba(0.5, 0.45, 0.2, 0.6))
+    );
+}
+
+#[test]
+fn tower_highlight_deselected() {
+    let mut app = ui_app();
+    app.insert_resource(SelectedTower {
+        index: None,
+        entity: None,
+    });
+
+    app.world_mut()
+        .spawn((TowerPaletteIndex(0), BackgroundColor(Color::WHITE)));
+    app.world_mut()
+        .spawn((TowerPaletteIndex(1), BackgroundColor(Color::WHITE)));
+
+    app.add_systems(Update, highlight_selected_tower);
+    app.update();
+
+    let all_none = app
+        .world_mut()
+        .query::<&BackgroundColor>()
+        .iter(app.world())
+        .all(|bg| *bg == BackgroundColor(Color::NONE));
+    assert!(all_none, "all buttons should be deselected");
 }
