@@ -30,6 +30,8 @@ There are **20 waves** of increasing difficulty.
 | **U** | Upgrade inspected tower |
 | **M** | Upgrade magnet tier (inspection) |
 | **Escape** | Close targeting menu / Close inspection / Deselect tower |
+| **Escape x2** | Quit game (confirmation banner appears after first press) |
+| **Tab** | Toggle HUD panels on/off |
 | **Enter** | Start next wave (Building phase) |
 | **Scroll Wheel** | Zoom in/out |
 | **Middle Mouse Drag** | Pan camera |

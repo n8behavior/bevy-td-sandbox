@@ -1,6 +1,8 @@
+use crate::enemy::components::Enemy;
 use crate::states::{GameMode, GameState, PlayPhase};
-use crate::tower::components::TowerRegistry;
+use crate::tower::components::{TargetingMode, TowerRegistry};
 use crate::tower::placement::SelectedTower;
+use crate::ui::hud::{HudPanel, HudState};
 use crate::wave::resources::{BossTrait, WaveManager};
 use bevy::prelude::*;
 
@@ -49,7 +51,7 @@ pub fn setup_tower_palette(
     game_mode: Res<GameMode>,
 ) {
     commands
-        .spawn(panel_node(PanelSide::Left))
+        .spawn((panel_node(PanelSide::Left), HudPanel))
         .with_children(|parent| {
             parent.spawn((
                 Text::new(format!("TOWERS (1-{})", registry.blueprints.len())),
@@ -98,10 +100,19 @@ pub fn setup_tower_palette(
                     });
             }
 
+            parent.spawn((
+                Text::new(format_targeting_legend()),
+                TextColor(HINT_COLOR),
+                TextFont {
+                    font_size: 12.0,
+                    ..default()
+                },
+            ));
+
             let hints = if *game_mode == GameMode::Endless {
-                "\nESC: Deselect\nESC ESC: Quit"
+                "\nTab: Toggle HUD\nESC: Deselect\nESC ESC: Quit"
             } else {
-                "\nENTER: Start Wave\nESC: Deselect\nESC ESC: Quit"
+                "\nENTER: Start Wave\nTab: Toggle HUD\nESC: Deselect\nESC ESC: Quit"
             };
             parent.spawn((
                 Text::new(hints),
@@ -113,10 +124,11 @@ pub fn setup_tower_palette(
             ));
         });
 
-    // Wave preview panel (right side, shown during Building phase)
+    // Wave preview panel (right side, content adapts per phase)
     commands.spawn((
         panel_node(PanelSide::Right),
         Visibility::Hidden,
+        HudPanel,
         WavePreviewPanel,
     ));
 }
@@ -134,16 +146,46 @@ pub fn highlight_selected_tower(
     }
 }
 
+// ---------------------------------------------------------------------------
+// Pure formatting helpers (testable without ECS)
+// ---------------------------------------------------------------------------
+
+/// Formats the targeting mode legend for the tower palette.
+///
+/// Uses [`TargetingMode::label()`] so the legend stays in sync with the
+/// single-letter codes shown on tower sprites.
+pub(crate) fn format_targeting_legend() -> String {
+    format!(
+        "\nTARGETING\n{}: Closest    {}: High HP\n{}: Low HP     {}: Furthest",
+        TargetingMode::Closest.label(),
+        TargetingMode::HighestHp.label(),
+        TargetingMode::LowestHp.label(),
+        TargetingMode::FurthestAlongPath.label(),
+    )
+}
+
+/// Formats the condensed enemy status shown during the Defending phase.
+pub(crate) fn format_defend_status(alive: usize, queued: usize) -> String {
+    format!("Enemies: {alive} alive, {queued} queued")
+}
+
 pub fn update_wave_preview(
     mut commands: Commands,
     game_mode: Res<GameMode>,
     wave_mgr: Option<Res<WaveManager>>,
     phase: Option<Res<State<PlayPhase>>>,
+    hud_state: Res<HudState>,
+    enemies: Query<(), With<Enemy>>,
     mut panel_query: Query<(Entity, &mut Visibility), With<WavePreviewPanel>>,
 ) {
     let Ok((panel_entity, mut vis)) = panel_query.single_mut() else {
         return;
     };
+
+    // Respect HUD toggle.
+    if !hud_state.is_visible() {
+        return;
+    }
 
     // No wave preview in Endless mode.
     if *game_mode == GameMode::Endless {
@@ -157,10 +199,6 @@ pub fn update_wave_preview(
     };
 
     let is_building = phase.is_some_and(|p| *p.get() == PlayPhase::Building);
-    if !is_building {
-        *vis = Visibility::Hidden;
-        return;
-    }
 
     *vis = Visibility::Inherited;
 
@@ -168,6 +206,36 @@ pub fn update_wave_preview(
     commands.entity(panel_entity).despawn_related::<Children>();
 
     let wave_idx = wave_mgr.current_wave as usize;
+
+    if !is_building {
+        // Defending phase: show condensed enemy status.
+        let alive = enemies.iter().count();
+        let queued = wave_mgr.spawn_queue.len();
+        commands.entity(panel_entity).with_children(|parent| {
+            parent.spawn((
+                Text::new(format!(
+                    "== WAVE {}/{} ==",
+                    wave_idx + 1,
+                    wave_mgr.waves.len()
+                )),
+                TextColor(LABEL_COLOR),
+                TextFont {
+                    font_size: 15.0,
+                    ..default()
+                },
+            ));
+            parent.spawn((
+                Text::new(format_defend_status(alive, queued)),
+                TextColor(STAT_COLOR),
+                TextFont {
+                    font_size: 13.0,
+                    ..default()
+                },
+            ));
+        });
+        return;
+    }
+
     if wave_idx >= wave_mgr.waves.len() {
         commands.entity(panel_entity).with_children(|parent| {
             parent.spawn((
@@ -240,4 +308,31 @@ pub fn update_wave_preview(
             },
         ));
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn targeting_legend_contains_all_modes() {
+        let legend = format_targeting_legend();
+        for mode in TargetingMode::ALL {
+            assert!(
+                legend.contains(mode.label()),
+                "legend missing label for {:?}",
+                mode,
+            );
+        }
+        assert!(legend.contains("Closest"));
+        assert!(legend.contains("High HP"));
+        assert!(legend.contains("Low HP"));
+        assert!(legend.contains("Furthest"));
+    }
+
+    #[test]
+    fn defend_status_formats_counts() {
+        assert_eq!(format_defend_status(5, 3), "Enemies: 5 alive, 3 queued");
+        assert_eq!(format_defend_status(0, 0), "Enemies: 0 alive, 0 queued");
+    }
 }

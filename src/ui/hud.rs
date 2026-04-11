@@ -7,6 +7,69 @@ use crate::states::{GameMode, GameState, PlayPhase};
 use crate::wave::resources::WaveManager;
 use bevy::prelude::*;
 
+// ---------------------------------------------------------------------------
+// HUD visibility state machine
+// ---------------------------------------------------------------------------
+
+/// Whether the HUD panels are currently shown or hidden.
+#[derive(Resource, Default, PartialEq, Eq, Debug, Clone, Copy)]
+pub enum HudState {
+    #[default]
+    Visible,
+    Hidden,
+}
+
+impl HudState {
+    /// Returns true when panels should be rendered.
+    pub fn is_visible(self) -> bool {
+        self == Self::Visible
+    }
+
+    /// Returns the opposite state.
+    pub fn toggled(self) -> Self {
+        match self {
+            Self::Visible => Self::Hidden,
+            Self::Hidden => Self::Visible,
+        }
+    }
+}
+
+/// Marker for root UI nodes that participate in the HUD toggle.
+#[derive(Component)]
+pub struct HudPanel;
+
+/// Fired to request the HUD to toggle visibility. Handled by observer.
+#[derive(Event)]
+pub struct ToggleHud;
+
+/// Emits [`ToggleHud`] when Tab is pressed.
+pub fn handle_hud_toggle_input(keyboard: Res<ButtonInput<KeyCode>>, mut commands: Commands) {
+    if keyboard.just_pressed(KeyCode::Tab) {
+        commands.trigger(ToggleHud);
+    }
+}
+
+/// Toggles [`HudState`] and applies [`Visibility`] to all [`HudPanel`] entities.
+pub fn on_toggle_hud(
+    _trigger: On<ToggleHud>,
+    mut hud_state: ResMut<HudState>,
+    mut panels: Query<&mut Visibility, With<HudPanel>>,
+) {
+    *hud_state = hud_state.toggled();
+    let vis = if hud_state.is_visible() {
+        Visibility::Inherited
+    } else {
+        Visibility::Hidden
+    };
+    for mut v in &mut panels {
+        *v = vis;
+    }
+}
+
+// ---------------------------------------------------------------------------
+// HUD text markers
+// ---------------------------------------------------------------------------
+
 #[derive(Component)]
 pub struct ScrapText;
 
@@ -34,6 +97,7 @@ pub fn setup_hud(mut commands: Commands) {
                 ..default()
             },
             BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.7)),
+            HudPanel,
             DespawnOnExit(GameState::Playing),
         ))
         .with_children(|parent| {
@@ -235,6 +299,18 @@ pub(crate) fn format_phase_text(phase: &PlayPhase) -> (&'static str, Color) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn hud_state_toggled() {
+        assert_eq!(HudState::Visible.toggled(), HudState::Hidden);
+        assert_eq!(HudState::Hidden.toggled(), HudState::Visible);
+    }
+
+    #[test]
+    fn hud_state_is_visible() {
+        assert!(HudState::Visible.is_visible());
+        assert!(!HudState::Hidden.is_visible());
+    }
 
     #[test]
     fn pile_text_formats_amount() {

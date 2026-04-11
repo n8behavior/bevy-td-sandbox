@@ -1,8 +1,6 @@
 use crate::states::{GameMode, GameState};
 use crate::stats::resources::RunStats;
 use crate::wave::resources::WaveManager;
-#[cfg(not(target_arch = "wasm32"))]
-use bevy::ecs::message::MessageWriter;
 use bevy::prelude::*;
 
 pub fn setup_main_menu(mut commands: Commands) {
@@ -43,7 +41,7 @@ pub fn setup_main_menu(mut commands: Commands) {
 
             #[cfg(not(target_arch = "wasm32"))]
             parent.spawn((
-                Text::new("ESC to quit"),
+                Text::new("ESC ESC: Quit"),
                 TextColor(Color::srgb(0.4, 0.4, 0.35)),
                 TextFont {
                     font_size: 16.0,
@@ -69,20 +67,6 @@ fn apply_main_menu_keys(
     }
 }
 
-#[cfg(not(target_arch = "wasm32"))]
-pub fn handle_main_menu_input(
-    keyboard: Res<ButtonInput<KeyCode>>,
-    mut next_state: ResMut<NextState<GameState>>,
-    mut game_mode: ResMut<GameMode>,
-    mut exit: MessageWriter<AppExit>,
-) {
-    apply_main_menu_keys(&keyboard, &mut next_state, &mut game_mode);
-    if keyboard.just_pressed(KeyCode::Escape) {
-        exit.write(AppExit::Success);
-    }
-}
-
-#[cfg(target_arch = "wasm32")]
 pub fn handle_main_menu_input(
     keyboard: Res<ButtonInput<KeyCode>>,
     mut next_state: ResMut<NextState<GameState>>,
@@ -193,7 +177,7 @@ pub fn setup_game_over(
             }
 
             #[cfg(not(target_arch = "wasm32"))]
-            let hint = "SPACE: restart  |  ESC: quit";
+            let hint = "SPACE: restart  |  ESC ESC: Quit";
             #[cfg(target_arch = "wasm32")]
             let hint = "SPACE: restart";
 
@@ -215,19 +199,6 @@ fn apply_game_over_keys(keyboard: &ButtonInput<KeyCode>, next_state: &mut NextSt
     }
 }
 
-#[cfg(not(target_arch = "wasm32"))]
-pub fn handle_game_over_input(
-    keyboard: Res<ButtonInput<KeyCode>>,
-    mut next_state: ResMut<NextState<GameState>>,
-    mut exit: MessageWriter<AppExit>,
-) {
-    apply_game_over_keys(&keyboard, &mut next_state);
-    if keyboard.just_pressed(KeyCode::Escape) {
-        exit.write(AppExit::Success);
-    }
-}
-
-#[cfg(target_arch = "wasm32")]
 pub fn handle_game_over_input(
     keyboard: Res<ButtonInput<KeyCode>>,
     mut next_state: ResMut<NextState<GameState>>,
