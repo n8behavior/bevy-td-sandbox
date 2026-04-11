@@ -1,9 +1,8 @@
 name: Release
 
 on:
-  push:
-    tags:
-      - 'v*.*.*'
+  release:
+    types: [published]
   workflow_dispatch:
     inputs:
       version:
@@ -29,7 +28,7 @@ jobs:
     steps:
       - name: Determine version number
         id: ref
-        run: echo "ref=${GITHUB_REF#refs/*/}" >> "${GITHUB_OUTPUT}"
+        run: echo "ref=${{ github.event.release.tag_name || github.ref_name }}" >> "${GITHUB_OUTPUT}"
     outputs:
       version: ${{ inputs.version || steps.ref.outputs.ref }}
 
@@ -80,7 +79,7 @@ jobs:
           retention-days: 1
 
       - name: Upload package to GitHub release
-        if: ${{ github.event_name == 'push' }}
+        if: ${{ github.event_name == 'release' }}
         uses: svenstaro/upload-release-action@v2
         with:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
@@ -93,7 +92,7 @@ jobs:
   upload-to-itch:
     needs: [get-version, build-web]
     runs-on: ubuntu-latest
-    if: ${{ github.event_name == 'push' || inputs.upload_to_itch == true }}
+    if: ${{ github.event_name == 'release' || inputs.upload_to_itch == true }}
 
     steps:
       - name: Download web package
