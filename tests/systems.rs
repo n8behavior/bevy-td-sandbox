@@ -384,7 +384,7 @@ fn wave_complete_with_empty_pile_triggers_game_over() {
 #[test]
 fn wave_does_not_resolve_with_alive_enemies() {
     let mut app = wave_app(0);
-    app.world_mut().spawn((Enemy, EnemyState::Approaching));
+    EnemyBuilder::new().spawn(&mut app);
     app.update();
     app.update();
     // Wave not resolved — still Defending, no game over.
@@ -607,16 +607,11 @@ fn regression_11_recalculate_clears_stale_path_state() {
     insert_pile(&mut app, 200);
 
     // Spawn enemy mid-movement: has stale NextPos AND old Path from previous route.
-    let enemy = app
-        .world_mut()
-        .spawn((
-            Enemy,
-            EnemyState::Approaching,
-            AgentPos(UVec3::new(5, 5, 0)),
-            NextPos(UVec3::new(6, 5, 0)),
-            Path::new(vec![UVec3::new(6, 5, 0), UVec3::new(10, 5, 0)], 5),
-        ))
-        .id();
+    let enemy = EnemyBuilder::new()
+        .agent_pos(UVec3::new(5, 5, 0))
+        .next_pos(UVec3::new(6, 5, 0))
+        .path(vec![UVec3::new(6, 5, 0), UVec3::new(10, 5, 0)], 5)
+        .spawn(&mut app);
 
     app.add_systems(Update, recalculate_enemy_paths);
     app.update();
@@ -639,14 +634,13 @@ fn regression_11_recalculate_clears_stale_path_state() {
 /// produces a new path that avoids the blocked cell.
 #[test]
 fn regression_11_enemy_reroutes_around_blocked_cell() {
-    use bevy_td_sandbox::common::constants::{CHUNK_SIZE, GridConfig};
+    use bevy_td_sandbox::common::constants::GridConfig;
 
     let mut app = test_app();
     app.add_plugins(NorthstarPlugin::<OrdinalNeighborhood>::default());
 
     // Small 16x16 grid (must be chunk-aligned).
     let size: u32 = 16;
-    assert_eq!(size % CHUNK_SIZE, 0);
     let config = GridConfig {
         width: size,
         height: size,
@@ -654,32 +648,17 @@ fn regression_11_enemy_reroutes_around_blocked_cell() {
     };
     insert_empty_pile(&mut app, 200, config);
 
-    let settings = GridSettingsBuilder::new_2d(size, size)
-        .chunk_size(CHUNK_SIZE)
-        .build();
-    let mut grid = OrdinalGrid::new(&settings);
-    for x in 0..size {
-        for y in 0..size {
-            grid.set_nav(UVec3::new(x, y, 0), Nav::Passable(1));
-        }
-    }
-    grid.build();
-    let grid_entity = app.world_mut().spawn(grid).id();
+    let grid_entity = spawn_test_grid(&mut app, size, size);
 
     // Enemy at left edge, pathing toward pile center (8,8) along row 8.
     // recalculate_enemy_paths uses nearest_pile_cell which returns (8,8).
     let start = UVec3::new(0, 8, 0);
     let goal = UVec3::new(size / 2, size / 2, 0); // pile center
-    let enemy = app
-        .world_mut()
-        .spawn((
-            Enemy,
-            EnemyState::Approaching,
-            AgentPos(start),
-            AgentOfGrid(grid_entity),
-            Pathfind::new(goal).mode(PathfindMode::Waypoints),
-        ))
-        .id();
+    let enemy = EnemyBuilder::new()
+        .agent_pos(start)
+        .on_grid(grid_entity)
+        .pathfind_to(goal)
+        .spawn(&mut app);
 
     // Let bevy_northstar compute the initial path.
     for _ in 0..5 {
@@ -756,39 +735,17 @@ fn slow_aura_affects_enemies_in_range() {
     let mut app = test_app();
 
     // Spawn aura tower at origin with range 100.
-    app.world_mut().spawn((
-        Tower,
-        TowerState::Active,
-        Transform::from_translation(Vec3::ZERO),
-        TowerStats {
-            damage: 0.0,
-            range: 100.0,
-        },
-        SlowOnHit {
-            factor: 0.5,
-            duration: 2.0,
-        },
-    ));
+    TowerBuilder::aura().spawn(&mut app);
 
     // Enemy in range (at 50 units away).
-    let in_range = app
-        .world_mut()
-        .spawn((
-            Enemy,
-            EnemyState::Approaching,
-            Transform::from_translation(Vec3::new(50.0, 0.0, 0.0)),
-        ))
-        .id();
+    let in_range = EnemyBuilder::new()
+        .at(Vec3::new(50.0, 0.0, 0.0))
+        .spawn(&mut app);
 
     // Enemy out of range (at 200 units away).
-    let out_of_range = app
-        .world_mut()
-        .spawn((
-            Enemy,
-            EnemyState::Approaching,
-            Transform::from_translation(Vec3::new(200.0, 0.0, 0.0)),
-        ))
-        .id();
+    let out_of_range = EnemyBuilder::new()
+        .at(Vec3::new(200.0, 0.0, 0.0))
+        .spawn(&mut app);
 
     app.add_systems(Update, slow_aura);
     app.update();
@@ -807,37 +764,15 @@ fn slow_aura_affects_enemies_in_range() {
 fn slow_aura_stronger_at_center() {
     let mut app = test_app();
 
-    app.world_mut().spawn((
-        Tower,
-        TowerState::Active,
-        Transform::from_translation(Vec3::ZERO),
-        TowerStats {
-            damage: 0.0,
-            range: 100.0,
-        },
-        SlowOnHit {
-            factor: 0.5,
-            duration: 2.0,
-        },
-    ));
+    TowerBuilder::aura().spawn(&mut app);
 
-    let close = app
-        .world_mut()
-        .spawn((
-            Enemy,
-            EnemyState::Approaching,
-            Transform::from_translation(Vec3::new(10.0, 0.0, 0.0)),
-        ))
-        .id();
+    let close = EnemyBuilder::new()
+        .at(Vec3::new(10.0, 0.0, 0.0))
+        .spawn(&mut app);
 
-    let far = app
-        .world_mut()
-        .spawn((
-            Enemy,
-            EnemyState::Approaching,
-            Transform::from_translation(Vec3::new(90.0, 0.0, 0.0)),
-        ))
-        .id();
+    let far = EnemyBuilder::new()
+        .at(Vec3::new(90.0, 0.0, 0.0))
+        .spawn(&mut app);
 
     app.add_systems(Update, slow_aura);
     app.update();
@@ -867,52 +802,19 @@ fn find_best_target_closest_mode() {
     insert_pile(&mut app, 200);
 
     // Tower at origin.
-    app.world_mut().spawn((
-        Tower,
-        TowerState::Active,
-        Transform::from_translation(Vec3::ZERO),
-        TowerStats {
-            damage: 10.0,
-            range: 100.0,
-        },
-        TurretState::with_cooldown(1.0),
-        AimTolerance(0.1),
-        ProjectileVisuals {
-            speed: 200.0,
-            color: Color::WHITE,
-            size: Vec2::splat(4.0),
-            trail_color: Color::WHITE,
-            trail_interval: 0.05,
-            particle_size: 2.0,
-            particle_lifetime: 0.3,
-        },
-        TargetingMode::Closest,
-    ));
+    TowerBuilder::turret().spawn(&mut app);
 
     // Close enemy.
-    let close = app
-        .world_mut()
-        .spawn((
-            Enemy,
-            EnemyState::Approaching,
-            Health {
-                current: 100.0,
-                max: 100.0,
-            },
-            Transform::from_translation(Vec3::new(30.0, 0.0, 0.0)),
-        ))
-        .id();
+    let close = EnemyBuilder::new()
+        .health(100.0, 100.0)
+        .at(Vec3::new(30.0, 0.0, 0.0))
+        .spawn(&mut app);
 
     // Far enemy.
-    app.world_mut().spawn((
-        Enemy,
-        EnemyState::Approaching,
-        Health {
-            current: 100.0,
-            max: 100.0,
-        },
-        Transform::from_translation(Vec3::new(80.0, 0.0, 0.0)),
-    ));
+    EnemyBuilder::new()
+        .health(100.0, 100.0)
+        .at(Vec3::new(80.0, 0.0, 0.0))
+        .spawn(&mut app);
 
     app.add_systems(Update, turret_state_machine);
     app.update();
