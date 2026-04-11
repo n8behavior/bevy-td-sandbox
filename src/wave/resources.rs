@@ -13,7 +13,6 @@ pub struct WaveManager {
     pub current_wave: u32,
     pub waves: Vec<WaveConfig>,
     pub spawn_timer: Timer,
-    pub enemies_remaining: u32,
     /// Pre-shuffled queue of enemies to spawn this wave.
     pub spawn_queue: Vec<SpawnEntry>,
 }

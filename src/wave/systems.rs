@@ -14,6 +14,16 @@ use crate::states::{GameState, PlayPhase};
 
 use super::resources::*;
 
+const TOTAL_WAVES: u32 = 20;
+const HEALTH_SCALING_PER_WAVE: f32 = 0.15;
+const SPEED_SCALING_PER_WAVE: f32 = 0.05;
+const BOSS_WAVE_INTERVAL: u32 = 5;
+const RUNNER_UNLOCK_WAVE: u32 = 3;
+const BRUTE_UNLOCK_WAVE: u32 = 6;
+const BASE_SPAWN_INTERVAL: f32 = 1.5;
+const MIN_SPAWN_INTERVAL: f32 = 0.3;
+const SPAWN_INTERVAL_DECREASE: f32 = 0.05;
+
 pub fn start_wave(mut wave_mgr: ResMut<WaveManager>) {
     let wave_idx = wave_mgr.current_wave as usize;
     if wave_idx >= wave_mgr.waves.len() {
@@ -37,11 +47,9 @@ pub fn start_wave(mut wave_mgr: ResMut<WaveManager>) {
 
     queue.shuffle(&mut rand::rng());
 
-    let total = queue.len() as u32;
     let interval = wave.spawn_interval;
 
     wave_mgr.spawn_queue = queue;
-    wave_mgr.enemies_remaining = total;
     wave_mgr.spawn_timer = Timer::from_seconds(interval, TimerMode::Repeating);
 }
 
@@ -97,6 +105,11 @@ pub fn spawn_enemies(
 #[derive(Event)]
 pub struct WaveComplete;
 
+/// Whether the wave still has unresolved activity: enemies queued, alive, or drops pending.
+fn is_wave_active(queue_empty: bool, enemies_empty: bool, drops_empty: bool) -> bool {
+    !queue_empty || !enemies_empty || !drops_empty
+}
+
 /// When the wave is fully resolved (all enemies dead/escaped, all drops
 /// settled), trigger the `WaveComplete` event.
 pub fn check_wave_complete(
@@ -105,7 +118,11 @@ pub fn check_wave_complete(
     enemies: Query<(), With<Enemy>>,
     drops: Query<(), With<ScrapDrop>>,
 ) {
-    if !wave_mgr.spawn_queue.is_empty() || !enemies.is_empty() || !drops.is_empty() {
+    if is_wave_active(
+        wave_mgr.spawn_queue.is_empty(),
+        enemies.is_empty(),
+        drops.is_empty(),
+    ) {
         return;
     }
     commands.trigger(WaveComplete);
@@ -151,13 +168,12 @@ pub fn generate_waves() -> Vec<WaveConfig> {
         BossTrait::Splitting,
     ];
 
-    for i in 0..20 {
+    for i in 0..TOTAL_WAVES {
         let wave_num = i + 1;
-        let health_mult = 1.0 + (i as f32 * 0.15);
-        let speed_mult = 1.0 + (i as f32 * 0.05);
+        let health_mult = 1.0 + (i as f32 * HEALTH_SCALING_PER_WAVE);
+        let speed_mult = 1.0 + (i as f32 * SPEED_SCALING_PER_WAVE);
 
-        // Boss wave every 5th wave
-        if wave_num % 5 == 0 {
+        if wave_num % BOSS_WAVE_INTERVAL == 0 {
             let boss_trait = *boss_traits.choose(&mut rng).unwrap();
             waves.push(WaveConfig {
                 enemies: vec![WaveEnemy {
@@ -182,7 +198,7 @@ pub fn generate_waves() -> Vec<WaveConfig> {
             boss_trait: None,
         }];
 
-        if wave_num >= 3 {
+        if wave_num >= RUNNER_UNLOCK_WAVE {
             enemies.push(WaveEnemy {
                 enemy_type: EnemyType::Runner,
                 count: (base_count / 2).max(2),
@@ -192,7 +208,7 @@ pub fn generate_waves() -> Vec<WaveConfig> {
             });
         }
 
-        if wave_num >= 6 {
+        if wave_num >= BRUTE_UNLOCK_WAVE {
             enemies.push(WaveEnemy {
                 enemy_type: EnemyType::Brute,
                 count: (base_count / 4).max(1),
@@ -202,7 +218,8 @@ pub fn generate_waves() -> Vec<WaveConfig> {
             });
         }
 
-        let spawn_interval = (1.5 - i as f32 * 0.05).max(0.3);
+        let spawn_interval =
+            (BASE_SPAWN_INTERVAL - i as f32 * SPAWN_INTERVAL_DECREASE).max(MIN_SPAWN_INTERVAL);
 
         waves.push(WaveConfig {
             enemies,
@@ -220,7 +237,7 @@ mod tests {
     #[test]
     fn generate_waves_produces_twenty() {
         let waves = generate_waves();
-        assert_eq!(waves.len(), 20);
+        assert_eq!(waves.len(), TOTAL_WAVES as usize);
     }
 
     #[test]
@@ -314,7 +331,7 @@ mod tests {
     fn health_multiplier_scales_correctly() {
         let waves = generate_waves();
         for (i, wave) in waves.iter().enumerate() {
-            let expected = 1.0 + (i as f32 * 0.15);
+            let expected = 1.0 + (i as f32 * HEALTH_SCALING_PER_WAVE);
             for enemy in &wave.enemies {
                 assert!(
                     (enemy.health_multiplier - expected).abs() < 0.001,
@@ -331,7 +348,7 @@ mod tests {
     fn speed_multiplier_scales_correctly() {
         let waves = generate_waves();
         for (i, wave) in waves.iter().enumerate() {
-            let expected = 1.0 + (i as f32 * 0.05);
+            let expected = 1.0 + (i as f32 * SPEED_SCALING_PER_WAVE);
             for enemy in &wave.enemies {
                 assert!(
                     (enemy.speed_multiplier - expected).abs() < 0.001,
@@ -347,9 +364,7 @@ mod tests {
     #[test]
     fn spawn_interval_decreases_and_clamps() {
         let waves = generate_waves();
-        // First non-boss wave should have interval 1.5
-        assert!((waves[0].spawn_interval - 1.5).abs() < 0.001);
-        // Last non-boss wave's interval should be clamped at 0.3
+        assert!((waves[0].spawn_interval - BASE_SPAWN_INTERVAL).abs() < 0.001);
         let last_non_boss = waves
             .iter()
             .enumerate()
@@ -357,8 +372,8 @@ mod tests {
             .unwrap()
             .1;
         assert!(
-            last_non_boss.spawn_interval >= 0.3 - 0.001,
-            "spawn interval should be clamped at 0.3, got {}",
+            last_non_boss.spawn_interval >= MIN_SPAWN_INTERVAL - 0.001,
+            "spawn interval should be clamped at {MIN_SPAWN_INTERVAL}, got {}",
             last_non_boss.spawn_interval
         );
     }

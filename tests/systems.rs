@@ -337,7 +337,6 @@ fn wave_app(scrap: u32) -> App {
         current_wave: 0,
         waves: Vec::new(),
         spawn_timer: Timer::from_seconds(1.0, TimerMode::Repeating),
-        enemies_remaining: 0,
         spawn_queue: Vec::new(),
     });
 
