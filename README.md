@@ -24,6 +24,18 @@ Install via [rustup](https://rustup.rs/).
 sudo apt-get install -y libwayland-dev libxkbcommon-dev libasound2-dev libudev-dev
 ```
 
+**Linux (Fedora):**
+
+```bash
+sudo dnf install -y wayland-devel libxkbcommon-devel alsa-lib-devel systemd-devel
+```
+
+**Linux (Arch):**
+
+```bash
+sudo pacman -S wayland libxkbcommon alsa-lib systemd
+```
+
 ## Build & Run
 
 ```bash
