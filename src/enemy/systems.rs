@@ -164,33 +164,25 @@ pub fn enemy_reached_pile(
             continue;
         }
 
-        // Nothing to steal — flee empty-handed.
-        if pile_scrap.amount == 0 {
-            let flee_target = nearest_edge_cell(agent_pos.0, &edge_cells.0);
-            *state = EnemyState::Fleeing;
-            commands
-                .entity(entity)
-                .insert(Pathfind::new(flee_target).mode(PathfindMode::Waypoints));
-            continue;
-        }
-
+        // Enemy reached the pile — steal what we can and flee.
         let steal_amount = compute_steal_amount(loot.0, pile_scrap.amount);
         pile_scrap.amount = pile_scrap.amount.saturating_sub(steal_amount);
 
         let flee_target = nearest_edge_cell(agent_pos.0, &edge_cells.0);
-
         *state = EnemyState::Fleeing;
-        commands.entity(entity).insert((
-            StolenScrap(steal_amount),
-            Pathfind::new(flee_target).mode(PathfindMode::Waypoints),
-        ));
+        commands
+            .entity(entity)
+            .insert(Pathfind::new(flee_target).mode(PathfindMode::Waypoints));
 
-        // Visual decal: small gold square on the enemy to indicate carried scrap.
-        commands.entity(entity).with_child((
-            ScrapCarrierDecal,
-            Sprite::from_color(SCRAP_COLOR, Vec2::splat(6.0)),
-            Transform::from_translation(Vec3::new(0.0, -5.0, 0.1)),
-        ));
+        if steal_amount > 0 {
+            commands.entity(entity).insert(StolenScrap(steal_amount));
+            // Visual decal: small gold square to indicate carried scrap.
+            commands.entity(entity).with_child((
+                ScrapCarrierDecal,
+                Sprite::from_color(SCRAP_COLOR, Vec2::splat(6.0)),
+                Transform::from_translation(Vec3::new(0.0, -5.0, 0.1)),
+            ));
+        }
     }
 }
 
