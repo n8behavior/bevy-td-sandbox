@@ -14,9 +14,9 @@ Install via [rustup](https://rustup.rs/).
 
 ### System Dependencies
 
-**macOS** — No extra packages needed. Xcode Command Line Tools are sufficient (`xcode-select --install`).
+**macOS** — Xcode Command Line Tools (`xcode-select --install`).
 
-**Windows** — No extra packages needed. The Visual Studio C++ Build Tools are required, but `rustup` prompts you to install them during Rust setup.
+**Windows** — Visual Studio C++ Build Tools (`rustup` prompts you to install them during Rust setup).
 
 **Linux (Ubuntu/Debian):**
 
