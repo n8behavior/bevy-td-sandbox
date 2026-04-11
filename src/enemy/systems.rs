@@ -77,11 +77,6 @@ pub struct EnemyEscaped {
     pub enemy_type: EnemyType,
 }
 
-#[derive(Component)]
-pub struct HealthBar {
-    pub y_offset: f32,
-}
-
 pub fn enemy_movement(
     mut query: Query<
         (

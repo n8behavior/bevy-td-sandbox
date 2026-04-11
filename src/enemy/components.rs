@@ -177,6 +177,12 @@ pub struct BruteAttack {
     pub damage: f32,
 }
 
+/// Visual health bar rendered above an enemy sprite.
+#[derive(Component)]
+pub struct HealthBar {
+    pub y_offset: f32,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
