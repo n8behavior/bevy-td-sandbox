@@ -1919,3 +1919,231 @@ fn endless_spawn_guard_both_empty() {
         "no enemies should spawn with both guards empty"
     );
 }
+
+// ---------------------------------------------------------------------------
+// #66: Tower placement mid-game freezes all enemies
+// ---------------------------------------------------------------------------
+
+/// Build a 24×24 grid with a U-shaped tower wall around the pile center,
+/// then spawn an enemy and verify it can pathfind through the opening.
+///
+/// Validates that enemies pathfind correctly through a U-shaped tower wall
+/// after mid-game placement narrows the opening.
+#[test]
+fn regression_66_three_sided_towers_enemy_still_pathfinds() {
+    use bevy_td_sandbox::common::constants::GridConfig;
+    use bevy_td_sandbox::pathfinding::systems::recalculate_enemy_paths;
+    use bevy_td_sandbox::tower::placement::would_block_all_paths;
+
+    let mut app = test_app();
+    app.add_plugins(NorthstarPlugin::<OrdinalNeighborhood>::default());
+
+    // 24×24 grid → 3×3 chunks of size 8.
+    let size: u32 = 24;
+    let config = GridConfig {
+        width: size,
+        height: size,
+        pixel_scale: 1,
+    };
+    let center = UVec3::new(size / 2, size / 2, 0); // (12, 12)
+    insert_empty_pile(&mut app, 200, config);
+
+    // Override pile state with just the center cell so nearest_pile_cell
+    // returns a known value.
+    {
+        let mut pile = app.world_mut().resource_mut::<PileState>();
+        pile.cells.insert(center);
+    }
+    app.insert_resource(bevy_td_sandbox::pile::resources::EdgeCells(vec![
+        UVec3::new(0, size / 2, 0),
+    ]));
+
+    let grid_entity = spawn_test_grid(&mut app, size, size);
+
+    // Place towers in a U-shape around the pile center (12, 12).
+    // The opening faces south (low-y direction).
+    //
+    // West wall:  x = 10, y = 10..14
+    // East wall:  x = 14, y = 10..14
+    // North wall: y = 14, x = 10..14
+    let mut tower_cells = Vec::new();
+    for y in 10..=14 {
+        tower_cells.push(UVec3::new(10, y, 0)); // west
+        tower_cells.push(UVec3::new(14, y, 0)); // east
+    }
+    for x in 11..=13 {
+        tower_cells.push(UVec3::new(x, 14, 0)); // north
+    }
+
+    {
+        let mut state = app.world_mut().query::<&mut OrdinalGrid>();
+        let mut grid = state.single_mut(app.world_mut()).unwrap();
+        for cell in &tower_cells {
+            grid.set_nav(*cell, Nav::Impassable);
+        }
+        grid.build();
+    }
+
+    // --- Diagnostic: verify path exists -----------------------------------------
+    let enemy_start = UVec3::new(0, 12, 0);
+    let astar_ok;
+    let thetastar_ok;
+    {
+        let mut state = app.world_mut().query::<&OrdinalGrid>();
+        let grid = state.single(app.world()).unwrap();
+        astar_ok = grid
+            .pathfind(&mut PathfindArgs::new(enemy_start, center).astar())
+            .is_some();
+        thetastar_ok = grid
+            .pathfind(&mut PathfindArgs::new(enemy_start, center).thetastar())
+            .is_some();
+    }
+    assert!(
+        astar_ok,
+        "A* should find a path from enemy start to pile center (south opening exists)"
+    );
+    assert!(
+        thetastar_ok,
+        "ThetaStar should also find a path through the south opening"
+    );
+
+    // --- Integration: spawn enemy, recalculate, verify path -------------------
+    let enemy = EnemyBuilder::new()
+        .agent_pos(enemy_start)
+        .on_grid(grid_entity)
+        .pathfind_to(center)
+        .spawn(&mut app);
+
+    // Let bevy_northstar compute paths.
+    for _ in 0..5 {
+        app.update();
+    }
+
+    let has_path =
+        app.world().get::<Path>(enemy).is_some() || app.world().get::<NextPos>(enemy).is_some();
+    assert!(
+        has_path,
+        "enemy should have an active path with three-sided tower wall"
+    );
+
+    // Simulate a mid-game tower placement: block one more cell on the south
+    // opening, then recalculate and verify the enemy reroutes.
+    let new_tower = UVec3::new(12, 10, 0);
+    {
+        let mut state = app.world_mut().query::<&mut OrdinalGrid>();
+        let mut grid = state.single_mut(app.world_mut()).unwrap();
+
+        // Validation check (same as update_placing_tower).
+        let edge_midpoints = [
+            UVec3::new(0, size / 2, 0),
+            UVec3::new(size - 1, size / 2, 0),
+            UVec3::new(size / 2, 0, 0),
+            UVec3::new(size / 2, size - 1, 0),
+        ];
+        let would_block =
+            would_block_all_paths(&mut grid, new_tower, center, &edge_midpoints);
+        assert!(
+            !would_block,
+            "placing tower at {:?} should not block all paths — south opening \
+             still has gaps at (11,10) and (13,10)",
+            new_tower
+        );
+
+        grid.set_nav(new_tower, Nav::Impassable);
+        grid.build();
+    }
+
+    // Recalculate (same as GridChanged observer).
+    app.add_systems(Update, recalculate_enemy_paths);
+    for _ in 0..5 {
+        app.update();
+    }
+
+    let has_path_after =
+        app.world().get::<Path>(enemy).is_some() || app.world().get::<NextPos>(enemy).is_some();
+    assert!(
+        has_path_after,
+        "enemy should still have a path after partial south-wall tower placement"
+    );
+}
+
+/// #66 root cause: HPA*-based modes (Waypoints, Refined) can't represent
+/// diagonal cross-chunk moves in the chunk graph. When towers surround the
+/// pile at a chunk boundary so the only entry is a diagonal cross-chunk move,
+/// HPA* fails while A*/ThetaStar succeed.
+///
+/// Fix: enemies now use `PathfindMode::AStar` (same algorithm as validation),
+/// which operates on the raw grid and bypasses the HPA* chunk graph entirely.
+///
+/// This test verifies:
+/// 1. A* finds the path (raw grid pathfinding works).
+/// 2. Waypoints/HPA* fails (confirming the old bug existed).
+#[test]
+fn regression_66_diagonal_cross_chunk_mismatch() {
+    let mut app = test_app();
+    app.add_plugins(NorthstarPlugin::<OrdinalNeighborhood>::default());
+
+    let config = test_grid_config(); // 40×32
+    insert_empty_pile(&mut app, 200, config);
+    let center = UVec3::new(20, 16, 0);
+    {
+        let mut pile = app.world_mut().resource_mut::<PileState>();
+        pile.cells.insert(center);
+    }
+
+    let _grid_entity = spawn_test_grid(&mut app, 40, 32);
+
+    // Towers seal all cardinal + intra-chunk-diagonal access to (20, 16).
+    // The ONLY way in is a diagonal cross-chunk move: (19,15)→(20,16).
+    let towers = [
+        UVec3::new(19, 16, 0), // left on border
+        UVec3::new(21, 16, 0), // right on border
+        UVec3::new(20, 17, 0), // above (inside chunk)
+        UVec3::new(19, 17, 0), // upper-left diagonal (inside chunk)
+        UVec3::new(21, 17, 0), // upper-right diagonal (inside chunk)
+        UVec3::new(20, 15, 0), // below (adjacent chunk — blocks cardinal border node)
+    ];
+
+    {
+        let mut state = app.world_mut().query::<&mut OrdinalGrid>();
+        let mut grid = state.single_mut(app.world_mut()).unwrap();
+        for cell in &towers {
+            grid.set_nav(*cell, Nav::Impassable);
+        }
+        grid.build();
+    }
+
+    let enemy_start = UVec3::new(0, 16, 0);
+
+    let astar_found;
+    let thetastar_found;
+    let waypoints_found;
+    {
+        let mut state = app.world_mut().query::<&mut OrdinalGrid>();
+        let grid = state.single_mut(app.world_mut()).unwrap();
+        astar_found = grid
+            .pathfind(&mut PathfindArgs::new(enemy_start, center).astar())
+            .is_some();
+        thetastar_found = grid
+            .pathfind(&mut PathfindArgs::new(enemy_start, center).thetastar())
+            .is_some();
+        waypoints_found = grid
+            .pathfind(&mut PathfindArgs::new(enemy_start, center).waypoints())
+            .is_some();
+    }
+
+    assert!(
+        astar_found,
+        "A* must find a path via diagonal cross-chunk move (19,15)→(20,16)"
+    );
+    assert!(
+        thetastar_found,
+        "ThetaStar (our new enemy pathfinding mode) must also find the path"
+    );
+    // Waypoints/HPA* can't find the path — this confirms the old bug existed.
+    assert!(
+        !waypoints_found,
+        "Waypoints/HPA* should NOT find this path (confirms diagonal cross-chunk \
+         limitation that caused bug #66)"
+    );
+}

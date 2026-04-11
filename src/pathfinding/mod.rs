@@ -8,6 +8,8 @@ pub mod systems;
 
 use bevy::prelude::*;
 
+use crate::states::PlayPhase;
+
 /// Fired when the navigation grid changes (tower placed or sold).
 ///
 /// Triggers [`systems::on_grid_changed`] which recalculates paths for all enemies.
@@ -19,5 +21,13 @@ pub struct PathfindingPlugin;
 impl Plugin for PathfindingPlugin {
     fn build(&self, app: &mut App) {
         app.add_observer(systems::on_grid_changed);
+        app.add_systems(
+            Update,
+            (
+                systems::log_pathfinding_failures,
+                systems::check_stuck_enemies,
+            )
+                .run_if(in_state(PlayPhase::Defending)),
+        );
     }
 }

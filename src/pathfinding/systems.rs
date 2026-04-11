@@ -23,6 +23,7 @@ pub fn recalculate_enemy_paths(
     pile_state: Res<PileState>,
     edge_cells: Res<EdgeCells>,
 ) {
+    let mut count = 0u32;
     for (entity, agent_pos, state) in &enemies {
         let goal = match state {
             EnemyState::Approaching => nearest_pile_cell(agent_pos.0, &pile_state),
@@ -30,9 +31,53 @@ pub fn recalculate_enemy_paths(
         };
         commands
             .entity(entity)
-            .remove::<(NextPos, Path)>()
-            // Waypoints mode gives smoother any-angle movement instead of cell-by-cell steps.
-            .insert(Pathfind::new(goal).mode(PathfindMode::Waypoints));
+            // Clear stale failure markers so bevy_northstar retries cleanly.
+            .remove::<(NextPos, Path, PathfindingFailed)>()
+            // A* operates on the raw grid, matching the algorithm used by
+            // would_block_all_paths validation and avoiding HPA* chunk-graph
+            // limitations with diagonal cross-chunk moves (#66).
+            .insert(Pathfind::new(goal).mode(PathfindMode::AStar));
+        count += 1;
+    }
+    if count > 0 {
+        debug!("recalculate_enemy_paths: {count} enemies");
+    }
+}
+
+/// Warn once per enemy when bevy_northstar marks pathfinding as failed.
+pub fn log_pathfinding_failures(
+    enemies: Query<(Entity, &AgentPos, &EnemyState), (With<Enemy>, Added<PathfindingFailed>)>,
+) {
+    for (entity, agent_pos, state) in &enemies {
+        warn!(
+            "PathfindingFailed: {entity:?} at {:?} state={state:?}",
+            agent_pos.0
+        );
+    }
+}
+
+/// Periodic check (every 2 s) for enemies stuck without any pathfinding state.
+pub fn check_stuck_enemies(
+    enemies: Query<
+        (Entity, &AgentPos, &EnemyState, Has<Pathfind>, Has<Path>, Has<NextPos>),
+        With<Enemy>,
+    >,
+    time: Res<Time>,
+    mut timer: Local<Option<Timer>>,
+) {
+    let timer = timer.get_or_insert_with(|| Timer::from_seconds(2.0, TimerMode::Repeating));
+    timer.tick(time.delta());
+    if !timer.just_finished() {
+        return;
+    }
+
+    for (entity, pos, state, has_pf, has_path, has_next) in &enemies {
+        if !has_pf && !has_path && !has_next {
+            warn!(
+                "STUCK {entity:?} at {:?} {state:?} — no Pathfind/Path/NextPos",
+                pos.0
+            );
+        }
     }
 }
 
@@ -85,7 +130,7 @@ mod tests {
             "goal {:?} should be a pile cell",
             pf.goal
         );
-        assert_eq!(pf.mode, Some(PathfindMode::Waypoints));
+        assert_eq!(pf.mode, Some(PathfindMode::AStar));
     }
 
     #[test]
@@ -97,7 +142,11 @@ mod tests {
 
         let enemy = app
             .world_mut()
-            .spawn((Enemy, EnemyState::Fleeing, AgentPos(UVec3::new(38, 1, 0))))
+            .spawn((
+                Enemy,
+                EnemyState::Fleeing,
+                AgentPos(UVec3::new(38, 1, 0)),
+            ))
             .id();
 
         app.add_systems(Update, recalculate_enemy_paths);
@@ -108,7 +157,7 @@ mod tests {
             .get::<Pathfind>(enemy)
             .expect("should have Pathfind");
         assert_eq!(pf.goal, UVec3::new(39, 0, 0));
-        assert_eq!(pf.mode, Some(PathfindMode::Waypoints));
+        assert_eq!(pf.mode, Some(PathfindMode::AStar));
     }
 
     #[test]
@@ -160,7 +209,11 @@ mod tests {
             .id();
         let fleeing = app
             .world_mut()
-            .spawn((Enemy, EnemyState::Fleeing, AgentPos(UVec3::new(1, 1, 0))))
+            .spawn((
+                Enemy,
+                EnemyState::Fleeing,
+                AgentPos(UVec3::new(1, 1, 0)),
+            ))
             .id();
 
         app.add_systems(Update, recalculate_enemy_paths);

@@ -368,7 +368,7 @@ impl EnemyBuilder {
         self
     }
 
-    /// Add `Pathfind` request toward `goal` with `PathfindMode::Waypoints`.
+    /// Add `Pathfind` request toward `goal` with `PathfindMode::AStar`.
     pub fn pathfind_to(mut self, goal: UVec3) -> Self {
         self.pathfind_goal = Some(goal);
         self
@@ -402,7 +402,7 @@ impl EnemyBuilder {
             entity.insert(AgentOfGrid(grid_entity));
         }
         if let Some(goal) = self.pathfind_goal {
-            entity.insert(Pathfind::new(goal).mode(PathfindMode::Waypoints));
+            entity.insert(Pathfind::new(goal).mode(PathfindMode::AStar));
         }
         if let Some(pos) = self.next_pos {
             entity.insert(NextPos(pos));

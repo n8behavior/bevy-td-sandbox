@@ -93,7 +93,9 @@ pub fn enemy_movement(
     mut commands: Commands,
     time: Res<Time>,
     config: Res<GridConfig>,
+    grid_query: Query<&OrdinalGrid>,
 ) {
+    let grid = grid_query.single().ok();
     let mut rng = rand::rng();
     for (entity, mut agent_pos, next_pos, mut transform, speed, jitter) in &mut query {
         // Each enemy walks toward a jittered point within the next grid cell
@@ -129,6 +131,19 @@ pub fn enemy_movement(
                 .insert(CellJitter(random_cell_jitter(&mut rng)));
         } else {
             transform.translation += direction / distance * step_size;
+            // Keep AgentPos in sync with the visual position so that
+            // path recalculation (GridChanged) starts from where the
+            // enemy actually is, not from a stale completed waypoint.
+            // Only update to passable cells — a tower placed on the cell
+            // the enemy is crossing must not poison AgentPos.
+            if let Some(grid_pos) = world_to_grid(transform.translation.truncate(), &config) {
+                let candidate = UVec3::new(grid_pos.x as u32, grid_pos.y as u32, 0);
+                if let Some(g) = grid
+                    && !matches!(g.nav(candidate), Some(Nav::Impassable))
+                {
+                    agent_pos.0 = candidate;
+                }
+            }
         }
     }
 }
@@ -172,7 +187,7 @@ pub fn enemy_reached_pile(
         *state = EnemyState::Fleeing;
         commands
             .entity(entity)
-            .insert(Pathfind::new(flee_target).mode(PathfindMode::Waypoints));
+            .insert(Pathfind::new(flee_target).mode(PathfindMode::AStar));
 
         if steal_amount > 0 {
             commands.entity(entity).insert(StolenScrap(steal_amount));
@@ -423,6 +438,7 @@ pub fn spawn_enemy(
     config: &GridConfig,
     boss_trait: Option<BossTrait>,
 ) {
+    debug!("enemy spawned at {spawn_pos:?} → goal {goal_pos:?}");
     let world_pos = grid_to_world_cfg(spawn_pos, config);
     let size = enemy_type.size();
     let health = enemy_type.base_health() * health_mult;
@@ -451,7 +467,7 @@ pub fn spawn_enemy(
             CellJitter(random_cell_jitter(&mut rng)),
             AgentPos(spawn_pos),
             AgentOfGrid(grid_entity),
-            Pathfind::new(goal_pos).mode(PathfindMode::Waypoints),
+            Pathfind::new(goal_pos).mode(PathfindMode::AStar),
         ))
         .with_child((
             HealthBar {

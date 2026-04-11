@@ -40,7 +40,7 @@ pub(crate) fn is_cell_buildable(
 /// Whether placing an impassable tower at `cell` would sever all edge→center
 /// paths. Temporarily mutates the grid and reverts; grid state is restored on
 /// return.
-pub(crate) fn would_block_all_paths(
+pub fn would_block_all_paths(
     grid: &mut OrdinalGrid,
     cell: UVec3,
     center: UVec3,
@@ -333,6 +333,7 @@ pub fn confirm_tower_placement(
         DespawnOnExit(GameState::Playing),
     ));
 
+    debug!("tower placed at ({}, {})", grid_pos.x, grid_pos.y);
     commands.trigger(GridChanged);
 
     // Spawn a new placing tower for continued placement (hidden until cursor positions it).
@@ -434,6 +435,7 @@ pub fn sell_tower(
         inspected.0 = None;
     }
 
+    debug!("tower sold at ({}, {})", grid_pos.x, grid_pos.y);
     commands.entity(entity).despawn();
     commands.trigger(GridChanged);
 
