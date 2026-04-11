@@ -8,6 +8,8 @@ use bevy_td_sandbox::common::constants::{
 };
 use bevy_td_sandbox::economy::components::ScrapDrop;
 use bevy_td_sandbox::endless::resources::EndlessSpawner;
+use bevy_td_sandbox::endless::systems::endless_check_game_over;
+use bevy_td_sandbox::endless::systems::endless_spawn_enemies;
 use bevy_td_sandbox::enemy::components::*;
 use bevy_td_sandbox::grid::components::GridCell;
 use bevy_td_sandbox::grid::systems::grid_to_world_cfg;
@@ -1800,4 +1802,218 @@ fn tower_highlight_deselected() {
         .iter(app.world())
         .all(|bg| *bg == BackgroundColor(Color::NONE));
     assert!(all_none, "all buttons should be deselected");
+}
+
+// ===========================================================================
+// Endless mode — game-over (three-fold gate) and spawn guards
+// ===========================================================================
+
+/// Headless app for testing endless game-over logic.
+///
+/// Sets up states (Playing / Defending), [`PileScrap`] with the given amount,
+/// and registers [`endless_check_game_over`] in `Update`.
+fn endless_game_over_app(scrap: u32) -> App {
+    let mut app = test_app();
+    app.init_state::<GameState>();
+    app.add_sub_state::<PlayPhase>();
+
+    app.world_mut()
+        .resource_mut::<NextState<GameState>>()
+        .set(GameState::Playing);
+    app.update();
+    app.world_mut()
+        .resource_mut::<NextState<PlayPhase>>()
+        .set(PlayPhase::Defending);
+    app.update();
+
+    app.insert_resource(PileScrap { amount: scrap });
+
+    app.add_systems(
+        Update,
+        endless_check_game_over.run_if(in_state(PlayPhase::Defending)),
+    );
+    app
+}
+
+/// Scrap remaining → no game over (gate 1 blocks).
+#[test]
+fn endless_game_over_blocked_by_scrap() {
+    let mut app = endless_game_over_app(100);
+    app.update();
+    app.update();
+    assert_eq!(game_state(&app), GameState::Playing);
+}
+
+/// Pile empty but drops on field → no game over (gate 2 blocks).
+#[test]
+fn endless_game_over_blocked_by_drops() {
+    let mut app = endless_game_over_app(0);
+    app.world_mut().spawn(ScrapDrop {
+        value: 10,
+        lifetime: Timer::from_seconds(10.0, TimerMode::Once),
+    });
+    app.update();
+    app.update();
+    assert_eq!(game_state(&app), GameState::Playing);
+}
+
+/// Pile empty but enemies alive → no game over (gate 3 blocks).
+#[test]
+fn endless_game_over_blocked_by_enemies() {
+    let mut app = endless_game_over_app(0);
+    app.world_mut().spawn((Enemy, EnemyState::Approaching));
+    app.update();
+    app.update();
+    assert_eq!(game_state(&app), GameState::Playing);
+}
+
+/// Pile empty, no drops, no enemies → GameOver (all gates pass).
+#[test]
+fn endless_game_over_triggers_when_bankrupt() {
+    let mut app = endless_game_over_app(0);
+    app.update();
+    app.update();
+    assert_eq!(game_state(&app), GameState::GameOver);
+}
+
+/// Pile empty but both drops and enemies present → no game over.
+#[test]
+fn endless_game_over_blocked_by_drops_and_enemies() {
+    let mut app = endless_game_over_app(0);
+    app.world_mut().spawn(ScrapDrop {
+        value: 5,
+        lifetime: Timer::from_seconds(10.0, TimerMode::Once),
+    });
+    app.world_mut().spawn((Enemy, EnemyState::Approaching));
+    app.update();
+    app.update();
+    assert_eq!(game_state(&app), GameState::Playing);
+}
+
+// ---------------------------------------------------------------------------
+// Endless spawn guards
+// ---------------------------------------------------------------------------
+
+/// Headless app for testing endless spawn guards.
+///
+/// Sets up states (Playing / Defending), an [`EndlessSpawner`], a grid
+/// entity, and pile resources. Registers [`endless_spawn_enemies`] in
+/// `FixedUpdate` to match production scheduling.
+fn endless_spawn_app() -> App {
+    use bevy_td_sandbox::common::constants::CHUNK_SIZE;
+    use bevy_td_sandbox::pile::resources::EdgeCells;
+    use std::collections::HashSet;
+
+    let mut app = test_app();
+    app.init_state::<GameState>();
+    app.add_sub_state::<PlayPhase>();
+
+    app.world_mut()
+        .resource_mut::<NextState<GameState>>()
+        .set(GameState::Playing);
+    app.update();
+    app.world_mut()
+        .resource_mut::<NextState<PlayPhase>>()
+        .set(PlayPhase::Defending);
+    app.update();
+
+    let config = test_grid_config();
+
+    app.insert_resource(EndlessSpawner {
+        elapsed_time: 0.0,
+        spawn_timer: Timer::from_seconds(1.5, TimerMode::Repeating),
+        enemies_spawned: 0,
+    });
+
+    // Empty edge cells and pile state by default (tests override as needed).
+    app.insert_resource(EdgeCells(Vec::new()));
+    app.insert_resource(PileState {
+        cells: HashSet::new(),
+        center: config.center(),
+        radius_tiles: 0.0,
+        last_radius_int: 0,
+    });
+    app.insert_resource(config);
+
+    // Spawn a grid entity (required by the system's grid_query).
+    let settings = GridSettingsBuilder::new_2d(40, 32)
+        .chunk_size(CHUNK_SIZE)
+        .build();
+    let grid = OrdinalGrid::new(&settings);
+    app.world_mut().spawn(grid);
+
+    app.add_systems(
+        FixedUpdate,
+        endless_spawn_enemies.run_if(in_state(PlayPhase::Defending)),
+    );
+    app
+}
+
+/// Empty edge_cells → no enemies spawned, no panic.
+#[test]
+fn endless_spawn_guard_empty_edge_cells() {
+    let mut app = endless_spawn_app();
+    // edge_cells is already empty; add pile cells so only the edge guard fires.
+    app.world_mut()
+        .resource_mut::<PileState>()
+        .cells
+        .insert(UVec3::new(20, 16, 0));
+
+    for _ in 0..5 {
+        app.update();
+    }
+
+    let enemy_count = app
+        .world_mut()
+        .query_filtered::<(), With<Enemy>>()
+        .iter(app.world())
+        .count();
+    assert_eq!(
+        enemy_count, 0,
+        "no enemies should spawn with empty edge_cells"
+    );
+}
+
+/// Empty pile_state.cells → no enemies spawned, no panic.
+#[test]
+fn endless_spawn_guard_empty_pile_cells() {
+    use bevy_td_sandbox::pile::resources::EdgeCells;
+
+    let mut app = endless_spawn_app();
+    // Add edge cells so only the pile guard fires.
+    app.insert_resource(EdgeCells(vec![UVec3::new(0, 0, 0)]));
+
+    for _ in 0..5 {
+        app.update();
+    }
+
+    let enemy_count = app
+        .world_mut()
+        .query_filtered::<(), With<Enemy>>()
+        .iter(app.world())
+        .count();
+    assert_eq!(
+        enemy_count, 0,
+        "no enemies should spawn with empty pile cells"
+    );
+}
+
+/// Both empty → no enemies spawned, no panic.
+#[test]
+fn endless_spawn_guard_both_empty() {
+    let mut app = endless_spawn_app();
+
+    for _ in 0..5 {
+        app.update();
+    }
+
+    let enemy_count = app
+        .world_mut()
+        .query_filtered::<(), With<Enemy>>()
+        .iter(app.world())
+        .count();
+    assert_eq!(
+        enemy_count, 0,
+        "no enemies should spawn with both guards empty"
+    );
 }
