@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.3.4
+
+- Refactor just release into composable idempotent recipes
+
+
 ## v0.3.3
 
 - Automate release process into single just release command
