@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.3.5
+
+- Add early release guard, quiet CI output, watch deploy workflow
+
+
 ## v0.3.4
 
 - Refactor just release into composable idempotent recipes
