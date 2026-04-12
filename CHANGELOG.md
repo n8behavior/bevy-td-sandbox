@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.3.3
+
+- Automate release process into single just release command
+- Disable Bevy default features to trim unused dependencies
+
+
 ## v0.3.2 — Release Process
 
 ### Infrastructure

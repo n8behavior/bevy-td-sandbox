@@ -343,7 +343,7 @@ dependencies = [
 
 [[package]]
 name = "bevy-td-sandbox"
-version = "0.3.2"
+version = "0.3.3"
 dependencies = [
  "bevy",
  "bevy_northstar",
