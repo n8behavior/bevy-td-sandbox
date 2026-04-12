@@ -128,7 +128,7 @@ _release-ship VERSION:
     fi
     git add CHANGELOG.md Cargo.toml Cargo.lock
     git diff --cached --quiet || git commit -q -m "Release $version"
-    git tag "$version"
+    git tag -a "$version" -m "Release $version"
     git push -q --follow-tags
     echo "[ship] Committed, tagged, and pushed."
 
