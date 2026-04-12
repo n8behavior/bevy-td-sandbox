@@ -142,22 +142,32 @@ _release-publish VERSION:
         echo "[publish] Release $version already exists — skipping."
         exit 0
     fi
-    echo "[publish] Waiting for CI..."
+    echo "[publish] Waiting for CI to pass..."
     tag_sha="$(git rev-parse "$version")"
-    run_id=""
     elapsed=0
-    while [ -z "$run_id" ] && [ $elapsed -lt 120 ]; do
-        run_id="$(gh run list --commit "$tag_sha" --workflow CI --json databaseId -q '.[0].databaseId' 2>/dev/null || echo "")"
-        [ -z "$run_id" ] && sleep 2 && elapsed=$((elapsed + 2))
+    timeout=1200
+    while [ $elapsed -lt $timeout ]; do
+        # Look for a successful CI run on this exact commit
+        status="$(gh run list --commit "$tag_sha" --workflow CI \
+            --json conclusion -q '[.[] | select(.conclusion == "success")] | length' \
+            2>/dev/null || echo "0")"
+        if [ "$status" -gt 0 ] 2>/dev/null; then
+            echo "[publish] CI passed."
+            break
+        fi
+        # Check for a real failure (not cancellation)
+        failed="$(gh run list --commit "$tag_sha" --workflow CI \
+            --json conclusion -q '[.[] | select(.conclusion == "failure")] | length' \
+            2>/dev/null || echo "0")"
+        if [ "$failed" -gt 0 ] 2>/dev/null; then
+            echo "[publish] FAIL: CI failed on $tag_sha"; exit 1
+        fi
+        printf "\r[publish] CI pending... (%ds)" "$elapsed"
+        sleep 10
+        elapsed=$((elapsed + 10))
     done
-    if [ -z "$run_id" ]; then
-        echo "[publish] FAIL: CI run not found after 120s"; exit 1
-    fi
-    echo "[publish] Watching CI run $run_id..."
-    if ! gh run watch "$run_id" --exit-status > /tmp/release-ci-watch.log 2>&1; then
-        echo "[publish] FAIL: CI failed. See /tmp/release-ci-watch.log for details."
-        tail -20 /tmp/release-ci-watch.log
-        exit 1
+    if [ $elapsed -ge $timeout ]; then
+        echo "[publish] FAIL: CI timed out after ${timeout}s"; exit 1
     fi
     echo "[publish] CI passed. Creating GitHub release..."
     gh release create "$version" \
