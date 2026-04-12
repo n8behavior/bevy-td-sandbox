@@ -45,115 +45,111 @@ web-release:
 web-serve:
     bevy run web --port 4000
 
-# Cut a release: prep, test, commit, tag, push, publish
-release VERSION:
+# Cut a release (idempotent — safe to re-run if interrupted)
+release VERSION: (_release-prep VERSION) (_release-ship VERSION) (_release-publish VERSION)
+    @echo ""
+    @echo "=== {{VERSION}} released ==="
+    @echo "Monitor deploy: gh run list --limit 3"
+
+# Prep: CI, version bump, changelog, editor, cargo fmt
+[private]
+_release-prep VERSION:
     #!/usr/bin/env bash
     set -euo pipefail
     version="{{VERSION}}"
     bare_version="${version#v}"
-
-    # ── Phase 1: Pre-flight ──────────────────────────────────────────
-    echo "=== Phase 1: Pre-flight ==="
-
-    if [ -n "$(git status --porcelain)" ]; then
-        echo "FAIL: working tree is not clean"; exit 1
-    fi
-
     current="$(grep '^version' Cargo.toml | head -1 | sed 's/.*"\(.*\)"/\1/')"
     if [ "$current" = "$bare_version" ]; then
-        echo "FAIL: Cargo.toml already at $bare_version"; exit 1
+        echo "[prep] Cargo.toml already at $bare_version — skipping."
+        exit 0
     fi
-
-    if git rev-parse "$version" >/dev/null 2>&1; then
-        echo "FAIL: tag $version already exists"; exit 1
+    echo "[prep] v$current → $version"
+    if [ -n "$(git status --porcelain)" ]; then
+        echo "[prep] FAIL: working tree is not clean"; exit 1
     fi
-
-    echo "Current version: v$current → $version"
-    echo "Running CI..."
+    echo "[prep] Running CI..."
     just ci
-    echo "CI passed."
-
-    # ── Phase 2: Prep ────────────────────────────────────────────────
-    echo ""
-    echo "=== Phase 2: Prep ==="
-
+    echo "[prep] CI passed."
     # Bump Cargo.toml version
     sed -i "0,/^version = \"$current\"/s//version = \"$bare_version\"/" Cargo.toml
-    echo "Bumped Cargo.toml to $bare_version"
-
+    echo "[prep] Bumped Cargo.toml to $bare_version"
     # Auto-generate changelog draft from commits since last tag
     last_tag="$(git describe --tags --abbrev=0)"
     commits="$(git log --oneline "$last_tag"..HEAD)"
-
-    # Build changelog section
     changelog_section="## $version\n\n"
     while IFS= read -r line; do
-        # Strip the short SHA prefix
         msg="${line#* }"
         changelog_section+="- $msg\n"
     done <<< "$commits"
-
-    # Insert after "# Changelog" header
     sed -i "/^# Changelog$/a\\\\n${changelog_section}" CHANGELOG.md
-    echo "Drafted changelog entry from $(echo "$commits" | wc -l) commits."
-
-    # Open editor for review
-    echo "Opening CHANGELOG.md in editor..."
+    echo "[prep] Drafted changelog from $(echo "$commits" | wc -l) commits."
+    echo "[prep] Opening CHANGELOG.md in editor..."
     ${EDITOR:-vi} CHANGELOG.md
-
-    # Regenerate Cargo.lock
     cargo fmt
-    echo "Cargo.lock regenerated."
+    echo "[prep] Done."
 
-    # ── Human testing gate ───────────────────────────────────────────
+# Ship: test gate, commit, tag, push
+[private]
+_release-ship VERSION:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    version="{{VERSION}}"
+    if git ls-remote --tags origin "$version" 2>/dev/null | grep -q "$version"; then
+        echo "[ship] Tag $version already on remote — skipping."
+        exit 0
+    fi
+    if git rev-parse "$version" >/dev/null 2>&1; then
+        echo "[ship] Tag $version exists locally but not pushed — pushing."
+        git push
+        git push --tags
+        echo "[ship] Pushed."
+        exit 0
+    fi
+    # Test gate
     echo ""
-    echo "=== Test before release ==="
+    echo "[ship] === Test before release ==="
     echo "  Native:  just run       (in another terminal)"
     echo "  Web:     just web-serve  (in another terminal)"
     echo ""
     read -p "Continue with release? [y/N] " answer
     if [ "$answer" != "y" ] && [ "$answer" != "Y" ]; then
-        echo "Aborted. Changes are unstaged — review or discard with: git checkout -- ."
+        echo "[ship] Aborted. Changes are unstaged — review or discard with: git checkout -- ."
         exit 1
     fi
-
-    # ── Phase 3: Commit, tag, push ───────────────────────────────────
-    echo ""
-    echo "=== Phase 3: Commit, tag, push ==="
     git add CHANGELOG.md Cargo.toml Cargo.lock
     git commit -m "Release $version"
     git tag "$version"
     git push
     git push --tags
-    echo "Pushed commit and tag."
+    echo "[ship] Committed, tagged, and pushed."
 
-    # ── Phase 4: Wait for CI and publish ─────────────────────────────
-    echo ""
-    echo "=== Phase 4: Waiting for CI ==="
-    tag_sha="$(git rev-parse "$version")"
-    elapsed=0
-    timeout=1200
-    while [ $elapsed -lt $timeout ]; do
-        ci_status="$(gh run list --commit "$tag_sha" --workflow CI --json conclusion -q '.[0].conclusion' 2>/dev/null || echo "")"
-        if [ "$ci_status" = "success" ]; then
-            echo "CI passed."
-            break
-        elif [ "$ci_status" = "failure" ]; then
-            echo "FAIL: CI failed. Fix and re-release."; exit 1
-        fi
-        echo "  CI pending... (${elapsed}s)"
-        sleep 10
-        elapsed=$((elapsed + 10))
-    done
-    if [ $elapsed -ge $timeout ]; then
-        echo "FAIL: CI timed out after ${timeout}s"; exit 1
+# Publish: wait for CI, create GitHub release
+[private]
+_release-publish VERSION:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    version="{{VERSION}}"
+    if gh release view "$version" >/dev/null 2>&1; then
+        echo "[publish] Release $version already exists — skipping."
+        exit 0
     fi
-
-    echo ""
-    echo "=== Creating GitHub release ==="
+    echo "[publish] Waiting for CI..."
+    tag_sha="$(git rev-parse "$version")"
+    run_id=""
+    elapsed=0
+    while [ -z "$run_id" ] && [ $elapsed -lt 120 ]; do
+        run_id="$(gh run list --commit "$tag_sha" --workflow CI --json databaseId -q '.[0].databaseId' 2>/dev/null || echo "")"
+        [ -z "$run_id" ] && sleep 2 && elapsed=$((elapsed + 2))
+    done
+    if [ -z "$run_id" ]; then
+        echo "[publish] FAIL: CI run not found after 120s"; exit 1
+    fi
+    echo "[publish] Watching CI run $run_id..."
+    if ! gh run watch "$run_id" --exit-status; then
+        echo "[publish] FAIL: CI failed. Fix and re-run: just release $version"; exit 1
+    fi
+    echo "[publish] Creating GitHub release..."
     gh release create "$version" \
         --title "$version" \
         --notes "See [CHANGELOG.md](https://github.com/n8behavior/bevy-td-sandbox/blob/main/CHANGELOG.md) for details."
-    echo ""
-    echo "Release created. The Release workflow will now build and deploy to itch.io."
-    echo "Monitor: gh run list --limit 3"
+    echo "[publish] Release created — deploy workflow triggered."
