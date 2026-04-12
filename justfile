@@ -46,10 +46,18 @@ web-serve:
     bevy run web --port 4000
 
 # Cut a release (idempotent — safe to re-run if interrupted)
-release VERSION: (_release-prep VERSION) (_release-ship VERSION) (_release-publish VERSION)
-    @echo ""
-    @echo "=== {{VERSION}} released ==="
-    @echo "Monitor deploy: gh run list --limit 3"
+release VERSION:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if gh release view "{{VERSION}}" >/dev/null 2>&1; then
+        echo "Release {{VERSION}} already exists — nothing to do."
+        exit 0
+    fi
+    just _release-prep "{{VERSION}}"
+    just _release-ship "{{VERSION}}"
+    just _release-publish "{{VERSION}}"
+    echo ""
+    echo "=== {{VERSION}} released ==="
 
 # Prep: CI, version bump, changelog, editor, cargo fmt
 [private]
@@ -67,8 +75,12 @@ _release-prep VERSION:
     if [ -n "$(git status --porcelain)" ]; then
         echo "[prep] FAIL: working tree is not clean"; exit 1
     fi
-    echo "[prep] Running CI..."
-    just ci
+    echo "[prep] Running CI (this may take a minute)..."
+    if ! just ci > /tmp/release-ci.log 2>&1; then
+        echo "[prep] FAIL: CI failed. See /tmp/release-ci.log for details."
+        tail -20 /tmp/release-ci.log
+        exit 1
+    fi
     echo "[prep] CI passed."
     # Bump Cargo.toml version
     sed -i "0,/^version = \"$current\"/s//version = \"$bare_version\"/" Cargo.toml
@@ -82,10 +94,9 @@ _release-prep VERSION:
         changelog_section+="- $msg\n"
     done <<< "$commits"
     sed -i "/^# Changelog$/a\\\\n${changelog_section}" CHANGELOG.md
-    echo "[prep] Drafted changelog from $(echo "$commits" | wc -l) commits."
-    echo "[prep] Opening CHANGELOG.md in editor..."
+    echo "[prep] Drafted changelog from $(echo "$commits" | wc -l) commits — opening editor."
     ${EDITOR:-vi} CHANGELOG.md
-    cargo fmt
+    cargo fmt --quiet
     echo "[prep] Done."
 
 # Ship: test gate, commit, tag, push
@@ -144,12 +155,32 @@ _release-publish VERSION:
     if [ -z "$run_id" ]; then
         echo "[publish] FAIL: CI run not found after 120s"; exit 1
     fi
-    echo "[publish] Watching CI run $run_id..."
-    if ! gh run watch "$run_id" --exit-status; then
-        echo "[publish] FAIL: CI failed. Fix and re-run: just release $version"; exit 1
+    echo "[publish] Waiting for CI run $run_id to finish..."
+    if ! gh run watch "$run_id" --exit-status > /tmp/release-ci-watch.log 2>&1; then
+        echo "[publish] FAIL: CI failed. See /tmp/release-ci-watch.log for details."
+        tail -20 /tmp/release-ci-watch.log
+        exit 1
     fi
-    echo "[publish] Creating GitHub release..."
+    echo "[publish] CI passed. Creating GitHub release..."
     gh release create "$version" \
         --title "$version" \
         --notes "See [CHANGELOG.md](https://github.com/n8behavior/bevy-td-sandbox/blob/main/CHANGELOG.md) for details."
-    echo "[publish] Release created — deploy workflow triggered."
+    echo "[publish] Release created — waiting for deploy..."
+    # Watch the Release workflow triggered by the GH release
+    deploy_id=""
+    elapsed=0
+    while [ -z "$deploy_id" ] && [ $elapsed -lt 120 ]; do
+        deploy_id="$(gh run list --workflow Release --json databaseId,event,headBranch -q '.[] | select(.event=="release") | .databaseId' 2>/dev/null | head -1 || echo "")"
+        [ -z "$deploy_id" ] && sleep 2 && elapsed=$((elapsed + 2))
+    done
+    if [ -z "$deploy_id" ]; then
+        echo "[publish] WARNING: Deploy workflow not found. Check manually: gh run list --limit 3"
+        exit 0
+    fi
+    echo "[publish] Watching deploy run $deploy_id..."
+    if ! gh run watch "$deploy_id" --exit-status > /tmp/release-deploy-watch.log 2>&1; then
+        echo "[publish] FAIL: Deploy failed. See /tmp/release-deploy-watch.log for details."
+        tail -20 /tmp/release-deploy-watch.log
+        exit 1
+    fi
+    echo "[publish] Deploy complete — live on itch.io."
