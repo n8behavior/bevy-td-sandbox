@@ -111,8 +111,8 @@ _release-ship VERSION:
     fi
     if git rev-parse "$version" >/dev/null 2>&1; then
         echo "[ship] Tag $version exists locally but not pushed — pushing."
-        git push
-        git push --tags
+        git push -q
+        git push -q --tags
         echo "[ship] Pushed."
         exit 0
     fi
@@ -128,10 +128,10 @@ _release-ship VERSION:
         exit 1
     fi
     git add CHANGELOG.md Cargo.toml Cargo.lock
-    git commit -m "Release $version"
+    git commit -q -m "Release $version"
     git tag "$version"
-    git push
-    git push --tags
+    git push -q
+    git push -q --tags
     echo "[ship] Committed, tagged, and pushed."
 
 # Publish: wait for CI, create GitHub release
