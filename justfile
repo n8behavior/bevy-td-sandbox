@@ -143,7 +143,7 @@ _release-publish VERSION:
         exit 0
     fi
     echo "[publish] Waiting for CI to pass..."
-    tag_sha="$(git rev-parse "$version")"
+    tag_sha="$(git rev-parse "$version^{commit}")"
     elapsed=0
     timeout=1200
     while [ $elapsed -lt $timeout ]; do
