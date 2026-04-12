@@ -1,35 +1,29 @@
 # Release Process
 
-## Pre-release checklist
+## Quick start
 
-- [ ] `just ci` passes (format + clippy + tests)
-- [ ] Test native build: `just run`
-  - Terrain features visible (brown rubble, blue puddles, green radioactive)
-  - Enemies spawn and path correctly
-  - Towers place, fire, and collect scrap
-  - Audio plays (shots, deaths, scrap collection)
-- [ ] Test web build: `just web-serve` (opens at http://localhost:4000)
-  - Same checks as native above
-  - Browser console (F12) has no unexpected warnings or errors
-  - "Generated terrain:" info log appears in console
+```bash
+just release vX.Y.Z
+```
 
-## Cut the release
+This single command handles the entire release:
 
-1. Update `CHANGELOG.md` with a new version section
-2. Bump `version` in `Cargo.toml`
-3. Run `cargo fmt` (regenerates `Cargo.lock`)
-4. Run `just ci` to re-verify
-5. Commit: `git add CHANGELOG.md Cargo.toml Cargo.lock && git commit -m "Release vX.Y.Z"`
-6. Tag: `git tag vX.Y.Z`
-7. Push: `git push && git push --tags`
-8. Create release: `just release vX.Y.Z`
+1. **Pre-flight** — verifies clean tree, no tag conflict, runs `just ci`
+2. **Prep** — bumps `Cargo.toml` version, drafts changelog from commits, opens `$EDITOR`
+3. **Test gate** — pauses so you can test native (`just run`) and web (`just web-serve`)
+4. **Publish** — commits, tags, pushes, waits for CI, creates GitHub release
 
-The `just release` recipe flight-checks everything (clean tree, tag exists and is pushed, Cargo.toml version matches, CHANGELOG entry present, CI green) and then creates a GitHub release, which triggers the Release workflow.
+The GitHub release triggers the Release workflow, which builds the web bundle and deploys to itch.io.
+
+## What to test before confirming
+
+When the script pauses at "Continue with release?", test in separate terminals:
+
+- [ ] **Native** (`just run`): terrain visible, enemies spawn/path, towers fire, audio works
+- [ ] **Web** (`just web-serve` → http://localhost:4000): same checks plus browser console (F12) shows "Generated terrain:" log with no unexpected warnings
 
 ## Post-release
 
 1. Watch workflows: `gh run list --limit 3`
-2. After the Release workflow completes, verify the itch.io build:
-   - Game loads and plays correctly
-   - Browser console has no unexpected warnings
+2. After the Release workflow completes, verify the itch.io build loads and plays correctly
 3. Verify the web zip is attached to the GitHub release
