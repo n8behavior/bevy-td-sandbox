@@ -111,8 +111,7 @@ _release-ship VERSION:
     fi
     if git rev-parse "$version" >/dev/null 2>&1; then
         echo "[ship] Tag $version exists locally but not pushed — pushing."
-        git push -q
-        git push -q --tags
+        git push -q --follow-tags
         echo "[ship] Pushed."
         exit 0
     fi
@@ -130,8 +129,7 @@ _release-ship VERSION:
     git add CHANGELOG.md Cargo.toml Cargo.lock
     git commit -q -m "Release $version"
     git tag "$version"
-    git push -q
-    git push -q --tags
+    git push -q --follow-tags
     echo "[ship] Committed, tagged, and pushed."
 
 # Publish: wait for CI, create GitHub release
@@ -155,7 +153,7 @@ _release-publish VERSION:
     if [ -z "$run_id" ]; then
         echo "[publish] FAIL: CI run not found after 120s"; exit 1
     fi
-    echo "[publish] Waiting for CI run $run_id to finish..."
+    echo "[publish] Watching CI run $run_id..."
     if ! gh run watch "$run_id" --exit-status > /tmp/release-ci-watch.log 2>&1; then
         echo "[publish] FAIL: CI failed. See /tmp/release-ci-watch.log for details."
         tail -20 /tmp/release-ci-watch.log
