@@ -26,22 +26,20 @@ The order of identity fields doesn't matter. The order of atoms doesn't normally
 
 ## Identity fields
 
-These configure *how the tower presents itself* — the build-menu entry, the placement preview, the debug name. They don't affect combat behavior.
+These configure _how the tower presents itself_ — the build-menu entry, the placement preview, the debug name. They don't affect combat behavior.
 
-| Field | Type | Required | Meaning |
-| --- | --- | --- | --- |
-| `name` | string | yes | Display name in the build menu and tooltips. Must be unique across all loaded recipes. |
-| `cost` | integer | yes | Scrap cost to place the tower. |
-| `color` | string (hex) | yes | Primary color. `"#E5CC4D"` style. Used for the sprite and the build-menu swatch. |
-| `ui_color` | string (hex) | no | Brighter variant for the build-menu UI; defaults to a lightened `color`. |
-| `label` | string | no | One-line tooltip subtitle (e.g., `"chains lightning between enemies"`). |
-| `icon` | string | no | Path to an icon asset. Defaults to a generated swatch from `color`. |
-
-> **Hotkeys are not a recipe field.** Build-menu hotkeys are assigned through the in-game UI, where players can bind or rebind keys to any loaded tower. Putting hotkeys in recipes would mean every modder coordinates which numbers their tower packs claim — and the player still couldn't reassign without editing files. Keeping it out of the recipe avoids that entirely.
+| Field      | Type         | Required | Meaning                                                                                |
+| ---------- | ------------ | -------- | -------------------------------------------------------------------------------------- |
+| `name`     | string       | yes      | Display name in the build menu and tooltips. Must be unique across all loaded recipes. |
+| `cost`     | integer      | yes      | Scrap cost to place the tower.                                                         |
+| `color`    | string (hex) | yes      | Primary color. `"#E5CC4D"` style. Used for the sprite and the build-menu swatch.       |
+| `ui_color` | string (hex) | no       | Brighter variant for the build-menu UI; defaults to a lightened `color`.               |
+| `label`    | string       | no       | One-line tooltip subtitle (e.g., `"chains lightning between enemies"`).                |
+| `icon`     | string       | no       | Path to an icon asset. Defaults to a generated swatch from `color`.                    |
 
 ## Atom list
 
-Anything in the table that *isn't* a named field is treated as an atom. Each atom is a value produced by calling an atom constructor:
+Anything in the table that _isn't_ a named field is treated as an atom. Each atom is a value produced by calling an atom constructor:
 
 ```lua
 Cooldown(1.0)             -- one number → numeric atom
@@ -70,36 +68,6 @@ A combat tower needs, at minimum:
 If you leave one out, the recipe loads but the engine reports the missing role at startup. See [Validation & Errors](validation.md).
 
 A non-combat tower (a passive scrap collector, an income beacon) might skip some of these. See `SolarArray` in [Examples](examples.md) for a tower that's purely passive.
-
-## Optional grouping (`when` / `do` / `passive`)
-
-For longer recipes, you can visually group atoms by what they're doing:
-
-```lua
-return Tower {
-    name = "ScrapGun", cost = 50, color = "#E5CC4D",
-
-    when {
-        Cooldown(1.0),
-        SingleTarget "closest",
-        Range(80),
-    },
-    do_ {
-        Projectile { speed = 200 },
-        AimPrecision(0.15),
-        DirectDamage(10),
-    },
-    passive {
-        ScrapCollector(30),
-        Health(),
-        BlocksNav(),
-    },
-}
-```
-
-These blocks are **purely cosmetic** — they don't change loading or runtime behavior. Atoms inside them are flattened into the same list as if you'd written them all top-level. Use them when a recipe has more than ~6–8 atoms and the structure helps you read it; skip them otherwise.
-
-> *Note: `do` is a reserved keyword in Lua, so the action block uses `do_`. The `when` and `passive` block names are normal identifiers.*
 
 ## Comments
 

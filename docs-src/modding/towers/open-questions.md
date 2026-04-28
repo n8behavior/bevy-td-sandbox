@@ -43,10 +43,6 @@ Trap {
 
 Open: is that the right shape, or should sub-recipes be referenced by name (`template = "mine_default"`) so they can be reused and edited independently? The first is more local (everything you need is in the parent recipe); the second composes better at scale.
 
-### `when` / `do_` / `passive` grouping
-
-[Recipe Anatomy](anatomy.md) describes optional cosmetic grouping. Open: do we keep these as recommended convention, or drop them to keep one canonical shape? The editor will produce flat lists either way; the question is whether hand-written recipes benefit from the visual structure.
-
 ### Versioning
 
 Recipes will outlive atom-catalog changes. If we rename `Cooldown` to `Tick` next year, what happens to old recipes? Options:
