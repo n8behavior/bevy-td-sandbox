@@ -67,7 +67,6 @@ The atoms of the editor. Each component fills one or more **roles**. Compatibili
 
 - `Cooldown(secs)` — fills `Trigger`
 - `ContinuousTick` — fills `Trigger` (fires every frame)
-- `ChargeUp(secs)` — fills `Trigger` (must hold target)
 - `OnThreshold(accumulator, value)` — fills `Trigger`; fires when an `Accumulator` crosses a value (fling tower releasing its stored shots, shock tower instakilling at full charge)
 - `OnWorldEvent(event_type)` — fills `Trigger`; fires in response to a world-state change: `EnemyDeath`, `EnemyPass`, `BossSpawn`, `WaveStart`. Unblocks the entire toll/bonus/nuke family.
 
@@ -124,6 +123,7 @@ The atoms of the editor. Each component fills one or more **roles**. Compatibili
 - `SpraySpread(pellet_count, spread_angle)` — modifies `Projectile`; fires multiple projectiles in a fan simultaneously (shot tower, rotor spray burst)
 - `ProximityDetonate(trigger_radius)` — modifies `Projectile`; triggers payload when near an enemy rather than on direct contact (flak tower)
 - `ConeAOE(facing_angle, spread_angle)` — modifies `Acquirer`; restricts `AllInRange` to a directional cone in front of the tower (sonic tower)
+- `LockOn(secs)` — modifies `Acquirer` (single-target variants); the Acquirer must continuously see the same target for `secs` before it's considered acquired. Replaces an earlier "ChargeUp Trigger" sketch — lock-time is a targeting concern, not a timing concern, so it lives on the Acquirer side and the Trigger stays pure (no back-channel from Acquirer to Trigger). Composes with `Cooldown` to express weapons a dedicated charge-Trigger couldn't (e.g. "fires every 5s, but only after 1.5s of lock").
 - `Boomerang(return_on_miss)` — modifies `Projectile`; projectile arcs out and returns to tower, applying payload on both passes (rang tower)
 - `PathConstrained` — modifies `Projectile`; constrains movement to the road network rather than flying freely (zap tower)
 - `SpiralTrajectory(radius, frequency)` — modifies `Projectile`; projectile corkscrews around its flight path (spiral tower, nova spiral pattern)
@@ -182,6 +182,7 @@ ArcTrajectory       needs: Projectile
 SpraySpread         needs: Projectile
 ProximityDetonate   needs: Projectile
 ConeAOE             needs: AllInRange
+LockOn              needs: SingleTarget (or other single-target Acquirer)
 Boomerang           needs: Projectile
 PathConstrained     needs: Projectile
 ActivityRamp        needs: Payload (any), ActivityCharge
@@ -257,6 +258,12 @@ Frostnova       = Cooldown(8.0) + AllInRange + Range(80)
 Snipefire       = Cooldown(0.4) + SingleTarget(highest-hp) + Range(140)
                 + Projectile(speed=600) + Homing + AimPrecision(0.2)
                 + DirectDamage(5) + Burn(2/s, 3s)
+
+HeavySniper     = Cooldown(3.0) + SingleTarget(furthest-along) + LockOn(1.5)
+                + Range(200) + Projectile(speed=2000)
+                + DirectDamage(80)
+                  (lock-time on the Acquirer, not a ChargeUp Trigger;
+                   Cooldown still caps fire rate independently)
 
 InfernoBeam     = Cooldown(0.0) + SingleTarget(closest) + Range(100)
                 + Beam + DirectDamage(30/s) + Burn(5/s, 2s)
@@ -389,6 +396,66 @@ This is speculative — I have no idea yet how hard it is to build. But it feels
 
 ---
 
+## How the editor knows its atoms
+
+Rust has no runtime introspection, so the editor needs a **catalog** layer separate from the runtime ECS layer. Two layers, two jobs:
+
+1. **Runtime layer.** What's on a tower entity at play time. Plain Bevy components.
+2. **Catalog layer.** Static knowledge of *what atoms exist*, what slots they fill and need, what knobs they expose, how to spawn one. The editor reads this; the game doesn't.
+
+Three credible ways to build the catalog. I'd combine the second and third.
+
+**A. Hand-rolled `AtomDef` registry.** Most explicit, zero magic — an entry per atom (via `inventory::submit!` or similar). Clean to read, but each atom becomes two definitions (the `Component` and the `AtomDef`) that can drift.
+
+**B. Lean on `bevy_reflect`.** `#[derive(Reflect)]` plus `#[reflect(Atom)]` registers a type-data adapter. The editor walks the `TypeRegistry` for every type implementing `Atom`, generates parameter sliders from `Reflect` field iteration and `@range` attributes, and serializes recipes to RON for free. This is how `bevy-inspector-egui` works and is the idiomatic Bevy editor pattern. Recipe save/load (principle #5 — copy-pasteable text) falls out for free.
+
+**C. Marker components for runtime compatibility.** Pair each atom with a `Fills*` marker via Bevy 0.18's `#[require(...)]`. Then "does this tower satisfy `needs`?" is a vanilla `Query` — no reflection at runtime, just ECS.
+
+Combined sketch:
+
+```rust
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum Role { Trigger, Acquirer, Deliverer, Payload, RangeProvider,
+                Modifier, Accumulator, Summoner, TowerNetwork, Behavior,
+                Passive, Lifecycle }
+
+/// UI grouping for the palette. Deliberately distinct from `Role` —
+/// this is a presentation concern, not a semantic claim about the atom.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum Palette { Trigger, Acquirer, Deliverer, Payload, Modifier,
+                   Accumulator, Network, Passive, Structure, Identity }
+
+pub trait Atom: Reflect {
+    const PALETTE: &'static [Palette];   // slice future-proofs cross-listing
+    const FILLS:   &'static [Role];
+    const NEEDS:   &'static [Role];
+}
+
+#[derive(Component)] pub struct FillsTrigger;
+
+#[derive(Component, Reflect, Default)]
+#[reflect(Component, Atom)]
+#[require(FillsTrigger)]
+pub struct Cooldown {
+    #[reflect(@0.1_f32..=10.0)]
+    pub seconds: f32,
+}
+
+impl Atom for Cooldown {
+    const PALETTE: &'static [Palette] = &[Palette::Trigger];
+    const FILLS:   &'static [Role]    = &[Role::Trigger];
+    const NEEDS:   &'static [Role]    = &[];
+}
+```
+
+### Why `Palette` is its own enum (not a string, not just `Role`)
+
+- **Enum, not string.** Closed set, no typo risk, exhaustive `match` in the palette layout code. Strings buy nothing here.
+- **Slice, not single value.** Most atoms have `&[Palette::X]` with one entry, but the slice shape future-proofs cross-listing (a `RangeProvider` modifier could appear under both Acquirers and Modifiers).
+- **Distinct from `Role`.** They overlap today but the jobs differ: `Role` describes pipeline semantics (used for `needs` validation); `Palette` describes UI grouping. Identity atoms (`Name`, `Color`) fill no role yet need a palette home. Lifecycle atoms (`Health`, `BlocksNav`) are structural, not pipeline stages. Keeping them separate lets either evolve independently — subdivide `Structure` into `Defense` and `Economy`, or split `Modifier` into `ProjectileModifier` / `AcquirerModifier`, without touching role logic.
+
+---
+
 ## Design principles
 
 1. **Single-screen build view.** Pick deliverer + a couple payloads + tweak sliders. No nested menus.
@@ -411,13 +478,14 @@ This is speculative — I have no idea yet how hard it is to build. But it feels
 7. **Sharing format.** Lean toward small text recipe — copy-pasteable.
 8. **Build-view first or timeline-view first?** Timeline is the cooler idea but harder. Build view is the safe MVP. They ultimately live side-by-side.
 9. **Does Splash spawn an inner Acquirer?** The model implies yes (splash = "Acquirer at impact point + payloads"). That's elegant and lets us reuse falloff curves on splash. But it might be over-clever.
-10. **What's the right granularity for `Modifier`?** Homing vs ProjectileWithHoming as a deliverer; DamageFalloff as a separate modifier vs baked into ChainWalk. Granularity affects what the editor surfaces.
+10. **What's the right granularity for `Modifier`?** Homing vs ProjectileWithHoming as a deliverer; DamageFalloff as a separate modifier vs baked into ChainWalk. Granularity affects what the editor surfaces. **One case resolved:** lock-time is a `LockOn` Modifier on Acquirer, *not* a `ChargeUp` Trigger or a `LockOnTarget` Acquirer variant. Reason: keeping every Trigger pure (no back-channel from Acquirer) preserves the forward-only pipeline, and `LockOn` then composes with `Cooldown` to express weapons the dedicated-Trigger version couldn't. This sets a precedent: prefer Modifiers over baked-in Acquirer/Deliverer variants when the behavior is orthogonal to the host.
 11. **Which of the four new roles are v1 scope?** `Accumulator` and event-driven `Trigger` are relatively self-contained. `Summoner` (spawned sub-entities) and `TowerNetwork` (inter-tower links) are each their own significant system. `Behavior` payloads (Confuse, PathAttract, PathLoop) require write access to pathfinding, which is the most invasive. Suggesting: implement Accumulator + OnWorldEvent first, gate the others behind a feature flag.
 12. **Trap towers and nested pipelines.** `Trap` as a Deliverer means a spawned entity that itself has a Trigger + Payload. Does the editor let players author that nested pipeline? Or do we treat trap entities as atomic (not editable, just selectable)? Atomic is much simpler for v1.
 13. **TowerNetwork UX: orphaned towers.** A `NetworkNode` tower does nothing alone. The editor needs a way to show "this tower needs a neighbor" — either a preview of where links would form during placement, or a warning state when placed in isolation. How much does the editor take responsibility for that?
 14. **`Behavior` payloads and pathfinding ownership.** `PathAttract`, `PathLoop`, and `Teleport` all need to write to the nav grid or enemy movement state. That's a different integration surface than every other payload. Is `Behavior` actually a separate system tier rather than just another payload type?
 15. **`FormulaPayload` expression language.** If `DirectDamage(formula)` is a real thing, what does the designer see? A text field is too raw; a slider won't cover `boss_hp * 0.1`. Could be a set of pre-defined formula templates ("% of current HP", "scales with charge level") rather than a free expression.
 16. **`GameSpeedSlow` as a tower payload — is it fun?** Slowing global time is a powerful feel moment but it affects all other towers too (they also slow down). Could be intentional design space or could be deeply confusing. Worth playtesting very early if it's in scope.
+17. **Modifier "modifies a sibling" axis.** `Homing modifies Projectile` isn't really fills/needs — it's "this atom requires a sibling atom of a specific component type on the same tower." Add a third axis (e.g. `MODIFIES: &'static [TypeId]`) to the `Atom` trait, or fold it into `NEEDS` with a Role-vs-Component disambiguation? The first is honest about the relationship; the second keeps the trait surface smaller. Related: open questions #9 and #12 push toward atoms whose parameters are themselves recipes (Splash → inner Acquirer; Trap → nested pipeline) — if either is in scope, the catalog gains a "subrecipe" parameter type and the editor's parameter UI has to recurse.
 
 ---
 
