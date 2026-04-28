@@ -30,6 +30,14 @@ fmt:
 doc:
     cargo doc --open
 
+# Build the mdbook manual (output to ./book/)
+book:
+    mdbook build
+
+# Serve the mdbook manual locally with live reload
+book-serve:
+    mdbook serve --open
+
 # Full CI check (runs format, clippy, and tests)
 ci: fmt-check clippy test
 

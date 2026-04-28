@@ -1,0 +1,11 @@
+[book]
+authors = ["Mike Sandman"]
+language = "en"
+src = "docs-src"
+title = "Bevy TD Sandbox Manual"
+
+[output.html]
+default-theme = "navy"
+preferred-dark-theme = "navy"
+git-repository-url = "https://github.com/n8behavior/bevy-td-sandbox"
+edit-url-template = "https://github.com/n8behavior/bevy-td-sandbox/edit/main/docs-src/{path}"

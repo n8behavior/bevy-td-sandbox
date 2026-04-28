@@ -63,6 +63,20 @@ cargo doc --open       # local API docs
 
 </details>
 
+## Manual
+
+The modding and reference manual lives in [`docs-src/`](docs-src/) and is
+published to **[GitHub Pages](https://n8behavior.github.io/bevy-td-sandbox/)**
+on every push to `main`. Build and serve locally with:
+
+```bash
+just book        # build to ./book/
+just book-serve  # serve with live reload
+```
+
+Requires [`mdbook`](https://rust-lang.github.io/mdBook/) — install with
+`cargo install mdbook`.
+
 ## Development
 
 ### Feature flags
