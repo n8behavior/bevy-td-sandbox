@@ -11,12 +11,11 @@ A single Lua file can return *multiple* towers by computing them from parameters
 ```lua
 -- assets/towers/snipers.lua
 
-local function make_sniper(tier, cost, key, range, damage)
+local function make_sniper(tier, cost, range, damage)
     return Tower {
         name  = "Sniper-" .. tier,
         cost  = cost,
         color = "#5C7A8C",
-        key   = key,
 
         Cooldown(5.0),
         SingleTarget "highest-hp",
@@ -31,9 +30,9 @@ local function make_sniper(tier, cost, key, range, damage)
 end
 
 return {
-    make_sniper("I",   100, "3", 120, 30),
-    make_sniper("II",  200, "4", 160, 60),
-    make_sniper("III", 400, "5", 200, 120),
+    make_sniper("I",   100, 120, 30),
+    make_sniper("II",  200, 160, 60),
+    make_sniper("III", 400, 200, 120),
 }
 ```
 
@@ -68,7 +67,7 @@ end
 
 return {
     Tower {
-        name = "TankBreaker", cost = 200, color = "#FF4040", key = "7",
+        name = "TankBreaker", cost = 200, color = "#FF4040",
 
         Cooldown(2.0),
         SingleTarget "highest-hp",
@@ -81,7 +80,7 @@ return {
     },
 
     Tower {
-        name = "BurnLance", cost = 150, color = "#FF8000", key = "8",
+        name = "BurnLance", cost = 150, color = "#FF8000",
 
         Cooldown(0.5),
         SingleTarget "closest",
@@ -113,7 +112,6 @@ local function tower_for_tier(i)
         name  = "Spark-" .. tier,
         cost  = BASE_COST * i,
         color = ({ "#CD7F32", "#C0C0C0", "#FFD700", "#E5E4E2" })[i],
-        key   = tostring(i),
 
         Cooldown(1.0),
         SingleTarget "closest",

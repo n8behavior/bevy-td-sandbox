@@ -17,7 +17,6 @@ return Tower {
     name  = "ScrapGun",
     cost  = 50,
     color = "#E5CC4D",
-    key   = "1",
 
     Cooldown(1.0),
     SingleTarget "closest",
@@ -41,7 +40,6 @@ return Tower {
     name  = "Explosive",
     cost  = 125,
     color = "#E07B00",
-    key   = "2",
 
     Cooldown(3.3),
     SingleTarget "closest",
@@ -66,7 +64,6 @@ return Tower {
     name  = "Railgun",
     cost  = 150,
     color = "#5C7A8C",
-    key   = "3",
 
     Cooldown(5.0),
     SingleTarget "closest",
@@ -90,7 +87,6 @@ return Tower {
     name  = "ChainLightning",
     cost  = 125,
     color = "#4FA1E0",
-    key   = "4",
 
     Cooldown(2.0),
     SingleTarget "closest",
@@ -115,7 +111,6 @@ return Tower {
     name  = "TarPit",
     cost  = 75,
     color = "#5C3A0F",
-    key   = "5",
 
     ContinuousTick(),
     AllInRange(),
@@ -138,7 +133,6 @@ return Tower {
     name  = "ScrapMagnet",
     cost  = 100,
     color = "#4F7CE0",
-    key   = "6",
 
     ContinuousTick(),
     AllInRange(),

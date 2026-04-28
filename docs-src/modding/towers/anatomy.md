@@ -8,7 +8,6 @@ return Tower {
     name  = "ScrapGun",
     cost  = 50,
     color = "#E5CC4D",
-    key   = "1",
 
     -- ── atoms (indexed entries) ──
     Cooldown(1.0),
@@ -34,10 +33,11 @@ These configure *how the tower presents itself* — the build-menu entry, the pl
 | `name` | string | yes | Display name in the build menu and tooltips. Must be unique across all loaded recipes. |
 | `cost` | integer | yes | Scrap cost to place the tower. |
 | `color` | string (hex) | yes | Primary color. `"#E5CC4D"` style. Used for the sprite and the build-menu swatch. |
-| `key` | string | no | Hotkey to select this tower in the build menu — `"1"` through `"9"`, or `"0"`. If two towers claim the same key, load order wins; the loser becomes mouse-only. |
 | `ui_color` | string (hex) | no | Brighter variant for the build-menu UI; defaults to a lightened `color`. |
 | `label` | string | no | One-line tooltip subtitle (e.g., `"chains lightning between enemies"`). |
 | `icon` | string | no | Path to an icon asset. Defaults to a generated swatch from `color`. |
+
+> **Hotkeys are not a recipe field.** Build-menu hotkeys are assigned through the in-game UI, where players can bind or rebind keys to any loaded tower. Putting hotkeys in recipes would mean every modder coordinates which numbers their tower packs claim — and the player still couldn't reassign without editing files. Keeping it out of the recipe avoids that entirely.
 
 ## Atom list
 
@@ -77,7 +77,7 @@ For longer recipes, you can visually group atoms by what they're doing:
 
 ```lua
 return Tower {
-    name = "ScrapGun", cost = 50, color = "#E5CC4D", key = "1",
+    name = "ScrapGun", cost = 50, color = "#E5CC4D",
 
     when {
         Cooldown(1.0),

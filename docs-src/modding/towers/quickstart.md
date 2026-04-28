@@ -21,7 +21,6 @@ return Tower {
     name  = "Sparkler",
     cost  = 40,
     color = "#FFB000",
-    key   = "1",
 
     Cooldown(0.6),
     SingleTarget "closest",
@@ -51,7 +50,7 @@ Walking the recipe top-to-bottom:
 | Line | Meaning |
 | --- | --- |
 | `return Tower { ... }` | Every recipe file returns one `Tower` value. |
-| `name`, `cost`, `color`, `key` | Identity — how the tower appears in the build menu. |
+| `name`, `cost`, `color` | Identity — how the tower appears in the build menu. (Hotkeys are bound in the in-game UI, not in the recipe.) |
 | `Cooldown(0.6)` | Wait 0.6s between shots. |
 | `SingleTarget "closest"` | Pick one enemy — the closest one. |
 | `Range(70)` | The acquirer's radius. |

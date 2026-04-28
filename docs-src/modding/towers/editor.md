@@ -8,7 +8,7 @@ This page explains where that round-trip works perfectly, where it doesn't, and 
 
 When you save a tower from the editor, it writes a flat `Tower { ... }` recipe with:
 
-- Identity fields ordered: `name`, `cost`, `color`, `key`, optional fields after.
+- Identity fields ordered: `name`, `cost`, `color`, optional fields after.
 - Atoms grouped by palette (Triggers first, then Acquirers, Deliverers, Payloads, Modifiers, then structural).
 - One atom per line, conventional spacing.
 

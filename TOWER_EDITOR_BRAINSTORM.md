@@ -157,7 +157,7 @@ The atoms of the editor. Each component fills one or more **roles**. Compatibili
 
 **Identity**
 
-- `Name`, `Color`, `Hotkey`, `Icon`, `Label`
+- `Name`, `Color`, `Icon`, `Label` *(no `Hotkey` — bindings are an in-game UI concern, not a recipe field; avoids cross-mod key collisions)*
 
 ### Compatibility rules emerge from `needs`
 
