@@ -6,17 +6,14 @@ use crate::audio::{GameSound, PlaySound};
 use crate::common::constants::*;
 use crate::common::math::{angle_to_dir, rotate_toward};
 use crate::economy::components::ScrapDrop;
-use crate::enemy::components::{DamageFlash, Enemy, Health, SlowEffect};
+use crate::enemy::components::{Enemy, Health, SlowEffect};
 use crate::grid::systems::grid_to_world_cfg;
 use crate::pile::resources::{PileScrap, PileState};
 use crate::projectile::components::{AoEPayload, Projectile, TrailEmitter};
 use crate::stats::resources::RunStats;
 
 use super::components::*;
-use super::types::explosive::Explosive;
-use super::types::railgun::Railgun;
-use super::types::scrap_gun::ScrapGun;
-use super::types::scrap_magnet::ScrapMagnet;
+use super::events::TowerFired;
 use super::upgrade::degradation_color;
 
 // ---------------------------------------------------------------------------
@@ -224,6 +221,7 @@ pub fn turret_state_machine(
     mut commands: Commands,
     mut towers: Query<
         (
+            Entity,
             &Transform,
             &TowerStats,
             &mut TurretState,
@@ -231,9 +229,6 @@ pub fn turret_state_machine(
             &ProjectileVisuals,
             Option<&AoEOnHit>,
             Option<&TargetingMode>,
-            Option<&ScrapGun>,
-            Option<&Explosive>,
-            Option<&Railgun>,
             Option<&TowerHealth>,
             &TowerState,
         ),
@@ -246,6 +241,7 @@ pub fn turret_state_machine(
 ) {
     let pile_center_world = grid_to_world_cfg(pile_state.center, &config);
     for (
+        entity,
         tower_tf,
         stats,
         mut state,
@@ -253,9 +249,6 @@ pub fn turret_state_machine(
         visuals,
         aoe,
         targeting,
-        is_scrapgun,
-        is_explosive,
-        is_railgun,
         tower_health,
         tower_state,
     ) in &mut towers
@@ -306,14 +299,7 @@ pub fn turret_state_machine(
                     aoe,
                 );
                 state.cooldown.reset();
-
-                if is_scrapgun.is_some() {
-                    commands.trigger(PlaySound(GameSound::TowerScrapgun));
-                } else if is_explosive.is_some() {
-                    commands.trigger(PlaySound(GameSound::TowerExplosive));
-                } else if is_railgun.is_some() {
-                    commands.trigger(PlaySound(GameSound::TowerRailgun));
-                }
+                commands.trigger(TowerFired { entity });
             }
         }
     }
@@ -433,186 +419,6 @@ pub fn scrap_magnet_collect(
                 let strength = 1.0 - (dist / range);
                 let pull = direction * SCRAP_PULL_SPEED * strength * time.delta_secs();
                 drop_tf.translation += pull.extend(0.0);
-            }
-        }
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Chain Lightning
-// ---------------------------------------------------------------------------
-
-/// Chain lightning towers: find target, build chain, deal damage, spawn arcs.
-pub fn chain_lightning_fire(
-    mut commands: Commands,
-    mut towers: Query<
-        (
-            &Transform,
-            &TowerStats,
-            &ChainLightning,
-            &mut ChainCooldown,
-            Option<&TargetingMode>,
-            Option<&TowerHealth>,
-            &TowerState,
-        ),
-        With<Tower>,
-    >,
-    mut enemies: Query<(Entity, &mut Health, &Transform, &Sprite), With<Enemy>>,
-    time: Res<Time>,
-    pile_state: Res<PileState>,
-    config: Res<GridConfig>,
-) {
-    let pile_center_world = grid_to_world_cfg(pile_state.center, &config);
-    for (tower_tf, stats, chain, mut cooldown, targeting, tower_health, tower_state) in &mut towers
-    {
-        if !tower_state.is_operational() {
-            continue;
-        }
-        let eff = tower_health.map_or(1.0, |h| h.effectiveness());
-        cooldown
-            .timer
-            .tick(Duration::from_secs_f64(time.delta_secs_f64() * eff as f64));
-        if !cooldown.timer.is_finished() {
-            continue;
-        }
-
-        let tower_pos = tower_tf.translation.truncate();
-        let mode = targeting.copied().unwrap_or_default();
-
-        let Some(first_target) = best_target_from(
-            enemies
-                .iter()
-                .map(|(e, h, tf, _)| (e, tf.translation.truncate(), h.current)),
-            tower_pos,
-            stats.range,
-            mode,
-            pile_center_world,
-        ) else {
-            continue;
-        };
-
-        cooldown.timer.reset();
-        commands.trigger(PlaySound(GameSound::TowerChainLightning));
-
-        // Build chain (read-only pass via .iter() / .get()).
-        let mut chain_targets: Vec<(Entity, Vec2, f32)> = Vec::new();
-        let mut hit_set = vec![first_target];
-        let mut current_damage = stats.damage * eff;
-
-        if let Ok((_, _, tf, _)) = enemies.get(first_target) {
-            let pos = tf.translation.truncate();
-            chain_targets.push((first_target, pos, current_damage));
-
-            loop {
-                current_damage *= chain.damage_falloff;
-                if current_damage < 1.0 {
-                    break;
-                }
-
-                let last_pos = chain_targets.last().unwrap().1;
-
-                // Find nearest unhit enemy within arc range.
-                let mut best: Option<(Entity, Vec2, f32)> = None;
-                for (e, _, tf, _) in enemies.iter() {
-                    if hit_set.contains(&e) {
-                        continue;
-                    }
-                    let pos = tf.translation.truncate();
-                    let dist = last_pos.distance(pos);
-                    if dist <= chain.arc_range && best.is_none_or(|(_, _, d)| dist < d) {
-                        best = Some((e, pos, dist));
-                    }
-                }
-
-                if let Some((entity, pos, _)) = best {
-                    chain_targets.push((entity, pos, current_damage));
-                    hit_set.push(entity);
-                } else {
-                    break;
-                }
-            }
-        }
-
-        // Apply damage (mutable pass via .get_mut()).
-        let arc_color = Color::srgba(0.7, 0.85, 1.0, 0.9);
-        let mut prev_pos = tower_pos;
-
-        for &(entity, pos, damage) in &chain_targets {
-            if let Ok((_, mut health, _, sprite)) = enemies.get_mut(entity) {
-                health.current -= damage;
-                commands.entity(entity).insert(DamageFlash {
-                    timer: Timer::from_seconds(0.1, TimerMode::Once),
-                    original_color: sprite.color,
-                });
-            }
-
-            spawn_lightning_arc(&mut commands, prev_pos, pos, arc_color);
-            prev_pos = pos;
-        }
-    }
-}
-
-fn spawn_lightning_arc(commands: &mut Commands, from: Vec2, to: Vec2, color: Color) {
-    let midpoint = (from + to) / 2.0;
-    let diff = to - from;
-    let distance = diff.length();
-    let angle = diff.y.atan2(diff.x);
-
-    commands.spawn((
-        LightningArc {
-            timer: Timer::from_seconds(0.15, TimerMode::Once),
-        },
-        Sprite::from_color(color, Vec2::new(1.0, 2.0)),
-        Transform::from_translation(midpoint.extend(5.0))
-            .with_rotation(Quat::from_rotation_z(angle))
-            .with_scale(Vec3::new(distance, 1.0, 1.0)),
-    ));
-}
-
-/// Fade and despawn lightning arc visuals.
-pub fn animate_lightning_arcs(
-    mut commands: Commands,
-    mut arcs: Query<(Entity, &mut LightningArc, &mut Sprite)>,
-    time: Res<Time>,
-) {
-    for (entity, mut arc, mut sprite) in &mut arcs {
-        arc.timer.tick(time.delta());
-        let t = arc.timer.fraction();
-        sprite.color = sprite.color.with_alpha(0.9 * (1.0 - t));
-        if arc.timer.is_finished() {
-            commands.entity(entity).despawn();
-        }
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Scrap Magnet systems
-// ---------------------------------------------------------------------------
-
-/// Pull enemies toward dedicated Magnet towers, making them struggle against the field.
-/// Only the Magnet tower type (ScrapMagnet marker) pulls enemies, not all collectors.
-pub fn magnetic_pull_enemies(
-    magnets: Query<(&Transform, &ScrapCollector, &TowerState), (With<ScrapMagnet>, With<Tower>)>,
-    mut enemies: Query<&mut Transform, (With<Enemy>, Without<Tower>)>,
-    time: Res<Time>,
-) {
-    for mut enemy_tf in &mut enemies {
-        let enemy_pos = enemy_tf.translation.truncate();
-        for (mag_tf, collector, tower_state) in &magnets {
-            if !tower_state.is_operational() {
-                continue;
-            }
-            let mag_pos = mag_tf.translation.truncate();
-            let dist = mag_pos.distance(enemy_pos);
-            if dist <= collector.range && dist > 2.0 {
-                let pull = magnetic_pull(
-                    enemy_pos,
-                    mag_pos,
-                    collector.range,
-                    ENEMY_PULL_SPEED,
-                    time.delta_secs(),
-                );
-                enemy_tf.translation += pull.extend(0.0);
             }
         }
     }

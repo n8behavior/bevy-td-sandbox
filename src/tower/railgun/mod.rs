@@ -1,16 +1,47 @@
+use std::time::Duration;
+
+use bevy::audio::Volume;
 use bevy::prelude::*;
 
 use crate::common::constants::{MAGNET_AURA_COLOR, TOWER_HP_COST_MULT};
 use crate::tower::components::*;
+use crate::tower::events::TowerFired;
+
+const FIRE_HZ: f32 = 2200.0;
+const FIRE_MS: u64 = 50;
+const FIRE_VOLUME: f32 = 0.3;
 
 #[derive(Component)]
 pub struct Railgun;
+
+#[derive(Resource)]
+struct FireSound(Handle<Pitch>);
 
 pub struct RailgunPlugin;
 
 impl Plugin for RailgunPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Startup, register);
+        app.add_systems(Startup, (register, init_fire_sound))
+            .add_observer(on_tower_fired);
+    }
+}
+
+fn init_fire_sound(mut commands: Commands, mut pitches: ResMut<Assets<Pitch>>) {
+    let handle = pitches.add(Pitch::new(FIRE_HZ, Duration::from_millis(FIRE_MS)));
+    commands.insert_resource(FireSound(handle));
+}
+
+fn on_tower_fired(
+    trigger: On<TowerFired>,
+    railguns: Query<(), With<Railgun>>,
+    sound: Res<FireSound>,
+    mut commands: Commands,
+) {
+    if railguns.contains(trigger.entity) {
+        commands.spawn((
+            AudioPlayer::<Pitch>(sound.0.clone()),
+            PlaybackSettings::DESPAWN.with_volume(Volume::Linear(FIRE_VOLUME)),
+        ));
     }
 }
 
@@ -54,6 +85,7 @@ fn register(mut registry: ResMut<TowerRegistry>) {
                 },
                 TowerTier(0),
                 TowerName("Railgun"),
+                PanelStats::default(),
                 BaseStats {
                     cost: 150,
                     damage,

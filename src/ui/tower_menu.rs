@@ -18,25 +18,38 @@ pub struct TowerPaletteIndex(pub usize);
 #[derive(Component)]
 pub struct WavePreviewPanel;
 
-/// Which screen edge a UI panel is anchored to.
-enum PanelSide {
-    Left,
-    Right,
+/// Where a UI panel is anchored on screen.
+pub enum PanelAnchor {
+    BottomLeft,
+    BottomRight,
+    TopRight,
 }
 
-/// Builds the common component bundle for a bottom-anchored UI panel.
-fn panel_node(side: PanelSide) -> (Node, BackgroundColor, DespawnOnExit<GameState>) {
+/// Pixel offset below the top HUD bar (`hud::setup_hud` height = 40).
+const TOP_HUD_HEIGHT_PX: f32 = 40.0;
+
+/// Builds the common component bundle for an anchored UI panel.
+pub fn panel_node(anchor: PanelAnchor) -> (Node, BackgroundColor, DespawnOnExit<GameState>) {
     let mut node = Node {
         position_type: PositionType::Absolute,
-        bottom: Val::Px(10.0),
         flex_direction: FlexDirection::Column,
         row_gap: Val::Px(4.0),
         padding: UiRect::all(Val::Px(10.0)),
         ..default()
     };
-    match side {
-        PanelSide::Left => node.left = Val::Px(10.0),
-        PanelSide::Right => node.right = Val::Px(10.0),
+    match anchor {
+        PanelAnchor::BottomLeft => {
+            node.bottom = Val::Px(10.0);
+            node.left = Val::Px(10.0);
+        }
+        PanelAnchor::BottomRight => {
+            node.bottom = Val::Px(10.0);
+            node.right = Val::Px(10.0);
+        }
+        PanelAnchor::TopRight => {
+            node.top = Val::Px(TOP_HUD_HEIGHT_PX + 10.0);
+            node.right = Val::Px(10.0);
+        }
     }
     (
         node,
@@ -51,7 +64,7 @@ pub fn setup_tower_palette(
     game_mode: Res<GameMode>,
 ) {
     commands
-        .spawn((panel_node(PanelSide::Left), HudPanel))
+        .spawn((panel_node(PanelAnchor::BottomLeft), HudPanel))
         .with_children(|parent| {
             parent.spawn((
                 Text::new(format!("TOWERS (1-{})", registry.blueprints.len())),
@@ -124,9 +137,11 @@ pub fn setup_tower_palette(
             ));
         });
 
-    // Wave preview panel (right side, content adapts per phase)
+    // Wave preview panel (top-right, content adapts per phase).
+    // Anchored below the top HUD bar; doesn't overlap with the upgrade panel
+    // anchored bottom-right.
     commands.spawn((
-        panel_node(PanelSide::Right),
+        panel_node(PanelAnchor::TopRight),
         Visibility::Hidden,
         HudPanel,
         WavePreviewPanel,

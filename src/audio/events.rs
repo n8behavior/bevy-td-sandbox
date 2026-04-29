@@ -7,11 +7,6 @@ use bevy::prelude::*;
 /// and the playback observer.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum GameSound {
-    // Tower weapons
-    TowerScrapgun,
-    TowerExplosive,
-    TowerRailgun,
-    TowerChainLightning,
     // Tower state
     TowerDestroyed,
     TowerRepaired,
@@ -30,10 +25,6 @@ pub enum GameSound {
 impl GameSound {
     /// All variants, for iteration in asset init and tests.
     pub const ALL: &[GameSound] = &[
-        GameSound::TowerScrapgun,
-        GameSound::TowerExplosive,
-        GameSound::TowerRailgun,
-        GameSound::TowerChainLightning,
         GameSound::TowerDestroyed,
         GameSound::TowerRepaired,
         GameSound::EnemyDeath,
@@ -48,10 +39,6 @@ impl GameSound {
     /// Pitch frequency in Hz.
     pub const fn pitch_hz(&self) -> f32 {
         match self {
-            GameSound::TowerScrapgun => 880.0,
-            GameSound::TowerExplosive => 110.0,
-            GameSound::TowerRailgun => 2200.0,
-            GameSound::TowerChainLightning => 660.0,
             GameSound::TowerDestroyed => 82.0,
             GameSound::TowerRepaired => 550.0,
             GameSound::EnemyDeath => 220.0,
@@ -67,10 +54,6 @@ impl GameSound {
     /// Duration in milliseconds.
     pub const fn duration_ms(&self) -> u64 {
         match self {
-            GameSound::TowerScrapgun => 80,
-            GameSound::TowerExplosive => 250,
-            GameSound::TowerRailgun => 50,
-            GameSound::TowerChainLightning => 120,
             GameSound::TowerDestroyed => 300,
             GameSound::TowerRepaired => 150,
             GameSound::EnemyDeath => 150,
@@ -86,10 +69,6 @@ impl GameSound {
     /// Default playback volume (linear, 0.0..=1.0).
     pub const fn volume(&self) -> f32 {
         match self {
-            GameSound::TowerScrapgun => 0.3,
-            GameSound::TowerExplosive => 0.4,
-            GameSound::TowerRailgun => 0.3,
-            GameSound::TowerChainLightning => 0.3,
             GameSound::TowerDestroyed => 0.5,
             GameSound::TowerRepaired => 0.4,
             GameSound::EnemyDeath => 0.4,

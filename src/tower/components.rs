@@ -289,38 +289,6 @@ pub struct SlowAuraRingConfig {
     pub color: Color,
 }
 
-/// Chain lightning behavior config.
-#[derive(Component)]
-pub struct ChainLightning {
-    pub arc_range: f32,
-    pub damage_falloff: f32,
-}
-
-/// Base arc range for upgrade calculations (immutable snapshot).
-#[derive(Component)]
-pub struct BaseArcRange(pub f32);
-
-/// Cooldown timer for instant-fire towers (no aiming phase).
-#[derive(Component)]
-pub struct ChainCooldown {
-    pub timer: Timer,
-}
-
-impl ChainCooldown {
-    pub fn new(secs: f32) -> Self {
-        let mut timer = Timer::from_seconds(secs, TimerMode::Once);
-        // Start fully charged so first shot fires immediately.
-        timer.tick(timer.duration());
-        Self { timer }
-    }
-}
-
-/// Lightning arc visual (fading line segment between two points).
-#[derive(Component)]
-pub struct LightningArc {
-    pub timer: Timer,
-}
-
 /// Pulls nearby scrap drops toward this entity and auto-collects on contact.
 /// Present on the pile, the dedicated Magnet tower, and mechanical towers.
 #[derive(Component)]
@@ -358,6 +326,37 @@ pub struct CollectionAuraRingConfig {
 /// interference during tower stat upgrades.
 #[derive(Component)]
 pub struct MagnetAura;
+
+// ---------------------------------------------------------------------------
+// Upgrade panel stat lines
+// ---------------------------------------------------------------------------
+
+/// A single labeled stat line in the upgrade panel.
+#[derive(Clone)]
+pub struct StatLine {
+    pub label: &'static str,
+    pub value: String,
+    pub color: Color,
+}
+
+/// Per-tower stat lines for the upgrade panel.
+///
+/// `*_common` slots are populated by the shared writer in `tower::upgrade`
+/// (DMG, RNG, HP, FIRE RATE, AoE, SLOW, COLLECT). `*_extra` slots are
+/// populated by per-tower modules (e.g. Chain Lightning's ARC). Each writer
+/// owns its own slot, clears it before re-populating, and never touches
+/// other slots — so writers never fight over which lines to keep.
+///
+/// Decoupling per-tower lines into `extra` (written by tower-owned systems)
+/// lets shared `update_upgrade_panel` render any tower without knowing its
+/// type.
+#[derive(Component, Default)]
+pub struct PanelStats {
+    pub common: Vec<StatLine>,
+    pub extra: Vec<StatLine>,
+    pub next_tier_common: Vec<StatLine>,
+    pub next_tier_extra: Vec<StatLine>,
+}
 
 #[cfg(test)]
 mod tests {

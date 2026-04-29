@@ -1,6 +1,9 @@
+pub mod systems;
+
 use bevy::prelude::*;
 
 use crate::common::constants::{MAGNET_AURA_COLOR, SCRAP_MAGNET_RANGE, TOWER_HP_COST_MULT};
+use crate::states::{GameState, PlayPhase};
 use crate::tower::components::*;
 
 /// Marker for the dedicated Magnet tower type.
@@ -12,7 +15,12 @@ pub struct ScrapMagnetPlugin;
 
 impl Plugin for ScrapMagnetPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Startup, register);
+        app.add_systems(Startup, register).add_systems(
+            FixedUpdate,
+            systems::magnetic_pull_enemies
+                .run_if(in_state(GameState::Playing))
+                .run_if(in_state(PlayPhase::Defending)),
+        );
     }
 }
 
@@ -49,6 +57,7 @@ fn register(mut registry: ResMut<TowerRegistry>) {
                 },
                 TowerTier(0),
                 TowerName("Magnet"),
+                PanelStats::default(),
                 BaseStats {
                     cost: 100,
                     damage,

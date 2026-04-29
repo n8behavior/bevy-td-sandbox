@@ -14,10 +14,6 @@ pub(super) fn init_sound_assets(mut commands: Commands, mut pitches: ResMut<Asse
         ))
     };
     commands.insert_resource(SoundAssets {
-        tower_scrapgun: add(GameSound::TowerScrapgun),
-        tower_explosive: add(GameSound::TowerExplosive),
-        tower_railgun: add(GameSound::TowerRailgun),
-        tower_chain_lightning: add(GameSound::TowerChainLightning),
         tower_destroyed: add(GameSound::TowerDestroyed),
         tower_repaired: add(GameSound::TowerRepaired),
         enemy_death: add(GameSound::EnemyDeath),
@@ -49,7 +45,7 @@ mod tests {
 
     #[test]
     fn all_variants_covered() {
-        assert_eq!(GameSound::ALL.len(), 13);
+        assert_eq!(GameSound::ALL.len(), 9);
     }
 
     #[test]
@@ -76,9 +72,9 @@ mod tests {
 
     #[test]
     fn specific_sound_values() {
-        assert_eq!(GameSound::TowerScrapgun.pitch_hz(), 880.0);
-        assert_eq!(GameSound::TowerScrapgun.duration_ms(), 80);
-        assert_eq!(GameSound::TowerScrapgun.volume(), 0.3);
+        assert_eq!(GameSound::TowerDestroyed.pitch_hz(), 82.0);
+        assert_eq!(GameSound::TowerDestroyed.duration_ms(), 300);
+        assert_eq!(GameSound::TowerDestroyed.volume(), 0.5);
 
         assert_eq!(GameSound::GameOver.pitch_hz(), 165.0);
         assert_eq!(GameSound::GameOver.duration_ms(), 400);

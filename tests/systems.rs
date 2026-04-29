@@ -1213,7 +1213,7 @@ fn play_sound_observer_spawns_audio_player() {
 
     app.world_mut()
         .commands()
-        .trigger(PlaySound(GameSound::TowerScrapgun));
+        .trigger(PlaySound(GameSound::TowerDestroyed));
     app.update();
 
     let count = app

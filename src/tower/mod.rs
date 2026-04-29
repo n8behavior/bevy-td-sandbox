@@ -8,11 +8,17 @@
 //! corresponding config component (`RangeRingConfig`, `SlowAuraRingConfig`,
 //! `CollectionAuraRingConfig`) is added to an entity.
 
+pub mod chain_lightning;
 pub mod components;
+pub mod events;
+pub mod explosive;
 pub mod placement;
+pub mod railgun;
+pub mod scrap_gun;
+pub mod scrap_magnet;
 pub mod systems;
+pub mod tar_pit;
 pub mod targeting;
-pub mod types;
 pub mod upgrade;
 
 use crate::shader::{CircleMaterial, CircleMesh};
@@ -139,14 +145,13 @@ impl Plugin for TowerPlugin {
         app.init_resource::<placement::SelectedTower>()
             .init_resource::<TowerRegistry>()
             .init_resource::<upgrade::InspectedTower>()
-            .init_resource::<targeting::RadialMenuState>()
             .add_plugins((
-                types::ScrapGunPlugin,
-                types::TarPitPlugin,
-                types::ExplosivePlugin,
-                types::RailgunPlugin,
-                types::ScrapMagnetPlugin,
-                types::ChainLightningPlugin,
+                scrap_gun::ScrapGunPlugin,
+                tar_pit::TarPitPlugin,
+                explosive::ExplosivePlugin,
+                railgun::RailgunPlugin,
+                scrap_magnet::ScrapMagnetPlugin,
+                chain_lightning::ChainLightningPlugin,
             ))
             .add_systems(PostStartup, sort_blueprints)
             .add_systems(OnEnter(GameState::Playing), upgrade::setup_upgrade_panel)
@@ -158,7 +163,7 @@ impl Plugin for TowerPlugin {
                     placement::tint_placing_tower,
                     placement::confirm_tower_placement,
                     placement::sell_tower,
-                    targeting::handle_radial_click,
+                    targeting::handle_targeting_button,
                     upgrade::inspect_tower,
                     upgrade::apply_upgrade,
                     upgrade::sync_collector_on_upgrade,
@@ -174,9 +179,9 @@ impl Plugin for TowerPlugin {
                     placement::animate_sell_text,
                     upgrade::animate_upgrade_flash,
                     upgrade::manage_selection_ring,
+                    upgrade::rebuild_common_stats,
                     upgrade::update_upgrade_panel,
-                    targeting::spawn_radial_menu,
-                    targeting::highlight_radial_segments,
+                    targeting::refresh_targeting_button_colors,
                     targeting::spawn_targeting_label,
                     targeting::update_targeting_label,
                     targeting::stabilize_targeting_labels,
@@ -194,12 +199,7 @@ impl Plugin for TowerPlugin {
             )
             .add_systems(
                 FixedUpdate,
-                (
-                    systems::turret_state_machine,
-                    systems::slow_aura,
-                    systems::magnetic_pull_enemies,
-                    systems::chain_lightning_fire,
-                )
+                (systems::turret_state_machine, systems::slow_aura)
                     .run_if(in_state(GameState::Playing))
                     .run_if(in_state(PlayPhase::Defending)),
             )
@@ -208,7 +208,6 @@ impl Plugin for TowerPlugin {
                 (
                     systems::rotate_towers_to_target,
                     systems::scrap_magnet_collect,
-                    systems::animate_lightning_arcs,
                     systems::on_tower_becomes_rubble,
                     systems::update_tower_degradation_visual,
                 )

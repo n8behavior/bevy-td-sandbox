@@ -9,9 +9,7 @@ use crate::grid::components::GridCell;
 use crate::grid::systems::world_to_grid;
 use crate::pile::resources::PileScrap;
 use crate::shader::{CircleMaterial, CircleMesh};
-use crate::states::GameState;
 use crate::stats::resources::RunStats;
-use crate::ui::tower_menu::WavePreviewPanel;
 
 use crate::common::constants::{
     REPAIR_COST_FRAC, REPAIR_RUBBLE_COST_FRAC, TOWER_HP_COST_MULT, TOWER_HP_TIER_MULT,
@@ -19,8 +17,7 @@ use crate::common::constants::{
 
 use super::components::*;
 use super::placement::{SELL_REFUND_PERCENT, SelectedTower, SellText};
-use super::targeting::RadialMenuState;
-use super::types::scrap_magnet::ScrapMagnet;
+use super::targeting::TargetingButton;
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -177,37 +174,26 @@ pub(crate) fn repair_cost(base_cost: u32, is_rubble: bool) -> u32 {
 // ---------------------------------------------------------------------------
 
 /// Left-click a placed tower (when not in placement mode) to inspect it.
-/// Escape clears the inspection.
+/// Escape clears the inspection. Targeting mode is changed via inline buttons
+/// in the upgrade panel — no world-space radial menu.
 pub fn inspect_tower(
     mouse: Res<ButtonInput<MouseButton>>,
     keyboard: Res<ButtonInput<KeyCode>>,
     windows: Query<&Window>,
     cameras: Query<(&Camera, &GlobalTransform)>,
-    towers: Query<(Entity, &GridCell, Option<&TargetingMode>, &TowerState), With<Tower>>,
+    towers: Query<(Entity, &GridCell, &TowerState), With<Tower>>,
     selected: Res<SelectedTower>,
     mut inspected: ResMut<InspectedTower>,
-    mut radial_menu: ResMut<RadialMenuState>,
     config: Res<GridConfig>,
 ) {
-    // Escape: close radial menu first, then clear inspection.
     if keyboard.just_pressed(KeyCode::Escape) && selected.index.is_none() {
-        if radial_menu.tower.is_some() {
-            radial_menu.tower = None;
-        } else {
-            inspected.0 = None;
-        }
+        inspected.0 = None;
         return;
     }
 
-    // Entering placement mode clears inspection and radial menu.
+    // Entering placement mode clears inspection.
     if selected.is_changed() && selected.index.is_some() {
         inspected.0 = None;
-        radial_menu.tower = None;
-    }
-
-    // If radial menu was just closed by handle_radial_click, skip click processing.
-    if radial_menu.is_changed() {
-        return;
     }
 
     // Left-click when no tower selected for placement.
@@ -226,29 +212,16 @@ pub fn inspect_tower(
         return;
     };
     let Some(grid_pos) = world_to_grid(world_pos, &config) else {
-        radial_menu.tower = None;
         inspected.0 = None;
         return;
     };
 
-    if let Some((entity, _, targeting, _)) = towers
+    if let Some((entity, _, _)) = towers
         .iter()
-        .find(|(_, gc, _, s)| s.is_placed() && gc.coord == grid_pos)
+        .find(|(_, gc, s)| s.is_placed() && gc.coord == grid_pos)
     {
-        if inspected.0 == Some(entity) {
-            // Re-click the already-inspected tower: toggle radial menu.
-            if radial_menu.tower.is_some() {
-                radial_menu.tower = None;
-            } else if targeting.is_some() {
-                radial_menu.tower = Some(entity);
-            }
-        } else {
-            // New tower: inspect it, close any open radial menu.
-            radial_menu.tower = None;
-            inspected.0 = Some(entity);
-        }
+        inspected.0 = Some(entity);
     } else {
-        radial_menu.tower = None;
         inspected.0 = None;
     }
 }
@@ -273,9 +246,6 @@ pub fn apply_upgrade(
             (
                 Option<&RangeRingConfig>,
                 Option<&SlowAuraRingConfig>,
-                Option<&mut ChainLightning>,
-                Option<&BaseArcRange>,
-                Option<&mut ChainCooldown>,
                 Option<&mut TowerHealth>,
             ),
             &TowerState,
@@ -302,7 +272,7 @@ pub fn apply_upgrade(
         turret,
         aoe,
         slow,
-        (range_ring, aura_ring, chain_lightning, base_arc_range, chain_cooldown, tower_health),
+        (range_ring, aura_ring, tower_health),
         tower_state,
     )) = towers.get_mut(entity)
     else {
@@ -356,15 +326,8 @@ pub fn apply_upgrade(
     if let Some(mut slow) = slow {
         slow.factor = slow_factor_at_tier(base.slow_factor, tier.0);
     }
-    if let Some(mut chain) = chain_lightning
-        && let Some(base_arc) = base_arc_range
-    {
-        chain.arc_range = arc_range_at_tier(base_arc.0, tier.0);
-    }
-    if let Some(mut cc) = chain_cooldown {
-        let new_dur = cooldown_at_tier(base.cooldown_secs, tier.0);
-        cc.timer.set_duration(Duration::from_secs_f32(new_dur));
-    }
+    // Chain Lightning tier scaling (arc_range, cooldown) is handled
+    // reactively by `chain_lightning::systems::scale_chain_on_tier_change`.
 
     // Despawn old ring children before re-inserting configs.
     for child in children.iter() {
@@ -726,98 +689,228 @@ pub fn manage_selection_ring(
 
 pub fn setup_upgrade_panel(mut commands: Commands) {
     commands.spawn((
-        Node {
-            position_type: PositionType::Absolute,
-            bottom: Val::Px(10.0),
-            right: Val::Px(10.0),
-            flex_direction: FlexDirection::Column,
-            row_gap: Val::Px(4.0),
-            padding: UiRect::all(Val::Px(10.0)),
-            ..default()
-        },
-        BackgroundColor(Color::srgba(0.12, 0.1, 0.08, 0.85)),
+        crate::ui::tower_menu::panel_node(crate::ui::tower_menu::PanelAnchor::BottomRight),
         Visibility::Hidden,
         UpgradePanel,
-        DespawnOnExit(GameState::Playing),
     ));
 }
 
-/// Rebuild the upgrade panel contents when the inspected tower changes.
-pub fn update_upgrade_panel(
-    mut commands: Commands,
-    inspected: Res<InspectedTower>,
-    radial_menu: Res<RadialMenuState>,
-    towers: Query<
+// ---------------------------------------------------------------------------
+// PanelStats writers
+// ---------------------------------------------------------------------------
+
+/// HP color thresholds: green > 50%, yellow > 25%, red otherwise; dark red for rubble.
+fn hp_color(state: &TowerState, health: &TowerHealth) -> Color {
+    if *state == TowerState::Rubble {
+        Color::srgb(0.5, 0.2, 0.2)
+    } else if health.fraction() > 0.5 {
+        Color::srgb(0.3, 0.8, 0.3)
+    } else if health.fraction() > 0.25 {
+        Color::srgb(0.9, 0.8, 0.2)
+    } else {
+        Color::srgb(0.9, 0.3, 0.3)
+    }
+}
+
+/// Reactively repopulate `PanelStats.common` and `PanelStats.next_tier` for any
+/// tower whose stats changed. Tower-type-agnostic: handles HP, DMG, RNG, FIRE
+/// RATE (turret), AOE, SLOW, COLLECT — everything driven by shared components.
+/// Per-tower extras (e.g. Chain Lightning's ARC) are written by per-tower
+/// systems into `PanelStats.extra`.
+#[allow(clippy::type_complexity)]
+pub fn rebuild_common_stats(
+    mut towers: Query<
         (
-            &TowerName,
-            &TowerTier,
+            &mut PanelStats,
             &TowerStats,
-            &TowerCost,
+            &TowerTier,
             &BaseStats,
             Option<&TurretState>,
             Option<&AoEOnHit>,
             Option<&SlowOnHit>,
-            (
-                Option<&ChainLightning>,
-                Option<&ChainCooldown>,
-                Option<&BaseArcRange>,
-                Option<&TargetingMode>,
-                Option<&MagnetTier>,
-                Option<&ScrapCollector>,
-                Option<&ScrapMagnet>,
-                Option<&TowerHealth>,
-            ),
+            Option<&TowerHealth>,
+            Option<&ScrapCollector>,
+            &TowerState,
+        ),
+        (
+            With<Tower>,
+            Or<(
+                Changed<TowerStats>,
+                Changed<TowerTier>,
+                Changed<TowerHealth>,
+                Changed<TurretState>,
+                Changed<AoEOnHit>,
+                Changed<SlowOnHit>,
+                Changed<ScrapCollector>,
+                Added<PanelStats>,
+            )>,
+        ),
+    >,
+) {
+    for (mut panel, stats, tier, base, turret, aoe, slow, health, collector, tower_state) in
+        &mut towers
+    {
+        panel.common.clear();
+        panel.next_tier_common.clear();
+
+        if let Some(h) = health {
+            let value = if *tower_state == TowerState::Rubble {
+                "RUBBLE".to_string()
+            } else {
+                format!("{:.0}/{:.0}", h.current, h.max)
+            };
+            panel.common.push(StatLine {
+                label: "HP",
+                value,
+                color: hp_color(tower_state, h),
+            });
+        }
+
+        panel.common.push(StatLine {
+            label: "DMG",
+            value: format!("{:.0}", stats.damage),
+            color: STAT_COLOR,
+        });
+        panel.common.push(StatLine {
+            label: "RNG",
+            value: format!("{:.0}", stats.range),
+            color: STAT_COLOR,
+        });
+
+        if let Some(t) = turret {
+            panel.common.push(StatLine {
+                label: "FIRE RATE",
+                value: format!("{:.2}s", t.cooldown.duration().as_secs_f32()),
+                color: STAT_COLOR,
+            });
+        }
+
+        if let Some(a) = aoe {
+            panel.common.push(StatLine {
+                label: "AOE",
+                value: format!("{:.0} radius", a.radius),
+                color: STAT_COLOR,
+            });
+        }
+
+        if let Some(s) = slow {
+            panel.common.push(StatLine {
+                label: "SLOW",
+                value: format!("{:.0}%", (1.0 - s.factor) * 100.0),
+                color: STAT_COLOR,
+            });
+        }
+
+        if let Some(c) = collector {
+            panel.common.push(StatLine {
+                label: "COLLECT",
+                value: format!("{:.0}", c.range),
+                color: STAT_COLOR,
+            });
+        }
+
+        if tier.0 < MAX_TIER {
+            let next = tier.0 + 1;
+            panel.next_tier_common.push(StatLine {
+                label: "DMG",
+                value: format!("{:.0}", damage_at_tier(base.damage, next)),
+                color: STAT_COLOR,
+            });
+            panel.next_tier_common.push(StatLine {
+                label: "RNG",
+                value: format!("{:.0}", range_at_tier(base.range, next)),
+                color: STAT_COLOR,
+            });
+            if aoe.is_some() && base.aoe_radius > 0.0 {
+                panel.next_tier_common.push(StatLine {
+                    label: "AOE",
+                    value: format!("{:.0}", aoe_radius_at_tier(base.aoe_radius, next)),
+                    color: STAT_COLOR,
+                });
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Upgrade panel render
+// ---------------------------------------------------------------------------
+
+/// Spawn a single text line as a panel child.
+fn spawn_text_line(
+    parent: &mut ChildSpawnerCommands,
+    text: impl Into<String>,
+    color: Color,
+    font_size: f32,
+) {
+    parent.spawn((
+        Text::new(text.into()),
+        TextColor(color),
+        TextFont {
+            font_size,
+            ..default()
+        },
+    ));
+}
+
+/// Format a stat line as `LABEL: value`.
+fn format_stat(line: &StatLine) -> String {
+    format!("{}: {}", line.label, line.value)
+}
+
+/// Rebuild the upgrade panel contents when the inspected tower changes.
+///
+/// Renders only from `PanelStats` (current + next-tier stats) plus tower-agnostic
+/// interactive buttons (Upgrade, Magnet, Repair) whose color depends on
+/// `pile_scrap`. No tower-type-specific component queries.
+#[allow(clippy::type_complexity)]
+pub fn update_upgrade_panel(
+    mut commands: Commands,
+    inspected: Res<InspectedTower>,
+    towers: Query<
+        (
+            &TowerName,
+            &TowerTier,
+            &TowerCost,
+            &BaseStats,
+            &PanelStats,
+            Option<&TargetingMode>,
+            Option<&MagnetTier>,
+            Option<&ScrapCollector>,
+            Option<&TowerHealth>,
             &TowerState,
         ),
         With<Tower>,
     >,
-    tower_health_check: Query<&TowerHealth, (With<Tower>, Changed<TowerHealth>)>,
+    panel_stats_check: Query<(), (With<Tower>, Changed<PanelStats>)>,
     mut panel_query: Query<(Entity, &mut Visibility), With<UpgradePanel>>,
-    mut wave_preview: Query<&mut Visibility, (With<WavePreviewPanel>, Without<UpgradePanel>)>,
     pile_scrap: Res<PileScrap>,
 ) {
     let Ok((panel_entity, mut vis)) = panel_query.single_mut() else {
         return;
     };
 
-    // Rebuild when something relevant changes (including tower health during combat).
-    let health_changed = inspected.0.is_some_and(|e| tower_health_check.contains(e));
-    if !health_changed
-        && !inspected.is_changed()
-        && !pile_scrap.is_changed()
-        && !radial_menu.is_changed()
-    {
+    // Rebuild when something relevant changes.
+    let panel_stats_changed = inspected.0.is_some_and(|e| panel_stats_check.contains(e));
+    if !panel_stats_changed && !inspected.is_changed() && !pile_scrap.is_changed() {
         return;
     }
 
     let Some(entity) = inspected.0 else {
         *vis = Visibility::Hidden;
-        // Restore wave preview visibility (its own system handles actual show/hide).
-        if let Ok(mut wv) = wave_preview.single_mut() {
-            *wv = Visibility::Inherited;
-        }
         return;
     };
 
     let Ok((
         name,
         tier,
-        stats,
         cost,
         base,
-        turret,
-        aoe,
-        slow,
-        (
-            chain,
-            chain_cd,
-            base_arc,
-            targeting_mode,
-            magnet_tier,
-            collector,
-            is_scrap_magnet,
-            tower_health,
-        ),
+        panel,
+        targeting_mode,
+        magnet_tier,
+        collector,
+        tower_health,
         tower_state,
     )) = towers.get(entity)
     else {
@@ -832,297 +925,154 @@ pub fn update_upgrade_panel(
 
     *vis = Visibility::Inherited;
 
-    // Hide wave preview while upgrade panel is open.
-    if let Ok(mut wv) = wave_preview.single_mut() {
-        *wv = Visibility::Hidden;
-    }
-
     commands.entity(panel_entity).despawn_related::<Children>();
 
     commands.entity(panel_entity).with_children(|parent| {
         // Header
-        parent.spawn((
-            Text::new(format!(
-                "== {} (Tier {}/{}) ==",
-                name.0,
-                tier.0 + 1,
-                MAX_TIER + 1
-            )),
-            TextColor(LABEL_COLOR),
-            TextFont {
-                font_size: 15.0,
-                ..default()
-            },
-        ));
+        spawn_text_line(
+            parent,
+            format!("== {} (Tier {}/{}) ==", name.0, tier.0 + 1, MAX_TIER + 1),
+            LABEL_COLOR,
+            15.0,
+        );
 
-        // Tower HP (only shown for towers with health)
-        if let Some(health) = tower_health {
-            let is_rubble = *tower_state == TowerState::Rubble;
-            let hp_text = if is_rubble {
-                "HP: RUBBLE".to_string()
-            } else {
-                format!("HP: {:.0}/{:.0}", health.current, health.max)
-            };
-            let hp_color = if is_rubble {
-                Color::srgb(0.5, 0.2, 0.2)
-            } else if health.fraction() > 0.5 {
-                Color::srgb(0.3, 0.8, 0.3)
-            } else if health.fraction() > 0.25 {
-                Color::srgb(0.9, 0.8, 0.2)
-            } else {
-                Color::srgb(0.9, 0.3, 0.3)
-            };
-            parent.spawn((
-                Text::new(hp_text),
-                TextColor(hp_color),
-                TextFont {
-                    font_size: 13.0,
-                    ..default()
-                },
-            ));
+        // Current stats: common (shared) + extra (per-tower).
+        for line in panel.common.iter().chain(panel.extra.iter()) {
+            spawn_text_line(parent, format_stat(line), line.color, 13.0);
         }
 
-        // Current stats
-        parent.spawn((
-            Text::new(format!("DMG: {:.0}  RNG: {:.0}", stats.damage, stats.range)),
-            TextColor(STAT_COLOR),
-            TextFont {
-                font_size: 13.0,
-                ..default()
-            },
-        ));
-
-        if let Some(turret) = turret {
-            parent.spawn((
-                Text::new(format!(
-                    "FIRE RATE: {:.2}s",
-                    turret.cooldown.duration().as_secs_f32()
-                )),
-                TextColor(STAT_COLOR),
-                TextFont {
-                    font_size: 13.0,
-                    ..default()
-                },
-            ));
-        }
-
-        if let Some(aoe) = aoe {
-            parent.spawn((
-                Text::new(format!("AOE: {:.0} radius", aoe.radius)),
-                TextColor(STAT_COLOR),
-                TextFont {
-                    font_size: 13.0,
-                    ..default()
-                },
-            ));
-        }
-
-        if let Some(slow) = slow {
-            parent.spawn((
-                Text::new(format!("SLOW: {:.0}%", (1.0 - slow.factor) * 100.0)),
-                TextColor(STAT_COLOR),
-                TextFont {
-                    font_size: 13.0,
-                    ..default()
-                },
-            ));
-        }
-
-        if let Some(chain) = chain {
-            parent.spawn((
-                Text::new(format!("ARC: {:.0}", chain.arc_range)),
-                TextColor(STAT_COLOR),
-                TextFont {
-                    font_size: 13.0,
-                    ..default()
-                },
-            ));
-        }
-
-        if let Some(cc) = chain_cd {
-            parent.spawn((
-                Text::new(format!(
-                    "FIRE RATE: {:.2}s",
-                    cc.timer.duration().as_secs_f32()
-                )),
-                TextColor(STAT_COLOR),
-                TextFont {
-                    font_size: 13.0,
-                    ..default()
-                },
-            ));
-        }
-
+        // Targeting mode label + inline buttons (replaces world-space radial menu).
         if let Some(mode) = targeting_mode {
-            parent.spawn((
-                Text::new(format!("TARGET: {}", mode.name())),
-                TextColor(STAT_COLOR),
-                TextFont {
-                    font_size: 13.0,
-                    ..default()
-                },
-            ));
+            spawn_text_line(parent, format!("TARGET: {}", mode.name()), STAT_COLOR, 13.0);
+            spawn_targeting_buttons(parent, entity, *mode);
         }
 
-        // Upgrade or max tier (hidden when rubble — must repair first)
+        // Upgrade button / next-tier preview / max-tier banner.
         if *tower_state == TowerState::Rubble {
-            parent.spawn((
-                Text::new("\nREPAIR REQUIRED"),
-                TextColor(Color::srgb(0.9, 0.3, 0.3)),
-                TextFont {
-                    font_size: 13.0,
-                    ..default()
-                },
-            ));
+            spawn_text_line(
+                parent,
+                "\nREPAIR REQUIRED",
+                Color::srgb(0.9, 0.3, 0.3),
+                13.0,
+            );
         } else if tier.0 < MAX_TIER {
-            let ucost = upgrade_cost(base.cost, tier.0);
-            let next = tier.0 + 1;
-            let next_dmg = damage_at_tier(base.damage, next);
-            let next_rng = range_at_tier(base.range, next);
-
-            let mut next_text = format!("\nNext: DMG {:.0}  RNG {:.0}", next_dmg, next_rng);
-            if let Some(ba) = base_arc {
-                let next_arc = arc_range_at_tier(ba.0, next);
-                next_text.push_str(&format!("  ARC {:.0}", next_arc));
+            let preview = panel
+                .next_tier_common
+                .iter()
+                .chain(panel.next_tier_extra.iter())
+                .map(|l| format!("{} {}", l.label, l.value))
+                .collect::<Vec<_>>()
+                .join("  ");
+            if !preview.is_empty() {
+                spawn_text_line(
+                    parent,
+                    format!("\nNext: {preview}"),
+                    Color::srgb(0.8, 0.75, 0.4),
+                    13.0,
+                );
             }
 
-            parent.spawn((
-                Text::new(next_text),
-                TextColor(Color::srgb(0.8, 0.75, 0.4)),
-                TextFont {
-                    font_size: 13.0,
-                    ..default()
-                },
-            ));
-
-            let can_afford = pile_scrap.amount >= ucost;
-            let cost_color = if can_afford {
+            let ucost = upgrade_cost(base.cost, tier.0);
+            let cost_color = if pile_scrap.amount >= ucost {
                 LABEL_COLOR
             } else {
                 Color::srgb(0.9, 0.3, 0.3)
             };
-            parent.spawn((
-                Text::new(format!("[U] Upgrade: ${ucost}")),
-                TextColor(cost_color),
-                TextFont {
-                    font_size: 13.0,
-                    ..default()
-                },
-            ));
+            spawn_text_line(parent, format!("[U] Upgrade: ${ucost}"), cost_color, 13.0);
         } else {
-            parent.spawn((
-                Text::new("\nMAX TIER"),
-                TextColor(Color::srgb(0.4, 0.9, 0.4)),
-                TextFont {
-                    font_size: 13.0,
-                    ..default()
-                },
-            ));
+            spawn_text_line(parent, "\nMAX TIER", Color::srgb(0.4, 0.9, 0.4), 13.0);
         }
 
-        // Magnet upgrade section
-        if let Some(col) = collector {
-            parent.spawn((
-                Text::new(format!("COLLECT: {:.0}", col.range)),
-                TextColor(STAT_COLOR),
-                TextFont {
-                    font_size: 13.0,
-                    ..default()
-                },
-            ));
-        }
-
+        // Magnet upgrade button: any tower with MagnetTier shows the upgrade
+        // button; any tower with a ScrapCollector but no MagnetTier shows MAX.
         if let Some(mt) = magnet_tier {
             if mt.0 < MAX_MAGNET_TIER {
                 let mcost = MAGNET_UPGRADE_COSTS[mt.0 as usize];
-                let can_afford_m = pile_scrap.amount >= mcost;
-                let mcost_color = if can_afford_m {
+                let mcost_color = if pile_scrap.amount >= mcost {
                     LABEL_COLOR
                 } else {
                     Color::srgb(0.9, 0.3, 0.3)
                 };
-                parent.spawn((
-                    Text::new(format!("[M] Magnet: ${mcost}")),
-                    TextColor(mcost_color),
-                    TextFont {
-                        font_size: 13.0,
-                        ..default()
-                    },
-                ));
+                spawn_text_line(parent, format!("[M] Magnet: ${mcost}"), mcost_color, 13.0);
             } else {
-                parent.spawn((
-                    Text::new("MAGNET: MAX"),
-                    TextColor(Color::srgb(0.4, 0.7, 1.0)),
-                    TextFont {
-                        font_size: 13.0,
-                        ..default()
-                    },
-                ));
+                spawn_text_line(parent, "MAGNET: MAX", Color::srgb(0.4, 0.7, 1.0), 13.0);
             }
-        } else if is_scrap_magnet.is_some() {
-            parent.spawn((
-                Text::new("MAGNET: MAX"),
-                TextColor(Color::srgb(0.4, 0.7, 1.0)),
-                TextFont {
-                    font_size: 13.0,
-                    ..default()
-                },
-            ));
+        } else if collector.is_some() {
+            spawn_text_line(parent, "MAGNET: MAX", Color::srgb(0.4, 0.7, 1.0), 13.0);
         }
 
-        // Repair hint (only when damaged)
+        // Repair button (only when damaged)
         if let Some(health) = tower_health
             && health.current < health.max
         {
             let is_rubble = *tower_state == TowerState::Rubble;
             let rcost = repair_cost(base.cost, is_rubble);
-            let can_afford = pile_scrap.amount >= rcost;
-            let repair_color = if can_afford {
+            let repair_color = if pile_scrap.amount >= rcost {
                 LABEL_COLOR
             } else {
                 Color::srgb(0.9, 0.3, 0.3)
             };
-            parent.spawn((
-                Text::new(format!("[R] Repair: ${rcost}")),
-                TextColor(repair_color),
-                TextFont {
-                    font_size: 13.0,
-                    ..default()
-                },
-            ));
+            spawn_text_line(parent, format!("[R] Repair: ${rcost}"), repair_color, 13.0);
         }
 
         // Sell hint
-        let sell_refund = sell_refund(cost.0);
-        parent.spawn((
-            Text::new(format!("[RMB] Sell: +${sell_refund}")),
-            TextColor(HINT_COLOR),
-            TextFont {
-                font_size: 11.0,
-                ..default()
-            },
-        ));
+        spawn_text_line(
+            parent,
+            format!("[RMB] Sell: +${}", sell_refund(cost.0)),
+            HINT_COLOR,
+            11.0,
+        );
 
-        if targeting_mode.is_some() {
-            parent.spawn((
-                Text::new("[Click tower] Targeting"),
-                TextColor(HINT_COLOR),
-                TextFont {
-                    font_size: 11.0,
-                    ..default()
-                },
-            ));
-        }
-
-        parent.spawn((
-            Text::new("[ESC] Close"),
-            TextColor(HINT_COLOR),
-            TextFont {
-                font_size: 11.0,
-                ..default()
-            },
-        ));
+        spawn_text_line(parent, "[ESC] Close", HINT_COLOR, 11.0);
     });
+}
+
+/// Spawn one row of 4 targeting-mode buttons (C/H/L/F) inside the panel.
+/// Each button carries a `TargetingButton { tower, mode }` so
+/// `handle_targeting_button` can apply the chosen mode on click.
+fn spawn_targeting_buttons(
+    parent: &mut ChildSpawnerCommands,
+    tower: Entity,
+    current_mode: TargetingMode,
+) {
+    parent
+        .spawn(Node {
+            flex_direction: FlexDirection::Row,
+            column_gap: Val::Px(4.0),
+            margin: UiRect::top(Val::Px(2.0)),
+            ..default()
+        })
+        .with_children(|row| {
+            for &mode in &TargetingMode::ALL {
+                let bg = if mode == current_mode {
+                    Color::srgba(0.3, 0.7, 0.3, 0.8)
+                } else {
+                    Color::srgba(0.2, 0.2, 0.2, 0.7)
+                };
+                row.spawn((
+                    Button,
+                    Node {
+                        width: Val::Px(28.0),
+                        height: Val::Px(22.0),
+                        justify_content: JustifyContent::Center,
+                        align_items: AlignItems::Center,
+                        ..default()
+                    },
+                    BackgroundColor(bg),
+                    TargetingButton { tower, mode },
+                ))
+                .with_children(|btn| {
+                    btn.spawn((
+                        Text::new(mode.label()),
+                        TextColor(Color::WHITE),
+                        TextFont {
+                            font_size: 13.0,
+                            ..default()
+                        },
+                    ));
+                });
+            }
+        });
 }
 
 #[cfg(test)]

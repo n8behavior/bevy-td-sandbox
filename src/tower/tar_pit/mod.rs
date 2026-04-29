@@ -53,6 +53,7 @@ fn register(mut registry: ResMut<TowerRegistry>) {
                 },
                 TowerTier(0),
                 TowerName("TarPit"),
+                PanelStats::default(),
                 BaseStats {
                     cost: 75,
                     damage,
