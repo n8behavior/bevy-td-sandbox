@@ -8,10 +8,10 @@ A **recipe** is a Lua file that declares one tower: its identity (name, cost, co
 
 Look at any recipe and you'll see two parts:
 
-1. **Identity** — what the tower is called, what it costs, what color it's drawn in. (Hotkeys are assigned in the in-game build-menu UI, not in the recipe — see [Recipe Anatomy](anatomy.md).)
-2. **Atoms** — what the tower *does*. Conditions that have to be true (`Cooldown(1.0)`, `SingleTarget("closest")`, `Range(80)`) and actions that happen when they are (`Projectile { speed = 200 }`, `DirectDamage(10)`). Plus passive components like `Health()` and `BlocksNav()` that affect how the tower exists in the world rather than what it does in combat.
+1. **Identity** — name, cost, color, and other build-menu metadata. (Hotkeys are assigned in the in-game UI, not in the recipe — see [Recipe Anatomy](anatomy.md).)
+2. **Body** — one or more **deliverer blocks** (`Projectile { ... }`, `Aura { ... }`, etc.) describing what the tower does in combat, plus **passive atoms** (`Health()`, `BlocksNav()`, `ScrapCollector(30)`) that affect the tower itself.
 
-That's it. There's no scripting, no event handlers, no main loop you write. The game's engine handles *when* and *how*; the recipe declares *what*.
+Each deliverer block is self-contained: it declares its own cooldown, range, target mode, damage, and effects. There's no scripting, no event handlers, no main loop — the engine handles *when* and *how*; the recipe declares *what*.
 
 ## What to read next
 

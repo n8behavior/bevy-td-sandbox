@@ -212,6 +212,8 @@ The editor greys out incompatible options as you build. No big lookup table — 
 
 Decomposing our six built-ins. If the model can't express these, it's broken. I've also tossed in a couple of "what if" recipes to stretch it.
 
+> **DSL note.** Recipe sketches in this section use a flat syntax (`Cooldown + SingleTarget + Range + Projectile + ...`) for analytical clarity — to enumerate the runtime atoms each tower decomposes into. The actual *player-facing* DSL groups these atoms inside deliverer blocks (`Projectile { cooldown = 1.0, target = "closest", range = 80, damage = 10 }`) so each combat unit is self-contained. See the [TOWER_MODDING manual](https://n8behavior.github.io/bevy-td-sandbox/modding/towers/) for the surface form. The runtime model below — atoms, roles, compatibility — describes what the engine sees underneath.
+
 ```
 ScrapGun        = Cooldown(1.0) + SingleTarget(closest) + Range(80)
                 + Projectile(speed=200) + AimPrecision(0.15)

@@ -1,142 +1,120 @@
 # Advanced Patterns
 
-Recipes are normal Lua files. That means anything Lua can do, your recipes can do too. This page shows three patterns that take advantage of Lua-the-language to write recipes that would be tedious or impossible to express in a flat data format.
+Recipes are normal Lua files. Anything Lua can do, your recipes can do too. This page shows three patterns that take advantage of Lua-the-language to write recipes that would be tedious in a flat data format.
 
-If you're new to Lua and writing your first few towers, skip this page. The flat-list shape from [Recipe Anatomy](anatomy.md) handles 95% of cases.
+If you're new to Lua and writing your first few towers, skip this. The shape from [Recipe Anatomy](anatomy.md) handles 95% of cases.
 
 ## 1. Parameterized recipes
 
-A single Lua file can return *multiple* towers by computing them from parameters. Useful when you want a family of related towers — different cooldowns, different damage values, different colors — without copy-pasting the same recipe ten times.
+A single Lua file can return *multiple* towers by computing them. Useful for families of related towers — different cooldowns, damage values, colors — without copy-paste.
 
 ```lua
 -- assets/towers/snipers.lua
 
 local function make_sniper(tier, cost, range, damage)
-    return Tower {
-        name  = "Sniper-" .. tier,
-        cost  = cost,
-        color = "#5C7A8C",
+  return Tower {
+    name = "Sniper-" .. tier, cost = cost, color = "#5C7A8C",
 
-        Cooldown(5.0),
-        SingleTarget "highest-hp",
-        Range(range),
-        Projectile { speed = 2000 },
-        AimPrecision(0.05),
-        DirectDamage(damage),
+    Projectile {
+      cooldown = 5.0,
+      target = "highest-hp",
+      range = range,
+      speed = 2000,
+      aim_precision = 0.05,
+      damage = damage,
+    },
 
-        Health(),
-        BlocksNav(),
-    }
+    Health(), BlocksNav(),
+  }
 end
 
 return {
-    make_sniper("I",   100, 120, 30),
-    make_sniper("II",  200, 160, 60),
-    make_sniper("III", 400, 200, 120),
+  make_sniper("I",   100, 120, 30),
+  make_sniper("II",  200, 160, 60),
+  make_sniper("III", 400, 200, 120),
 }
 ```
 
-A recipe file can return either:
-- **One `Tower`** (the typical case, every example so far).
-- **A list of `Tower`s** (the loader iterates and registers each).
-
-Both forms are valid; the loader detects which one you returned.
+A recipe file can return either one `Tower` or a list of `Tower`s — the loader detects which.
 
 ## 2. Recipe libraries — sharing helpers
 
-Sometimes you want the same atom-bundle across multiple recipes — a "structural defaults" set, a "tank-killer payload combo," a custom color palette. Define helpers at the top of the file and reuse them.
+Reuse the same property bundles across recipes:
 
 ```lua
 -- assets/towers/standard_pack.lua
 
 local function structural()
-    return {
-        Health(),
-        BlocksNav(),
-        ScrapCollector(30),
-    }
+  return { Health(), BlocksNav(), ScrapCollector(30) }
 end
 
-local function tank_killer_payload()
-    return {
-        DirectDamage(50),
-        Burn { dps = 5, duration = 3 },
-        Vulnerability { multiplier = 1.5, duration = 4 },
-    }
+local function tank_killer(extra)
+  local p = {
+    cooldown = 2.0, target = "highest-hp", range = 120,
+    speed = 600, aim_precision = 0.1,
+    damage = 50,
+    burn = { dps = 5, duration = 3 },
+    vulnerability = { multiplier = 1.5, duration = 4 },
+  }
+  for k, v in pairs(extra or {}) do p[k] = v end
+  return p
 end
 
 return {
-    Tower {
-        name = "TankBreaker", cost = 200, color = "#FF4040",
+  Tower {
+    name = "TankBreaker", cost = 200, color = "#FF4040",
+    Projectile(tank_killer()),
+    table.unpack(structural()),
+  },
 
-        Cooldown(2.0),
-        SingleTarget "highest-hp",
-        Range(120),
-        Projectile { speed = 600 },
-        AimPrecision(0.1),
-
-        table.unpack(tank_killer_payload()),
-        table.unpack(structural()),
-    },
-
-    Tower {
-        name = "BurnLance", cost = 150, color = "#FF8000",
-
-        Cooldown(0.5),
-        SingleTarget "closest",
-        Range(100),
-        Beam(),
-
-        table.unpack(tank_killer_payload()),
-        table.unpack(structural()),
-    },
+  Tower {
+    name = "BurnLance", cost = 150, color = "#FF8000",
+    Beam(tank_killer({ cooldown = 0.5 })),
+    table.unpack(structural()),
+  },
 }
 ```
 
-`table.unpack` flattens a returned atom-list into the surrounding `Tower { ... }` table. (Lua 5.1 calls this `unpack`; `table.unpack` is the Lua 5.4 name. Both work.)
-
-You can't `require` *another* file from a recipe — the sandbox is per-recipe — but within one file you can define as many helpers as you want.
+`table.unpack` flattens a returned atom-list into the surrounding `Tower { ... }` table. (Lua 5.1 calls it `unpack`; both work in 5.4.)
 
 ## 3. Programmatic identity
 
-Names, costs, and colors can be computed too. Useful when you're generating a series and want labeling and pricing to follow a rule.
+Names, costs, and colors can be computed:
 
 ```lua
 local TIERS = { "Bronze", "Silver", "Gold", "Platinum" }
-local BASE_COST = 75
-local BASE_DAMAGE = 8
+local COLORS = { "#CD7F32", "#C0C0C0", "#FFD700", "#E5E4E2" }
 
-local function tower_for_tier(i)
-    local tier = TIERS[i]
-    return Tower {
-        name  = "Spark-" .. tier,
-        cost  = BASE_COST * i,
-        color = ({ "#CD7F32", "#C0C0C0", "#FFD700", "#E5E4E2" })[i],
+local function spark_for_tier(i)
+  local tier = TIERS[i]
+  return Tower {
+    name = "Spark-" .. tier,
+    cost = 75 * i,
+    color = COLORS[i],
 
-        Cooldown(1.0),
-        SingleTarget "closest",
-        Range(80 + i * 20),
-        Projectile { speed = 200 },
-        DirectDamage(BASE_DAMAGE * i),
+    Projectile {
+      cooldown = 1.0,
+      target = "closest",
+      range = 80 + i * 20,
+      speed = 200,
+      damage = 8 * i,
+    },
 
-        Health(),
-        BlocksNav(),
-    }
+    Health(), BlocksNav(),
+  }
 end
 
 local towers = {}
 for i = 1, #TIERS do
-    table.insert(towers, tower_for_tier(i))
+  table.insert(towers, spark_for_tier(i))
 end
 return towers
 ```
 
-This produces four towers (`Spark-Bronze`, `Spark-Silver`, `Spark-Gold`, `Spark-Platinum`) with progressively more range, more damage, and higher cost.
+Produces `Spark-Bronze`, `Spark-Silver`, `Spark-Gold`, `Spark-Platinum` with progressively more range and damage.
 
-## Tradeoffs of the advanced patterns
+## Tradeoffs
 
-Computed recipes are powerful, but they have one cost worth knowing about: **the in-game editor cannot round-trip them.**
+Computed recipes can't round-trip through the in-game editor. The editor reads them fine — it runs the recipe and gets the resulting Towers — but it can't save changes back as functions or loops. Editing in the in-game UI overwrites the file with the flattened result, losing your helpers.
 
-The editor reads a Lua file, lets you edit a tower visually, and writes the result back. If your recipe is a flat `Tower { ... }` table, the editor reads it, lets you tweak any atom, and re-emits an equivalent flat recipe. If your recipe is a function call (`make_sniper("I", 100, ...)`) or uses `table.unpack`, the editor opens the *result* of running the recipe — a flat snapshot — but it can't preserve the function structure when saving. Save will overwrite the file with the flattened version.
-
-If you want a recipe to stay editor-editable, keep it flat. If you want a recipe family that's easy to maintain by hand-editing the source, use the patterns above and accept the editor as read-only for that file. See [Editor Compatibility](editor.md) for more.
+If you want a recipe to stay editor-editable, keep it a flat `Tower { ... }`. If you want a recipe family that's clean to maintain by hand, use these patterns and accept the editor as read-only for that file. See [Editor Compatibility](editor.md).

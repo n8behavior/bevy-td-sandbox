@@ -1,341 +1,190 @@
 # Examples
 
-Every built-in tower as a Lua recipe, plus stretch designs that exercise the wider catalog. Each is annotated with what's interesting about it — the design choice on display.
-
-Save any of these to `assets/towers/<name>.lua` to load them.
+Recipes for the six built-in towers plus a few stretch designs. Drop any of these into `assets/towers/<name>.lua`.
 
 ---
-
-## Built-ins
-
-The six towers shipped with the game. Useful as starting points for variations.
 
 ### ScrapGun — basic projectile turret
 
 ```lua
 return Tower {
-    name  = "ScrapGun",
-    cost  = 50,
-    color = "#E5CC4D",
+  name = "ScrapGun", cost = 50, color = "#E5CC4D",
 
-    Cooldown(1.0),
-    SingleTarget "closest",
-    Range(80),
-    Projectile { speed = 200 },
-    AimPrecision(0.15),
-    DirectDamage(10),
+  Projectile {
+    cooldown = 1.0,
+    target = "closest",
+    range = 80,
+    speed = 200,
+    aim_precision = 0.15,
+    damage = 10,
+  },
 
-    ScrapCollector(30),
-    Health(),
-    BlocksNav(),
+  ScrapCollector(30),
+  Health(),
+  BlocksNav(),
 }
 ```
 
-The bread-and-butter shape. One condition each from `Trigger`, `Acquirer`, `RangeProvider`. One `Deliverer`. One `Payload`. The rest is structural.
+The shape every turret follows: one `Projectile` block plus structural passives.
 
 ### Explosive — splash damage
 
 ```lua
 return Tower {
-    name  = "Explosive",
-    cost  = 125,
-    color = "#E07B00",
+  name = "Explosive", cost = 125, color = "#E07B00",
 
-    Cooldown(3.3),
-    SingleTarget "closest",
-    Range(100),
-    Projectile { speed = 200 },
-    AimPrecision(0.15),
-    DirectDamage(25),
-    Splash { radius = 70, damage = 25 },
+  Projectile {
+    cooldown = 3.3, target = "closest", range = 100,
+    speed = 200, aim_precision = 0.15,
+    damage = 25,
+    splash = { radius = 70, damage = 25 },
+  },
 
-    ScrapCollector(30),
-    Health(),
-    BlocksNav(),
+  ScrapCollector(30), Health(), BlocksNav(),
 }
 ```
 
-Same shape as ScrapGun plus a `Splash` payload. `Splash` implicitly creates an inner acquirer at the impact point — you don't have to spell that out.
+`splash` is a sub-table on `Projectile`. The deliverer handles the inner area-of-effect; you don't declare a separate inner acquirer.
 
-### Railgun — long-range single-shot
+### ChainLightning — chain hops
 
 ```lua
 return Tower {
-    name  = "Railgun",
-    cost  = 150,
-    color = "#5C7A8C",
+  name = "ChainLightning", cost = 125, color = "#4FA1E0",
 
-    Cooldown(5.0),
-    SingleTarget "closest",
-    Range(160),
-    Projectile { speed = 2000 },
-    AimPrecision(0.05),
-    DirectDamage(50),
+  Hitscan {
+    cooldown = 2.0, target = "closest", range = 90,
+    damage = 20,
+    chain = { arc_range = 60, hop_limit = math.huge, damage_falloff = 0.7 },
+  },
 
-    ScrapCollector(30),
-    Health(),
-    BlocksNav(),
+  ScrapCollector(30), Health(), BlocksNav(),
 }
 ```
 
-The interesting thing about this build is what it *doesn't* have. It's the same shape as ScrapGun, just retuned: longer cooldown, longer range, faster projectile, tighter aim, more damage. Most "different feel" towers are just parameter changes — the atom catalog stays small because the parameter space is wide.
-
-### ChainLightning — single shot, multiple hops
-
-```lua
-return Tower {
-    name  = "ChainLightning",
-    cost  = 125,
-    color = "#4FA1E0",
-
-    Cooldown(2.0),
-    SingleTarget "closest",
-    Range(90),
-    ChainWalk { arc_range = 60, hop_limit = math.huge },
-    Hitscan(),
-    DirectDamage(20),
-    DamageFalloff(0.7),
-
-    ScrapCollector(30),
-    Health(),
-    BlocksNav(),
-}
-```
-
-Two acquirers stacked: `SingleTarget` seeds the first hit, `ChainWalk` extends it outward. `Hitscan` instead of `Projectile` because the chain visits each hop instantly. `DamageFalloff` is a modifier on `ChainWalk`. Note the use of `math.huge` for "no hop limit" — Lua's stdlib in action.
+`chain` lives on `Hitscan` as a sub-table. Per-hop damage falloff is part of the chain config.
 
 ### TarPit — slow aura
 
 ```lua
 return Tower {
-    name  = "TarPit",
-    cost  = 75,
-    color = "#5C3A0F",
+  name = "TarPit", cost = 75, color = "#5C3A0F",
 
-    AllInRange(),
-    Range(70),
-    Aura(),
-    Slow { factor = 0.4, duration = 0.5 },
-    RangeFalloff "linear",
+  Aura {
+    range = 70,
+    slow = { factor = 0.4, duration = 0.5 },
+    range_falloff = "linear",
+  },
 
-    ScrapCollector(30),
-    -- no Health or BlocksNav — TarPit is a field, not a structure
+  ScrapCollector(30),
 }
 ```
 
-The opposite shape from a turret. No trigger at all — auras drop the `Cooldown` since the absence of a gate means "run every tick." `AllInRange` instead of `SingleTarget`, `Aura` instead of `Projectile`. The `Slow` payload re-applies every frame to every enemy in the field. Notable: no `Health`, no `BlocksNav` — the tar pit is a passable field, not a destructible structure.
+No `cooldown` — auras run every tick. No `Health()` / `BlocksNav()` — the tar pit is a passable field.
 
-### ScrapMagnet — pull aura
+### HeavySniper — charged sniper
 
 ```lua
 return Tower {
-    name  = "ScrapMagnet",
-    cost  = 100,
-    color = "#4F7CE0",
+  name = "HeavySniper", cost = 250, color = "#7090A0",
 
-    AllInRange(),
-    Range(90),
-    Aura(),
-    Slow { factor = 0.5, duration = 0.5 },
-    Pull(15),
-    RangeFalloff "linear",
+  Projectile {
+    cooldown = 3.0, target = "furthest-along", range = 200,
+    lock_on = 1.5,
+    speed = 2000,
+    damage = 80,
+  },
 
-    Health(),
-    BlocksNav(),
+  Health(), BlocksNav(),
 }
 ```
 
-Same shape as TarPit with two payloads stacked (`Slow` and `Pull`) and the structural atoms back in. Multiple payloads on one tower is normal — they all apply per hit.
+`lock_on = 1.5` requires a 1.5-second continuous lock before firing. `cooldown = 3.0` independently caps fire rate.
 
----
-
-## Stretch designs
-
-Recipes that exercise the wider catalog. Use these as references for what's possible.
-
-### Frostnova — periodic AOE burst
+### MineTower — trap with sub-recipe
 
 ```lua
 return Tower {
-    name  = "Frostnova",
-    cost  = 200,
-    color = "#A0E0FF",
+  name = "MineTower", cost = 200, color = "#806040",
 
-    Cooldown(8.0),
-    AllInRange(),
-    Range(80),
-    Aura(),
-    Slow { factor = 0.0, duration = 1.0 },
-    DirectDamage(20),
-
-    Health(),
-    BlocksNav(),
-}
-```
-
-Aura geometry, but on a long cooldown — bursts instead of running every tick. `Slow { factor = 0 }` is a freeze.
-
-### Snipefire — fast-fire homing burn
-
-```lua
-return Tower {
-    name  = "Snipefire",
-    cost  = 175,
-    color = "#FF4040",
-
-    Cooldown(0.4),
-    SingleTarget "highest-hp",
-    Range(140),
-    Projectile { speed = 600 },
-    Homing(),
-    AimPrecision(0.2),
-    DirectDamage(5),
-    Burn { dps = 2, duration = 3 },
-
-    Health(),
-    BlocksNav(),
-}
-```
-
-Targeting mode `"highest-hp"` makes this a tank-killer. The `Homing` modifier on `Projectile` lets the projectile track moving targets at its modest speed. `Burn` is a damage-over-time payload — small per-hit damage stacks via the burn.
-
-### HeavySniper — charged sniper using `LockOn`
-
-```lua
-return Tower {
-    name  = "HeavySniper",
-    cost  = 250,
-    color = "#7090A0",
-
-    Cooldown(3.0),
-    SingleTarget "furthest-along",
-    LockOn(1.5),
-    Range(200),
-    Projectile { speed = 2000 },
-    DirectDamage(80),
-
-    Health(),
-    BlocksNav(),
-}
-```
-
-The `LockOn` modifier requires a 1.5-second continuous lock on the target before the acquirer "completes." `Cooldown(3.0)` independently caps fire rate. Combining them gives a weapon a dedicated charge-up trigger couldn't express: *fires at most every 3s, and only after 1.5s of lock.*
-
-### Mortar — ballistic arc
-
-```lua
-return Tower {
-    name  = "Mortar",
-    cost  = 175,
-    color = "#404040",
-
-    Cooldown(3.5),
-    SingleTarget "closest",
-    Range(140),
-    Projectile { speed = 150 },
-    ArcTrajectory(80),
-    DirectDamage(30),
-    Splash { radius = 70, damage = 30 },
-
-    Health(),
-    BlocksNav(),
-}
-```
-
-`ArcTrajectory` is a modifier that converts straight-line projectile motion into a ballistic arc. Combined with `Splash`, this is the classic mortar shape.
-
-### MineTower — trap with a sub-recipe
-
-```lua
-return Tower {
-    name  = "MineTower",
-    cost  = 200,
-    color = "#806040",
-
-    Cooldown(4.0),
-    RandomInArea(3),
-    Range(120),
-    Trap {
-        lifetime = 60,
-        template = {
-            OnWorldEvent "EnemyStep",
-            DirectDamage(50),
-            Splash { radius = 60, damage = 40 },
-        },
+  Trap {
+    cooldown = 4.0, range = 120,
+    placement = "random", count = 3, lifetime = 60,
+    explosion = {
+      trigger = "enemy_step",
+      damage = 50,
+      splash = { radius = 60, damage = 40 },
     },
+  },
 
-    Health(),
-    BlocksNav(),
+  Health(), BlocksNav(),
 }
 ```
 
-`Trap` is the most compositionally interesting deliverer: it spawns a sub-entity that has its own pipeline. The `template` field is a list of atoms — a sub-recipe inside the parent recipe. The trap entity uses `OnWorldEvent "EnemyStep"` as its trigger, then applies its own payloads on detonation. Sub-recipes are an [open design question](open-questions.md); this shape is the current best guess.
+Sub-recipes are nested tables. The mine entity has its own trigger and payloads inside the `explosion` block.
+
+### TollGate — event-driven, no acquirer
+
+```lua
+return Tower {
+  name = "TollGate", cost = 50, color = "#806000",
+
+  Hitscan {
+    trigger = "enemy_pass",
+    income = 5,
+  },
+
+  BlocksNav(),
+}
+```
+
+`trigger = "enemy_pass"` fires only when an enemy crosses. `income` grants scrap instead of damage. No `cooldown`, no `target`, no `range` — the trigger event provides everything.
 
 ### MatrixBeam — networked link weapon
 
 ```lua
 return Tower {
-    name  = "MatrixBeam",
-    cost  = 150,
-    color = "#00CCCC",
+  name = "MatrixBeam", cost = 150, color = "#00CCCC",
 
-    NetworkNode(150),
-    NetworkBeam { color = "#00FFFF", damage_on_cross = 25 },
+  NetworkLink {
+    range = 150,
+    color = "#00FFFF",
+    damage_on_cross = 25,
+  },
 
-    Health(),
-    BlocksNav(),
+  Health(), BlocksNav(),
 }
 ```
 
-The recipe describes one node. A single MatrixBeam tower does nothing — the *link* between two of them is the weapon. `NetworkNode` marks it as part of the network; `NetworkBeam` defines what happens when a link forms. The editor surfaces "this tower needs a neighbor" feedback during placement (see [Open Questions](open-questions.md)).
+A single MatrixBeam tower does nothing — the *link* between two of them is the weapon.
 
-### TollGate — passive income via world event
+### SolarArray — passive only
 
 ```lua
 return Tower {
-    name  = "TollGate",
-    cost  = 50,
-    color = "#806000",
+  name = "SolarArray", cost = 100, color = "#FFE040",
 
-    OnWorldEvent "EnemyPass",
-    Hitscan(),
-    IncomeOnTrigger(5),
-
-    BlocksNav(),
+  PassiveIncome(3),
 }
 ```
 
-No `Acquirer`, no `Range`, no damage payload. The `OnWorldEvent` trigger carries the enemy through the pipeline as the implicit target; `Hitscan` is a no-op deliverer; `IncomeOnTrigger` is the actual effect — 5 scrap per enemy that passes. Place on a chokepoint.
-
-### RageTower — pure crowd-control behavior
-
-```lua
-return Tower {
-    name  = "RageTower",
-    cost  = 100,
-    color = "#C03060",
-
-    Cooldown(4.0),
-    AllInRange(),
-    Range(80),
-    Aura(),
-    Confuse(3),
-
-    Health(),
-    BlocksNav(),
-}
-```
-
-Zero damage. The `Confuse` payload is a `Behavior` payload — it changes what affected enemies *do* (attack other enemies for 3 seconds) rather than their stats. The pipeline shape is identical to a Frostnova; only the payload changes.
+No deliverer at all. Just a passive scrap generator.
 
 ---
 
-## Reading these as a learning exercise
+## Multi-deliverer towers
 
-If you skim through the recipes above, three patterns become obvious:
+Stack deliverer blocks for hybrid behavior:
 
-1. **Almost every combat tower is `Cooldown` + an `Acquirer` + `Range` + a `Deliverer` + at least one `Payload`. Auras drop the `Cooldown` — running every tick is the default when no trigger is present.** Most variation is in *which* acquirer, deliverer, and payloads — not in the shape of the recipe.
-2. **Modifiers do most of the differentiation.** `ArcTrajectory`, `Homing`, `LockOn`, `Pierce`, `Splash`, `RangeFalloff` — these are what make a tower feel distinct, more than the underlying skeleton.
-3. **Behavioral payloads (`Confuse`, `Teleport`, `PathLoop`) and economic payloads (`IncomeOnTrigger`, `HealTarget`) reuse the exact same recipe shape as a damage tower.** A toll booth and a sniper share a skeleton.
+```lua
+return Tower {
+  name = "Sentry", cost = 200, color = "#0088CC",
 
-That repetition is the point. Once you know one recipe, you know the shape of all of them.
+  Projectile { cooldown = 1.0, target = "closest", range = 80, speed = 200, damage = 8 },
+  Aura { range = 60, slow = { factor = 0.6, duration = 0.5 } },
+
+  Health(), BlocksNav(),
+}
+```
+
+Each block has its own cooldown and range — they don't have to agree.

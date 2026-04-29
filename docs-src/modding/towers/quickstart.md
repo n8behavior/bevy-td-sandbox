@@ -1,35 +1,29 @@
 # Quick Start — Your First Tower
 
-This page walks you through writing a complete, working tower from a blank file.
-
 ## 1. Create the recipe file
 
-Tower recipes live in `assets/towers/`. Create a new file there:
+Tower recipes live in `assets/towers/`. Create a new file:
 
 ```text
 assets/towers/sparkler.lua
 ```
 
-The filename (minus `.lua`) is just for your own organization — the in-game name comes from the `name` field inside the recipe.
-
 ## 2. Write the recipe
-
-Paste this into `sparkler.lua`:
 
 ```lua
 return Tower {
-    name  = "Sparkler",
-    cost  = 40,
-    color = "#FFB000",
+  name = "Sparkler", cost = 40, color = "#FFB000",
 
-    Cooldown(0.6),
-    SingleTarget "closest",
-    Range(70),
-    Projectile { speed = 250 },
-    DirectDamage(6),
+  Projectile {
+    cooldown = 0.6,
+    target = "closest",
+    range = 70,
+    speed = 250,
+    damage = 6,
+  },
 
-    Health(),
-    BlocksNav(),
+  Health(),
+  BlocksNav(),
 }
 ```
 
@@ -41,28 +35,22 @@ That's a complete tower. It fires at the closest enemy within 70 units every 0.6
 just run
 ```
 
-Open the build menu (or press `1`). The Sparkler should appear alongside the built-in towers, ready to place.
+Sparkler should appear in the build menu.
 
 ## 4. What just happened
 
-Walking the recipe top-to-bottom:
+The recipe returns one `Tower` value. The named fields (`name`, `cost`, `color`) are identity — how the tower appears in the build menu. Everything else is a **top-level atom**:
 
-| Line | Meaning |
-| --- | --- |
-| `return Tower { ... }` | Every recipe file returns one `Tower` value. |
-| `name`, `cost`, `color` | Identity — how the tower appears in the build menu. (Hotkeys are bound in the in-game UI, not in the recipe.) |
-| `Cooldown(0.6)` | Wait 0.6s between shots. |
-| `SingleTarget "closest"` | Pick one enemy — the closest one. |
-| `Range(70)` | The acquirer's radius. |
-| `Projectile { speed = 250 }` | When triggered, fly a projectile to the target at speed 250. |
-| `DirectDamage(6)` | On hit, deal 6 damage. |
-| `Health()` | The tower has hit points and can be destroyed. |
-| `BlocksNav()` | The tower blocks enemy pathing — they have to go around it. |
+- **`Projectile { ... }`** — the combat unit. Its named properties (`cooldown`, `target`, `range`, `speed`, `damage`) declare *when* it fires, *what* it targets, and *what happens*.
+- **`Health()`**, **`BlocksNav()`** — passives that govern how the tower exists in the world (destructible, blocks enemy pathing).
 
-If you want the tower to fire faster, change `Cooldown(0.6)` to `Cooldown(0.3)`. If you want it to be an aura that hits everything in range every tick instead of a turret, replace `SingleTarget "closest"` and `Projectile { ... }` with `AllInRange()` and `Aura()`. The atom catalog is small enough to skim — see [Atom Reference](atoms.md).
+Want it faster? Drop `cooldown` to `0.3`. Want an aura that slows instead? Replace the `Projectile` block:
 
-## Next steps
+```lua
+Aura {
+  range = 70,
+  slow = { factor = 0.5, duration = 0.5 },
+}
+```
 
-- **[Recipe Anatomy](anatomy.md)** for the full breakdown of every part of `Tower { ... }`.
-- **[Examples](examples.md)** to see every built-in tower written as a recipe — handy as a starting point for variations.
-- **[Lua Conventions](lua.md)** if the `f "x"` and `f { ... }` syntax above looked unfamiliar.
+See [Recipe Anatomy](anatomy.md) for the full breakdown and [Atom Reference](atoms.md) for what each deliverer accepts.

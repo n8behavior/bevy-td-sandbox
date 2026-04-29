@@ -1,78 +1,82 @@
 # Recipe Anatomy
 
-Every recipe file returns one `Tower` value. The `Tower` constructor takes a single Lua table that mixes **named fields** (the tower's identity) with **indexed entries** (the atoms that give it behavior).
+A recipe is one Lua file that returns one `Tower` value:
 
 ```lua
 return Tower {
-    -- ── identity (named fields) ──
-    name  = "ScrapGun",
-    cost  = 50,
-    color = "#E5CC4D",
+  -- identity (named fields)
+  name = "ScrapGun", cost = 50, color = "#E5CC4D",
 
-    -- ── atoms (indexed entries) ──
-    Cooldown(1.0),
-    SingleTarget "closest",
-    Range(80),
-    Projectile { speed = 200 },
-    AimPrecision(0.15),
-    DirectDamage(10),
-    ScrapCollector(30),
-    Health(),
-    BlocksNav(),
+  -- body (top-level atoms)
+  Projectile {
+    cooldown = 1.0,
+    target = "closest",
+    range = 80,
+    speed = 200,
+    damage = 10,
+  },
+
+  ScrapCollector(30),
+  Health(),
+  BlocksNav(),
 }
 ```
 
-The order of identity fields doesn't matter. The order of atoms doesn't normally matter either — the engine's runtime pipeline figures out when each atom runs based on its role, not its position in the list. (See [Lua Conventions](lua.md) for why this works syntactically.)
+The `Tower` constructor takes one Lua table. Named fields are identity; everything else is a top-level atom in the body.
 
 ## Identity fields
 
-These configure _how the tower presents itself_ — the build-menu entry, the placement preview, the debug name. They don't affect combat behavior.
+| Field      | Type         | Required | Meaning                                                                    |
+| ---------- | ------------ | -------- | -------------------------------------------------------------------------- |
+| `name`     | string       | yes      | Display name in the build menu and tooltips. Unique across loaded recipes. |
+| `cost`     | integer      | yes      | Scrap cost to place the tower.                                             |
+| `color`    | string (hex) | yes      | Primary color. Used for sprite and build-menu swatch.                      |
+| `ui_color` | string (hex) | no       | Brighter variant for the build-menu UI; defaults to lightened `color`.     |
+| `label`    | string       | no       | One-line tooltip subtitle.                                                 |
+| `icon`     | string       | no       | Path to an icon asset. Defaults to a generated swatch from `color`.        |
 
-| Field      | Type         | Required | Meaning                                                                                |
-| ---------- | ------------ | -------- | -------------------------------------------------------------------------------------- |
-| `name`     | string       | yes      | Display name in the build menu and tooltips. Must be unique across all loaded recipes. |
-| `cost`     | integer      | yes      | Scrap cost to place the tower.                                                         |
-| `color`    | string (hex) | yes      | Primary color. `"#E5CC4D"` style. Used for the sprite and the build-menu swatch.       |
-| `ui_color` | string (hex) | no       | Brighter variant for the build-menu UI; defaults to a lightened `color`.               |
-| `label`    | string       | no       | One-line tooltip subtitle (e.g., `"chains lightning between enemies"`).                |
-| `icon`     | string       | no       | Path to an icon asset. Defaults to a generated swatch from `color`.                    |
+> **Hotkeys are not a recipe field.** Build-menu hotkeys are assigned through the in-game UI so players can bind or rebind them without editing files, and so modders don't have to coordinate which numbers their packs claim.
 
-## Atom list
+## Body — top-level atoms
 
-Anything in the table that _isn't_ a named field is treated as an atom. Each atom is a value produced by calling an atom constructor:
+The non-named entries in the `Tower` table are the tower's behavior. Two flavors:
+
+**Deliverers** are combat units. One block per "thing the tower does." Each is a named call (`Projectile`, `Beam`, `Aura`, `Hitscan`, `Trap`, `Summon`, `NetworkLink`) followed by a table of properties:
 
 ```lua
-Cooldown(1.0)             -- one number → numeric atom
-SingleTarget "closest"    -- one string → enum-like atom
-Projectile { speed = 200 }  -- table of named args → multi-param atom
-Health()                  -- no args → bare-marker atom (parens required, see Lua Conventions)
-BlocksNav()
+Projectile {
+  cooldown = 1.0,     -- when to fire (omit to run every tick)
+  target = "closest", -- who to fire at
+  range = 80,         -- how far to look
+  speed = 200,        -- how the hit gets there
+  damage = 10,        -- what the hit does
+}
 ```
 
-Every atom either:
+A tower can have multiple deliverer blocks — they run independently with their own cooldowns and ranges:
 
-1. **Fills a role** the tower needs — `Cooldown` fills the `Trigger` role; `Projectile` fills `Deliverer`; `DirectDamage` fills `Payload`; `SingleTarget` fills `Acquirer`; `Range` fills `RangeProvider`; `Health` and `BlocksNav` are structural.
-2. **Modifies** another atom — `AimPrecision` modifies `Projectile`; `LockOn` modifies an `Acquirer`; `Splash` modifies a `Deliverer`'s on-hit behavior.
+```lua
+return Tower {
+  name = "Sentry", cost = 200, color = "#0088CC",
 
-The full catalog is in [Atom Reference](atoms.md).
+  Projectile { cooldown = 1.0, target = "closest", range = 80, speed = 200, damage = 8 },
+  Aura { range = 60, slow = { factor = 0.6, duration = 0.5 } },
 
-## What you must include
+  Health(), BlocksNav(),
+}
+```
 
-A combat tower needs, at minimum:
+**Passives** affect the tower itself rather than firing on enemies. Flat calls or small blocks: `Health()`, `BlocksNav()`, `ScrapCollector(30)`, `NetworkAmplify { ... }`.
 
-- one `Acquirer`-role atom (who/where to fire at)
-- one `Deliverer`-role atom (how the hit gets there)
-- at least one `Payload`-role atom (what happens on hit)
+The full list of deliverers, properties, and passives lives in [Atom Reference](atoms.md).
 
-A `Trigger`-role atom (`Cooldown`, `OnThreshold`, `OnWorldEvent`) is **optional** — without one, the tower runs every tick. That's what you want for auras and persistent fields, but combat towers almost always need a `Cooldown` to keep them from firing every frame.
+## What's required
 
-If you leave a required role out, the recipe loads but the engine reports the missing role at startup. See [Validation & Errors](validation.md).
+A combat tower needs at least one deliverer block, and that deliverer almost always needs `target` (so it knows what to hit) and at least one effect property like `damage`. Passives are optional.
 
-A non-combat tower (a passive scrap collector, an income beacon) might skip some of these. See `SolarArray` in [Examples](examples.md) for a tower that's purely passive.
+A non-combat tower (e.g. `Tower { name = "SolarArray", cost = 50, color = "#FFE040", PassiveIncome(3) }`) has no deliverer at all.
 
 ## Comments
-
-Lua's comment syntax:
 
 ```lua
 -- single-line comment
@@ -83,8 +87,6 @@ Lua's comment syntax:
 ]]
 ```
 
-Recipes are read more often than they're written — comment freely.
+## Hot reload
 
-## A word on hot reload
-
-If hot reload is enabled (it is, by default, in dev builds), saving a recipe file re-registers the tower without restarting the game. Towers already placed on the map keep their old behavior; freshly built ones get the new recipe. See [Open Questions](open-questions.md) for the current limitations.
+In dev builds, saving a recipe file re-registers the tower without restarting. Towers already placed keep their old behavior; freshly built ones get the new recipe. See [Open Questions](open-questions.md).
