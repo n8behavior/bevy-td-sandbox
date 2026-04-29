@@ -60,12 +60,13 @@ The full catalog is in [Atom Reference](atoms.md).
 
 A combat tower needs, at minimum:
 
-- one `Trigger`-role atom (when to fire)
 - one `Acquirer`-role atom (who/where to fire at)
 - one `Deliverer`-role atom (how the hit gets there)
 - at least one `Payload`-role atom (what happens on hit)
 
-If you leave one out, the recipe loads but the engine reports the missing role at startup. See [Validation & Errors](validation.md).
+A `Trigger`-role atom (`Cooldown`, `OnThreshold`, `OnWorldEvent`) is **optional** — without one, the tower runs every tick. That's what you want for auras and persistent fields, but combat towers almost always need a `Cooldown` to keep them from firing every frame.
+
+If you leave a required role out, the recipe loads but the engine reports the missing role at startup. See [Validation & Errors](validation.md).
 
 A non-combat tower (a passive scrap collector, an income beacon) might skip some of these. See `SolarArray` in [Examples](examples.md) for a tower that's purely passive.
 

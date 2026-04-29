@@ -53,16 +53,26 @@ The recipe parsed, but the atoms don't add up to a working tower.
 ### Missing required role
 
 ```text
-sparkler.lua: tower 'Sparkler' has Projectile but no Trigger
-                 — add Cooldown(secs) or ContinuousTick()
+sparkler.lua: tower 'Sparkler' has Projectile but no Acquirer
+                 — add SingleTarget(mode) so the projectile knows where to fire
 ```
 
-`Projectile` is a `Deliverer` that needs a `Trigger`. The error names the missing role and suggests common atoms that fill it. Most "tower won't load" errors are this shape.
+`Projectile` is a `Deliverer` that needs an `Acquirer` to provide a target. The error names the missing role and suggests common atoms that fill it. Most "tower won't load" errors are this shape.
+
+### Damage tower with no rate limit (warning, not an error)
+
+```text
+sparkler.lua: tower 'Sparkler' has Projectile + DirectDamage but no rate-limiting
+                 condition — this will fire every frame at ~60 shots/second
+                 — add Cooldown(secs) if that's not what you want
+```
+
+Triggers are optional — towers without one run every tick. For damage-dealing turrets that's almost never intended. Auras and persistent fields are the legitimate "no trigger" case, so this is a warning rather than a hard error.
 
 ### Conflicting atoms
 
 ```text
-sparkler.lua: tower 'Sparkler' has two Triggers — Cooldown and ContinuousTick
+sparkler.lua: tower 'Sparkler' has two Triggers — Cooldown and OnWorldEvent
                  — only one Trigger per tower
 ```
 

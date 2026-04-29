@@ -66,7 +66,6 @@ The atoms of the editor. Each component fills one or more **roles**. Compatibili
 **Triggers**
 
 - `Cooldown(secs)` — fills `Trigger`
-- `ContinuousTick` — fills `Trigger` (fires every frame)
 - `OnThreshold(accumulator, value)` — fills `Trigger`; fires when an `Accumulator` crosses a value (fling tower releasing its stored shots, shock tower instakilling at full charge)
 - `OnWorldEvent(event_type)` — fills `Trigger`; fires in response to a world-state change: `EnemyDeath`, `EnemyPass`, `BossSpawn`, `WaveStart`. Unblocks the entire toll/bonus/nuke family.
 
@@ -238,13 +237,13 @@ ChainLightning  = Cooldown(2.0) + SingleTarget(closest) + Range(90)
                 + ScrapCollector(30) + Health + BlocksNav
                 + Identity{name="ChainLightning", color=blue, cost=125}
 
-TarPit          = ContinuousTick + AllInRange + Range(70)
+TarPit          = AllInRange + Range(70)
                 + Aura + Slow(0.4, 0.5) + RangeFalloff(linear)
                 + ScrapCollector(30)
                 + Identity{name="TarPit", color=brown, cost=75}
                   (no Health, no BlocksNav)
 
-ScrapMagnet     = ContinuousTick + AllInRange + Range(90)
+ScrapMagnet     = AllInRange + Range(90)
                 + Aura + Slow(0.5, 0.5) + Pull(15) + RangeFalloff(linear)
                 + Health + BlocksNav
                 + Identity{name="ScrapMagnet", color=blue, cost=100}
@@ -268,7 +267,7 @@ HeavySniper     = Cooldown(3.0) + SingleTarget(furthest-along) + LockOn(1.5)
 InfernoBeam     = Cooldown(0.0) + SingleTarget(closest) + Range(100)
                 + Beam + DirectDamage(30/s) + Burn(5/s, 2s)
 
-GravityWell     = ContinuousTick + AllInRange + Range(60)
+GravityWell     = AllInRange + Range(60)
                 + Aura + Pull(40) + RangeFalloff(quadratic)
                   (no damage; pure crowd control)
 
@@ -338,7 +337,7 @@ DrainPylon      = Cooldown(2.0) + SingleTarget(highest-hp) + Range(80)
                 + Health + BlocksNav
                   (always leaves enemies alive; synergizes with instakill towers)
 
-SolarArray      = ContinuousTick + PassiveIncome(rate=3/s)
+SolarArray      = PassiveIncome(rate=3/s)
                   (no combat components at all)
 
 TollGate        = OnWorldEvent(EnemyPass) + [no Acquirer needed — event carries the enemy]

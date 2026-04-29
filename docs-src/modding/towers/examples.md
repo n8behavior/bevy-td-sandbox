@@ -112,7 +112,6 @@ return Tower {
     cost  = 75,
     color = "#5C3A0F",
 
-    ContinuousTick(),
     AllInRange(),
     Range(70),
     Aura(),
@@ -124,7 +123,7 @@ return Tower {
 }
 ```
 
-The opposite shape from a turret. `ContinuousTick` instead of `Cooldown`, `AllInRange` instead of `SingleTarget`, `Aura` instead of `Projectile`. The `Slow` payload re-applies every frame to every enemy in the field. Notable: no `Health`, no `BlocksNav` — the tar pit is a passable field, not a destructible structure.
+The opposite shape from a turret. No trigger at all — auras drop the `Cooldown` since the absence of a gate means "run every tick." `AllInRange` instead of `SingleTarget`, `Aura` instead of `Projectile`. The `Slow` payload re-applies every frame to every enemy in the field. Notable: no `Health`, no `BlocksNav` — the tar pit is a passable field, not a destructible structure.
 
 ### ScrapMagnet — pull aura
 
@@ -134,7 +133,6 @@ return Tower {
     cost  = 100,
     color = "#4F7CE0",
 
-    ContinuousTick(),
     AllInRange(),
     Range(90),
     Aura(),
@@ -175,7 +173,7 @@ return Tower {
 }
 ```
 
-Aura geometry, but on a long cooldown instead of `ContinuousTick`. Bursts instead of continuous. `Slow { factor = 0 }` is a freeze.
+Aura geometry, but on a long cooldown — bursts instead of running every tick. `Slow { factor = 0 }` is a freeze.
 
 ### Snipefire — fast-fire homing burn
 
@@ -336,7 +334,7 @@ Zero damage. The `Confuse` payload is a `Behavior` payload — it changes what a
 
 If you skim through the recipes above, three patterns become obvious:
 
-1. **Almost every combat tower is `Cooldown` (or `ContinuousTick`) + an `Acquirer` + `Range` + a `Deliverer` + at least one `Payload`.** Most variation is in *which* acquirer, deliverer, and payloads — not in the shape of the recipe.
+1. **Almost every combat tower is `Cooldown` + an `Acquirer` + `Range` + a `Deliverer` + at least one `Payload`. Auras drop the `Cooldown` — running every tick is the default when no trigger is present.** Most variation is in *which* acquirer, deliverer, and payloads — not in the shape of the recipe.
 2. **Modifiers do most of the differentiation.** `ArcTrajectory`, `Homing`, `LockOn`, `Pierce`, `Splash`, `RangeFalloff` — these are what make a tower feel distinct, more than the underlying skeleton.
 3. **Behavioral payloads (`Confuse`, `Teleport`, `PathLoop`) and economic payloads (`IncomeOnTrigger`, `HealTarget`) reuse the exact same recipe shape as a damage tower.** A toll booth and a sniper share a skeleton.
 

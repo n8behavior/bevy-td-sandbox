@@ -28,7 +28,7 @@ These four forms are all just function calls. The compiler treats them identical
 | `Atom(value)` | One positional number argument: `Cooldown(1.0)`, `Range(80)`, `DirectDamage(10)`. |
 | `Atom "string"` | One positional string argument: `SingleTarget "closest"`, `Color "blue"`. |
 | `Atom { name = value, ... }` | Two or more arguments, or anything where named args read better: `Projectile { speed = 200, trail = true }`. Also fine for one named arg if you prefer the clarity. |
-| `Atom()` | No arguments. Bare markers like `Health`, `BlocksNav`, `ContinuousTick`. **The parens are required.** |
+| `Atom()` | No arguments. Bare markers like `Health`, `BlocksNav`, `Hitscan`. **The parens are required.** |
 
 ### Why nullary atoms always need parens
 

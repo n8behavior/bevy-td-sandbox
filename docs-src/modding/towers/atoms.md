@@ -10,7 +10,7 @@ Atoms are grouped by **palette** — the same grouping the in-game editor uses. 
 
 ## Triggers
 
-A trigger is a **time-based condition** — it decides *when* the rest of the pipeline gets to run. Every combat tower needs exactly one.
+A trigger is an **optional time-based gate** — it decides *when* the rest of the pipeline gets to run. If you don't add one, the tower runs every tick. For combat towers that's almost never what you want, so most recipes start with `Cooldown(N)`. Auras and persistent fields skip the gate entirely.
 
 ### `Cooldown(seconds)`
 
@@ -19,14 +19,6 @@ Fires when an internal timer elapses, then resets.
 - **Fills:** `Trigger`
 - **Needs:** nothing
 - **Example:** `Cooldown(1.0)` — fires once per second.
-
-### `ContinuousTick()`
-
-Fires every frame. Used for auras, passives, and persistent fields.
-
-- **Fills:** `Trigger`
-- **Needs:** nothing
-- **Example:** `ContinuousTick()` paired with `AllInRange()` and `Aura()` makes a slow field.
 
 ### `OnThreshold(accumulator, value)`
 
@@ -144,7 +136,7 @@ No-op deliverer. The acquirer (`AllInRange`) already touched everyone; payloads 
 A sustained line from the tower to the target. Applies payloads each tick while connected.
 
 - **Fills:** `Deliverer`
-- **Needs:** a single-target `Acquirer`. `Cooldown(0)` or `ContinuousTick()` typically pairs with this.
+- **Needs:** a single-target `Acquirer`. Typically used without a `Cooldown` so the beam runs every tick.
 - **Example:** `Beam()` for a continuous laser.
 
 ### `Trap { template, lifetime }`
@@ -169,7 +161,7 @@ Spawns autonomous combat sub-entities (drones, swarms) that move and target on t
 Spinning straight-line beams emanating from the tower.
 
 - **Fills:** `Deliverer`
-- **Needs:** `ContinuousTick` or low-cooldown `Trigger`.
+- **Needs:** no Trigger (runs every tick) or a low `Cooldown`.
 - **Example:** `RadialBeams { count = 4, rotation_speed = 1.5 }` — blade tower.
 
 ---
