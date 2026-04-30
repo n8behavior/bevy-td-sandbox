@@ -11,11 +11,13 @@ use crate::pile::resources::PileState;
 
 use super::components::{BaseArcRange, ChainCooldown, ChainLightning, LightningArc};
 use crate::tower::components::{
-    BaseStats, PanelStats, StatLine, TargetingMode, Tower, TowerHealth, TowerState, TowerTier,
+    PanelStats, StatLine, TargetingMode, Tower, TowerHealth, TowerState, TowerTier,
 };
 use crate::tower::events::TowerFired;
 use crate::tower::systems::best_target_from;
-use crate::tower::upgrade::{arc_range_at_tier, cooldown_at_tier};
+use crate::tower::upgrade::{
+    ARC_RANGE_MULT, COOLDOWN_MULT, DAMAGE_MULT, RANGE_MULT, TierChanged, arc_range_at_tier,
+};
 
 /// Stat color used by the upgrade panel for non-interactive stat lines.
 /// Matches `tower::upgrade::STAT_COLOR`; redeclared here to keep this module
@@ -202,24 +204,25 @@ pub fn rebuild_chain_panel_stats(
     }
 }
 
-/// React to tier upgrades on Chain Lightning towers: scale arc range and cooldown.
-/// Runs after `apply_upgrade` mutates `TowerTier`.
+/// React to `TierChanged` on Chain Lightning towers: scale primary range,
+/// damage, arc range, and cooldown using ratio math against the upgrade
+/// multiplier tables.
 pub fn scale_chain_on_tier_change(
-    mut towers: Query<
-        (
-            &TowerTier,
-            &BaseStats,
-            &BaseArcRange,
-            &mut ChainLightning,
-            &mut ChainCooldown,
-        ),
-        (With<Tower>, Changed<TowerTier>),
-    >,
+    mut events: MessageReader<TierChanged>,
+    mut towers: Query<(&mut ChainLightning, &mut ChainCooldown), With<Tower>>,
 ) {
-    for (tier, base, base_arc, mut chain, mut cc) in &mut towers {
-        chain.arc_range = arc_range_at_tier(base_arc.0, tier.0);
-        let new_dur = cooldown_at_tier(base.cooldown_secs, tier.0);
-        cc.timer.set_duration(Duration::from_secs_f32(new_dur));
+    for ev in events.read() {
+        let Ok((mut chain, mut cc)) = towers.get_mut(ev.tower) else {
+            continue;
+        };
+        let old = ev.old_tier as usize;
+        let new = ev.new_tier as usize;
+        chain.damage.0 *= DAMAGE_MULT[new] / DAMAGE_MULT[old];
+        chain.primary_range.0 *= RANGE_MULT[new] / RANGE_MULT[old];
+        chain.arc_range *= ARC_RANGE_MULT[new] / ARC_RANGE_MULT[old];
+        let cur_secs = cc.timer.duration().as_secs_f32();
+        let new_secs = cur_secs * COOLDOWN_MULT[new] / COOLDOWN_MULT[old];
+        cc.timer.set_duration(Duration::from_secs_f32(new_secs));
     }
 }
 

@@ -11,9 +11,7 @@ use crate::pile::resources::PileScrap;
 use crate::shader::{CircleMaterial, CircleMesh};
 use crate::stats::resources::RunStats;
 
-use crate::common::constants::{
-    REPAIR_COST_FRAC, REPAIR_RUBBLE_COST_FRAC, TOWER_HP_COST_MULT, TOWER_HP_TIER_MULT,
-};
+use crate::common::constants::{REPAIR_COST_FRAC, REPAIR_RUBBLE_COST_FRAC, TOWER_HP_TIER_MULT};
 
 use super::chain_lightning::components::ChainLightning;
 use super::components::*;
@@ -27,12 +25,12 @@ use super::targeting::TargetingButton;
 pub const MAX_TIER: u8 = 2;
 
 const UPGRADE_COST_MULT: [f32; 2] = [1.0, 1.5];
-const DAMAGE_MULT: [f32; 3] = [1.0, 1.4, 2.0];
-const RANGE_MULT: [f32; 3] = [1.0, 1.1, 1.2];
-const COOLDOWN_MULT: [f32; 3] = [1.0, 0.85, 0.7];
-const AOE_RADIUS_MULT: [f32; 3] = [1.0, 1.15, 1.3];
-const SLOW_MULT: [f32; 3] = [1.0, 0.85, 0.7];
-const ARC_RANGE_MULT: [f32; 3] = [1.0, 1.333, 1.667];
+pub(crate) const DAMAGE_MULT: [f32; 3] = [1.0, 1.4, 2.0];
+pub(crate) const RANGE_MULT: [f32; 3] = [1.0, 1.1, 1.2];
+pub(crate) const COOLDOWN_MULT: [f32; 3] = [1.0, 0.85, 0.7];
+pub(crate) const AOE_RADIUS_MULT: [f32; 3] = [1.0, 1.15, 1.3];
+pub(crate) const SLOW_MULT: [f32; 3] = [1.0, 0.85, 0.7];
+pub(crate) const ARC_RANGE_MULT: [f32; 3] = [1.0, 1.333, 1.667];
 
 const TIER_COLOR_BOOST: [f32; 3] = [0.0, 0.15, 0.3];
 
@@ -43,6 +41,27 @@ const MAGNET_RANGE_MULT: [f32; 4] = [1.0, 1.5, 2.0, 2.5];
 const LABEL_COLOR: Color = Color::srgb(0.95, 0.85, 0.5);
 const HINT_COLOR: Color = Color::srgb(0.7, 0.65, 0.5);
 const STAT_COLOR: Color = Color::srgb(0.6, 0.6, 0.55);
+
+// ---------------------------------------------------------------------------
+// Messages
+// ---------------------------------------------------------------------------
+
+/// Broadcast once per primary-tier upgrade. Per-capability scaler systems
+/// (`scale_turret_on_tier`, `scale_aoe_on_tier`, `scale_slow_on_tier`,
+/// `scale_health_on_tier`, and chain_lightning's `scale_chain_on_tier_change`)
+/// listen on this message and apply ratio-based scaling to their components.
+///
+/// **Idempotency contract:** the caller is responsible for emitting this
+/// message exactly once per tier transition. The scalers apply ratio math
+/// (`live *= MULT[new] / MULT[old]`) and are NOT idempotent — emitting the
+/// same `TierChanged` twice will double-apply the scaling. Tier transitions
+/// flow through `apply_upgrade`, which guarantees a single emit.
+#[derive(Message, Debug, Clone, Copy)]
+pub struct TierChanged {
+    pub tower: Entity,
+    pub old_tier: u8,
+    pub new_tier: u8,
+}
 
 // ---------------------------------------------------------------------------
 // Resources
@@ -125,29 +144,14 @@ pub(crate) fn range_at_tier(base_range: f32, tier: u8) -> f32 {
     base_range * RANGE_MULT[tier as usize]
 }
 
-/// Fire cooldown at the given tier (lower = faster).
-pub(crate) fn cooldown_at_tier(base_cooldown: f32, tier: u8) -> f32 {
-    base_cooldown * COOLDOWN_MULT[tier as usize]
-}
-
 /// AOE blast radius at the given tier.
 pub(crate) fn aoe_radius_at_tier(base_radius: f32, tier: u8) -> f32 {
     base_radius * AOE_RADIUS_MULT[tier as usize]
 }
 
-/// Slow factor at the given tier (lower = stronger slow).
-pub(crate) fn slow_factor_at_tier(base_factor: f32, tier: u8) -> f32 {
-    base_factor * SLOW_MULT[tier as usize]
-}
-
 /// Chain lightning arc range at the given tier.
 pub(crate) fn arc_range_at_tier(base_arc: f32, tier: u8) -> f32 {
     base_arc * ARC_RANGE_MULT[tier as usize]
-}
-
-/// Maximum tower HP at the given tier, derived from base cost.
-pub(crate) fn tower_max_hp(base_cost: u32, tier: u8) -> f32 {
-    base_cost as f32 * TOWER_HP_COST_MULT * TOWER_HP_TIER_MULT[tier as usize]
 }
 
 /// Scrap collection range at the given magnet tier.
@@ -168,6 +172,80 @@ pub(crate) fn repair_cost(base_cost: u32, is_rubble: bool) -> u32 {
         REPAIR_COST_FRAC
     };
     (base_cost as f32 * frac) as u32
+}
+
+// ---------------------------------------------------------------------------
+// Per-capability tier scalers
+//
+// Each scaler reads `TierChanged` and mutates only the capability it owns,
+// using ratio math against its own multiplier table. Towers without the
+// capability are absent from the per-scaler query and skipped automatically.
+// ---------------------------------------------------------------------------
+
+/// Compute the ratio between two tiers in the same multiplier table.
+fn tier_ratio(mults: &[f32], old_tier: u8, new_tier: u8) -> f32 {
+    mults[new_tier as usize] / mults[old_tier as usize]
+}
+
+/// Scale a `Turret`'s damage, range, and cooldown for the new tier.
+pub fn scale_turret_on_tier(
+    mut events: MessageReader<TierChanged>,
+    mut towers: Query<&mut Turret>,
+) {
+    for ev in events.read() {
+        let Ok(mut turret) = towers.get_mut(ev.tower) else {
+            continue;
+        };
+        turret.damage.0 *= tier_ratio(&DAMAGE_MULT, ev.old_tier, ev.new_tier);
+        turret.range.0 *= tier_ratio(&RANGE_MULT, ev.old_tier, ev.new_tier);
+        let cur_secs = turret.cooldown.0.duration().as_secs_f32();
+        let new_secs = cur_secs * tier_ratio(&COOLDOWN_MULT, ev.old_tier, ev.new_tier);
+        turret
+            .cooldown
+            .0
+            .set_duration(Duration::from_secs_f32(new_secs));
+    }
+}
+
+/// Scale an `AoEOnHit`'s blast radius and explosion damage for the new tier.
+pub fn scale_aoe_on_tier(mut events: MessageReader<TierChanged>, mut towers: Query<&mut AoEOnHit>) {
+    for ev in events.read() {
+        let Ok(mut aoe) = towers.get_mut(ev.tower) else {
+            continue;
+        };
+        aoe.radius *= tier_ratio(&AOE_RADIUS_MULT, ev.old_tier, ev.new_tier);
+        aoe.damage *= tier_ratio(&DAMAGE_MULT, ev.old_tier, ev.new_tier);
+    }
+}
+
+/// Scale a `SlowOnHit`'s aura range and slow factor for the new tier.
+pub fn scale_slow_on_tier(
+    mut events: MessageReader<TierChanged>,
+    mut towers: Query<&mut SlowOnHit>,
+) {
+    for ev in events.read() {
+        let Ok(mut slow) = towers.get_mut(ev.tower) else {
+            continue;
+        };
+        slow.range.0 *= tier_ratio(&RANGE_MULT, ev.old_tier, ev.new_tier);
+        slow.factor *= tier_ratio(&SLOW_MULT, ev.old_tier, ev.new_tier);
+    }
+}
+
+/// Scale `TowerHealth.max` for the new tier while preserving the current
+/// damage fraction (a tower at 50% HP stays at 50% HP after upgrading).
+pub fn scale_health_on_tier(
+    mut events: MessageReader<TierChanged>,
+    mut towers: Query<&mut TowerHealth>,
+) {
+    for ev in events.read() {
+        let Ok(mut health) = towers.get_mut(ev.tower) else {
+            continue;
+        };
+        let frac = health.fraction();
+        health.max *= tier_ratio(&TOWER_HP_TIER_MULT, ev.old_tier, ev.new_tier);
+        health.current = health.max * frac;
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -227,7 +305,11 @@ pub fn inspect_tower(
     }
 }
 
-/// Press U to upgrade the inspected tower.
+/// Press U to upgrade the inspected tower. Bumps the tier, debits scrap,
+/// and emits a `TierChanged` message; per-capability scaler systems
+/// (`scale_turret_on_tier`, `scale_aoe_on_tier`, `scale_slow_on_tier`,
+/// `scale_health_on_tier`, and chain_lightning's `scale_chain_on_tier_change`)
+/// observe the message and apply ratio-based scaling to their components.
 #[allow(clippy::type_complexity)]
 pub fn apply_upgrade(
     mut commands: Commands,
@@ -242,15 +324,8 @@ pub fn apply_upgrade(
             &mut Sprite,
             &Transform,
             &Children,
-            Option<&mut Turret>,
-            Option<&mut AoEOnHit>,
-            Option<&mut SlowOnHit>,
-            Option<&mut ChainLightning>,
-            (
-                Option<&RangeRingConfig>,
-                Option<&SlowAuraRingConfig>,
-                Option<&mut TowerHealth>,
-            ),
+            Option<&RangeRingConfig>,
+            Option<&SlowAuraRingConfig>,
             &TowerState,
         ),
         With<Tower>,
@@ -259,6 +334,7 @@ pub fn apply_upgrade(
     aura_visuals: Query<Entity, With<AuraVisual>>,
     mut pile_scrap: ResMut<PileScrap>,
     mut run_stats: Option<ResMut<RunStats>>,
+    mut tier_changed: MessageWriter<TierChanged>,
 ) {
     if !keyboard.just_pressed(KeyCode::KeyU) {
         return;
@@ -272,11 +348,8 @@ pub fn apply_upgrade(
         mut sprite,
         transform,
         children,
-        turret,
-        aoe,
-        slow,
-        chain,
-        (range_ring, aura_ring, tower_health),
+        range_ring,
+        aura_ring,
         tower_state,
     )) = towers.get_mut(entity)
     else {
@@ -303,42 +376,17 @@ pub fn apply_upgrade(
     if let Some(run_stats) = run_stats.as_mut() {
         run_stats.scrap_spent += ucost;
     }
+    let old_tier = tier.0;
     tier.0 += 1;
+    let new_tier = tier.0;
 
-    // Scale tower HP with tier (preserve damage fraction).
-    if let Some(mut health) = tower_health {
-        let old_frac = health.fraction();
-        let new_max = tower_max_hp(base.cost, tier.0);
-        health.max = new_max;
-        health.current = new_max * old_frac;
-    }
-
-    // Per-capability tier scaling. Each capability owns the slice of base
-    // stats it cares about; non-applicable capabilities are absent from the
-    // entity and skipped.
-    if let Some(mut turret) = turret {
-        turret.damage = Damage(damage_at_tier(base.damage, tier.0));
-        turret.range = Range(range_at_tier(base.range, tier.0));
-        let new_dur = cooldown_at_tier(base.cooldown_secs, tier.0);
-        turret
-            .cooldown
-            .0
-            .set_duration(Duration::from_secs_f32(new_dur));
-    }
-    if let Some(mut aoe) = aoe {
-        aoe.radius = aoe_radius_at_tier(base.aoe_radius, tier.0);
-        aoe.damage = damage_at_tier(base.aoe_damage, tier.0);
-    }
-    if let Some(mut slow) = slow {
-        slow.range = Range(range_at_tier(base.range, tier.0));
-        slow.factor = slow_factor_at_tier(base.slow_factor, tier.0);
-    }
-    if let Some(mut chain) = chain {
-        chain.damage = Damage(damage_at_tier(base.damage, tier.0));
-        chain.primary_range = Range(range_at_tier(base.range, tier.0));
-        // Chain Lightning's per-tower scaling (arc_range, ChainCooldown) is
-        // handled reactively by `chain_lightning::systems::scale_chain_on_tier_change`.
-    }
+    // Broadcast the tier change. Per-capability scalers will react in this
+    // same Update step (chained after `apply_upgrade`).
+    tier_changed.write(TierChanged {
+        tower: entity,
+        old_tier,
+        new_tier,
+    });
 
     // Despawn old ring children before re-inserting configs.
     for child in children.iter() {
@@ -1169,16 +1217,6 @@ mod tests {
         assert!((range_at_tier(base, 2) - 120.0).abs() < 0.01);
     }
 
-    // -- cooldown_at_tier --
-
-    #[test]
-    fn cooldown_decreases_with_tier() {
-        let base = 1.0;
-        assert_eq!(cooldown_at_tier(base, 0), 1.0);
-        assert_eq!(cooldown_at_tier(base, 1), 0.85);
-        assert_eq!(cooldown_at_tier(base, 2), 0.7);
-    }
-
     // -- aoe / slow / arc --
 
     #[test]
@@ -1189,27 +1227,10 @@ mod tests {
     }
 
     #[test]
-    fn slow_factor_decreases_with_tier() {
-        let base = 0.5;
-        assert_eq!(slow_factor_at_tier(base, 0), 0.5);
-        assert!((slow_factor_at_tier(base, 2) - 0.35).abs() < 0.001);
-    }
-
-    #[test]
     fn arc_range_progression() {
         let base = 60.0;
         assert_eq!(arc_range_at_tier(base, 0), 60.0);
         assert!((arc_range_at_tier(base, 2) - 100.02).abs() < 0.1);
-    }
-
-    // -- tower_max_hp --
-
-    #[test]
-    fn tower_max_hp_progression() {
-        // cost=50, TOWER_HP_COST_MULT=3.0, TOWER_HP_TIER_MULT=[1.0, 1.4, 2.0]
-        assert_eq!(tower_max_hp(50, 0), 150.0);
-        assert_eq!(tower_max_hp(50, 1), 210.0);
-        assert_eq!(tower_max_hp(50, 2), 300.0);
     }
 
     // -- magnet_range_at_tier --
@@ -1221,6 +1242,106 @@ mod tests {
         assert_eq!(magnet_range_at_tier(base, 1), 45.0);
         assert_eq!(magnet_range_at_tier(base, 2), 60.0);
         assert_eq!(magnet_range_at_tier(base, 3), 75.0);
+    }
+
+    // -- per-capability scalers (TierChanged) --
+
+    fn scaler_test_app() -> App {
+        let mut app = App::new();
+        app.add_message::<TierChanged>();
+        app
+    }
+
+    #[test]
+    fn scale_turret_applies_tier_ratio() {
+        let mut app = scaler_test_app();
+        app.add_systems(Update, scale_turret_on_tier);
+
+        let entity = app
+            .world_mut()
+            .spawn(Turret::new(Damage(10.0), Range(100.0), 1.0, 0.1))
+            .id();
+
+        app.world_mut().write_message(TierChanged {
+            tower: entity,
+            old_tier: 0,
+            new_tier: 1,
+        });
+        app.update();
+
+        let turret = app.world().get::<Turret>(entity).unwrap();
+        // Tier 0→1: damage *1.4, range *1.1, cooldown *0.85.
+        assert!((turret.damage.0 - 14.0).abs() < 1e-4);
+        assert!((turret.range.0 - 110.0).abs() < 1e-4);
+        assert!(
+            (turret.cooldown.0.duration().as_secs_f32() - 0.85).abs() < 1e-4,
+            "cooldown was {:?}",
+            turret.cooldown.0.duration()
+        );
+    }
+
+    #[test]
+    fn scalers_are_not_idempotent() {
+        // The scalers apply ratio math (live *= MULT[new]/MULT[old]) and are
+        // intentionally NOT idempotent. Emitting the same `TierChanged` twice
+        // double-applies the scaling. This is a contract: callers (i.e.
+        // `apply_upgrade`) must emit exactly once per tier transition.
+        let mut app = scaler_test_app();
+        app.add_systems(Update, scale_turret_on_tier);
+
+        let entity = app
+            .world_mut()
+            .spawn(Turret::new(Damage(10.0), Range(100.0), 1.0, 0.1))
+            .id();
+
+        // Two identical messages → ratio applied twice.
+        app.world_mut().write_message(TierChanged {
+            tower: entity,
+            old_tier: 0,
+            new_tier: 1,
+        });
+        app.world_mut().write_message(TierChanged {
+            tower: entity,
+            old_tier: 0,
+            new_tier: 1,
+        });
+        app.update();
+
+        let turret = app.world().get::<Turret>(entity).unwrap();
+        // 10.0 * 1.4 * 1.4 = 19.6, NOT 14.0 (the idempotent answer).
+        assert!(
+            (turret.damage.0 - 19.6).abs() < 1e-3,
+            "expected double-application 19.6, got {}",
+            turret.damage.0
+        );
+    }
+
+    #[test]
+    fn scale_health_preserves_fraction() {
+        let mut app = scaler_test_app();
+        app.add_systems(Update, scale_health_on_tier);
+
+        // Tower at 50% HP before upgrade.
+        let entity = app
+            .world_mut()
+            .spawn(TowerHealth {
+                current: 50.0,
+                max: 100.0,
+            })
+            .id();
+
+        app.world_mut().write_message(TierChanged {
+            tower: entity,
+            old_tier: 0,
+            new_tier: 1,
+        });
+        app.update();
+
+        let h = app.world().get::<TowerHealth>(entity).unwrap();
+        // Tier 0→1: max *1.4 = 140.0; fraction preserved at 50% → current = 70.0.
+        assert!((h.max - 140.0).abs() < 1e-4);
+        assert!((h.current - 70.0).abs() < 1e-4);
+        assert!((h.fraction() - 0.5).abs() < 1e-4);
     }
 
     // -- sell_refund --

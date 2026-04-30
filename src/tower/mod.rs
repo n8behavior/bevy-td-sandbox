@@ -145,6 +145,7 @@ impl Plugin for TowerPlugin {
         app.init_resource::<placement::SelectedTower>()
             .init_resource::<TowerRegistry>()
             .init_resource::<upgrade::InspectedTower>()
+            .add_message::<upgrade::TierChanged>()
             .add_plugins((
                 scrap_gun::ScrapGunPlugin,
                 tar_pit::TarPitPlugin,
@@ -166,6 +167,10 @@ impl Plugin for TowerPlugin {
                     targeting::handle_targeting_button,
                     upgrade::inspect_tower,
                     upgrade::apply_upgrade,
+                    upgrade::scale_turret_on_tier,
+                    upgrade::scale_aoe_on_tier,
+                    upgrade::scale_slow_on_tier,
+                    upgrade::scale_health_on_tier,
                     upgrade::sync_collector_on_upgrade,
                     upgrade::apply_magnet_upgrade,
                     upgrade::apply_repair,
