@@ -6,6 +6,7 @@ use bevy::prelude::*;
 use crate::common::constants::{MAGNET_AURA_COLOR, TOWER_HP_COST_MULT};
 use crate::tower::components::*;
 use crate::tower::events::TowerFired;
+use crate::tower::upgrade::{Magnet, UpgradeTrack};
 
 const FIRE_HZ: f32 = 2200.0;
 const FIRE_MS: u64 = 50;
@@ -93,7 +94,7 @@ fn register(mut registry: ResMut<TowerRegistry>) {
                 max: max_hp,
             });
             cmds.insert((
-                MagnetTier(0),
+                UpgradeTrack::<Magnet>::default(),
                 CollectionAuraRingConfig {
                     range: collect_range,
                     color: MAGNET_AURA_COLOR,

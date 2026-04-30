@@ -146,6 +146,7 @@ impl Plugin for TowerPlugin {
             .init_resource::<TowerRegistry>()
             .init_resource::<upgrade::InspectedTower>()
             .add_message::<upgrade::TierChanged>()
+            .add_message::<upgrade::UpgradeApplied<upgrade::Magnet>>()
             .add_observer(systems::default_fire_observer)
             .add_plugins((
                 scrap_gun::ScrapGunPlugin,
@@ -173,7 +174,8 @@ impl Plugin for TowerPlugin {
                     upgrade::scale_slow_on_tier,
                     upgrade::scale_health_on_tier,
                     upgrade::sync_collector_on_upgrade,
-                    upgrade::apply_magnet_upgrade,
+                    upgrade::apply_track_upgrade::<upgrade::Magnet>,
+                    upgrade::scale_magnet_on_track,
                     upgrade::apply_repair,
                 )
                     .chain()

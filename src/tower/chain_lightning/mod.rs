@@ -10,6 +10,7 @@ use crate::common::constants::{MAGNET_AURA_COLOR, TOWER_HP_COST_MULT};
 use crate::states::{GameState, PlayPhase};
 use crate::tower::components::*;
 use crate::tower::events::TowerFired;
+use crate::tower::upgrade::{Magnet, UpgradeTrack};
 
 use components::{ChainCooldown, ChainLightning, ChainLightningMarker};
 
@@ -109,7 +110,7 @@ fn register(mut registry: ResMut<TowerRegistry>) {
                 max: max_hp,
             });
             cmds.insert((
-                MagnetTier(0),
+                UpgradeTrack::<Magnet>::default(),
                 CollectionAuraRingConfig {
                     range: collect_range,
                     color: MAGNET_AURA_COLOR,

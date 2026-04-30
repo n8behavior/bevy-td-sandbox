@@ -349,12 +349,6 @@ pub struct ScrapCollector {
 // Magnet upgrade components
 // ---------------------------------------------------------------------------
 
-/// Current magnet upgrade tier: 0 = base, 1–3 = upgraded.
-/// Separate from TowerTier (combat upgrades). Not present on ScrapMagnet
-/// (which has built-in max collection range).
-#[derive(Component)]
-pub struct MagnetTier(pub u8);
-
 /// Insert on a tower entity to request a scrap collection aura ring child.
 /// A reactive system converts this into a `Mesh2d` + `CircleMaterial`.
 /// Separate from `SlowAuraRingConfig` so towers can have both (e.g. TarPit

@@ -1,3 +1,4 @@
+use std::marker::PhantomData;
 use std::time::Duration;
 
 use bevy::prelude::*;
@@ -34,8 +35,6 @@ pub(crate) const ARC_RANGE_MULT: [f32; 3] = [1.0, 1.333, 1.667];
 
 const TIER_COLOR_BOOST: [f32; 3] = [0.0, 0.15, 0.3];
 
-pub const MAX_MAGNET_TIER: u8 = 3;
-const MAGNET_UPGRADE_COSTS: [u32; 3] = [25, 50, 75];
 const MAGNET_RANGE_MULT: [f32; 4] = [1.0, 1.5, 2.0, 2.5];
 
 const LABEL_COLOR: Color = Color::srgb(0.95, 0.85, 0.5);
@@ -61,6 +60,205 @@ pub struct TierChanged {
     pub tower: Entity,
     pub old_tier: u8,
     pub new_tier: u8,
+}
+
+// ---------------------------------------------------------------------------
+// Generic upgrade-track machinery
+//
+// Towers can declare any number of independent upgrade dimensions. Each
+// dimension is a zero-sized type implementing `UpgradeKind`. The generic
+// `apply_track_upgrade::<K>` system handles the input-driven flow (key
+// press, scrap debit, tier bump, message emission, floating-text feedback);
+// per-capability scaler systems listen on `UpgradeApplied<K>` and apply
+// their domain-specific scaling.
+// ---------------------------------------------------------------------------
+
+/// Declares an independent upgrade dimension on a tower (e.g. the "Magnet"
+/// track that scales scrap-collection range). Each implementor provides a
+/// hotkey, a tier ceiling, a per-tier cost table, and presentation hints
+/// for the floating-text feedback shown on upgrade.
+pub trait UpgradeKind: Send + Sync + 'static {
+    /// Hotkey that gates `apply_track_upgrade::<Self>`.
+    const KEY: KeyCode;
+    /// Highest tier value the track can reach (inclusive).
+    const MAX_TIER: u8;
+    /// Scrap cost for upgrading FROM each tier to the next. Indexed by
+    /// current tier; length must be at least `MAX_TIER`.
+    const COSTS: &'static [u32];
+    /// Human-readable label used by the floating-text feedback.
+    const LABEL: &'static str;
+    /// Color of the floating-text feedback shown on upgrade.
+    const FLOAT_COLOR: Color;
+}
+
+/// A typed upgrade-tier counter for the dimension `K`. Towers carry one
+/// `UpgradeTrack<K>` per dimension they participate in. The shared
+/// `apply_track_upgrade::<K>` system increments the counter and emits
+/// `UpgradeApplied<K>` on each upgrade.
+#[derive(Component, Debug)]
+pub struct UpgradeTrack<K: UpgradeKind> {
+    pub tier: u8,
+    _marker: PhantomData<K>,
+}
+
+impl<K: UpgradeKind> Default for UpgradeTrack<K> {
+    fn default() -> Self {
+        Self {
+            tier: 0,
+            _marker: PhantomData,
+        }
+    }
+}
+
+/// Broadcast once per upgrade applied on the `K` track. Per-capability
+/// scalers listen on this message and apply domain-specific scaling using
+/// the `old_tier` / `new_tier` ratio against their own multiplier table.
+///
+/// Same idempotency contract as `TierChanged`: callers (i.e.
+/// `apply_track_upgrade::<K>`) emit exactly once per tier transition.
+#[derive(Message, Debug)]
+pub struct UpgradeApplied<K: UpgradeKind> {
+    pub tower: Entity,
+    pub old_tier: u8,
+    pub new_tier: u8,
+    _marker: PhantomData<K>,
+}
+
+impl<K: UpgradeKind> UpgradeApplied<K> {
+    pub fn new(tower: Entity, old_tier: u8, new_tier: u8) -> Self {
+        Self {
+            tower,
+            old_tier,
+            new_tier,
+            _marker: PhantomData,
+        }
+    }
+}
+
+/// Generic system: gates on `K::KEY`, validates the inspected tower, debits
+/// scrap, bumps `UpgradeTrack<K>.tier`, and emits `UpgradeApplied<K>`.
+/// Spawns a floating-text feedback node using `K::LABEL` and
+/// `K::FLOAT_COLOR`.
+pub fn apply_track_upgrade<K: UpgradeKind>(
+    mut commands: Commands,
+    keyboard: Res<ButtonInput<KeyCode>>,
+    inspected: Res<InspectedTower>,
+    mut towers: Query<
+        (
+            Entity,
+            &mut UpgradeTrack<K>,
+            &mut TowerCost,
+            &Transform,
+            &TowerState,
+        ),
+        With<Tower>,
+    >,
+    mut pile_scrap: ResMut<PileScrap>,
+    mut run_stats: Option<ResMut<RunStats>>,
+    mut writer: MessageWriter<UpgradeApplied<K>>,
+) {
+    if !keyboard.just_pressed(K::KEY) {
+        return;
+    }
+    let Some(entity) = inspected.0 else { return };
+    let Ok((tower_entity, mut track, mut cost, transform, tower_state)) = towers.get_mut(entity)
+    else {
+        return;
+    };
+
+    if !tower_state.is_operational() {
+        return;
+    }
+
+    if track.tier >= K::MAX_TIER {
+        return;
+    }
+
+    let ucost = K::COSTS[track.tier as usize];
+    if pile_scrap.amount < ucost {
+        return;
+    }
+
+    pile_scrap.amount -= ucost;
+    cost.0 += ucost;
+    if let Some(run_stats) = run_stats.as_mut() {
+        run_stats.scrap_spent += ucost;
+    }
+    let old_tier = track.tier;
+    track.tier += 1;
+    let new_tier = track.tier;
+
+    writer.write(UpgradeApplied::<K>::new(tower_entity, old_tier, new_tier));
+
+    let pos = transform.translation.truncate();
+    commands.spawn((
+        Text2d::new(format!("{} {}", K::LABEL, new_tier)),
+        TextFont {
+            font_size: 14.0,
+            ..default()
+        },
+        TextColor(K::FLOAT_COLOR),
+        Transform::from_translation(pos.extend(10.0)),
+        SellText {
+            timer: Timer::from_seconds(0.8, TimerMode::Once),
+        },
+    ));
+}
+
+// ---------------------------------------------------------------------------
+// Magnet upgrade kind
+// ---------------------------------------------------------------------------
+
+/// The scrap-collector upgrade dimension. Towers with `UpgradeTrack<Magnet>`
+/// can spend scrap (M key) to expand their collection radius.
+#[derive(Debug)]
+pub struct Magnet;
+
+impl UpgradeKind for Magnet {
+    const KEY: KeyCode = KeyCode::KeyM;
+    const MAX_TIER: u8 = 3;
+    const COSTS: &'static [u32] = &[25, 50, 75];
+    const LABEL: &'static str = "Magnet";
+    const FLOAT_COLOR: Color = Color::srgb(0.4, 0.7, 1.0);
+}
+
+/// Per-capability scaler for the Magnet track: scales `ScrapCollector.range`
+/// using the magnet-tier ratio and refreshes the collection-aura ring.
+pub fn scale_magnet_on_track(
+    mut events: MessageReader<UpgradeApplied<Magnet>>,
+    mut commands: Commands,
+    mut towers: Query<(
+        &mut ScrapCollector,
+        &Children,
+        Option<&CollectionAuraRingConfig>,
+    )>,
+    magnet_auras: Query<Entity, With<MagnetAura>>,
+) {
+    for ev in events.read() {
+        let Ok((mut collector, children, magnet_aura)) = towers.get_mut(ev.tower) else {
+            continue;
+        };
+        let ratio =
+            MAGNET_RANGE_MULT[ev.new_tier as usize] / MAGNET_RANGE_MULT[ev.old_tier as usize];
+        collector.range *= ratio;
+
+        for child in children.iter() {
+            if magnet_auras.contains(child) {
+                commands.entity(child).despawn();
+            }
+        }
+
+        let color = magnet_aura
+            .map(|c| c.color)
+            .unwrap_or(crate::common::constants::MAGNET_AURA_COLOR);
+        let new_range = collector.range;
+        let mut ecmds = commands.entity(ev.tower);
+        ecmds.remove::<CollectionAuraRingConfig>();
+        ecmds.insert(CollectionAuraRingConfig {
+            range: new_range,
+            color,
+        });
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -418,14 +616,19 @@ pub fn apply_upgrade(
     ));
 }
 
-/// When a tower WITHOUT `MagnetTier` (i.e. ScrapMagnet) gets a stat
-/// upgrade, sync its `ScrapCollector.range` to the new aura range stored on
-/// `SlowOnHit.range` (ScrapMagnet's collector and slow aura share a radius).
-/// Towers WITH `MagnetTier` manage collection range via the magnet system.
+/// When a tower WITHOUT `UpgradeTrack<Magnet>` (i.e. ScrapMagnet) gets a
+/// primary-tier upgrade, sync its `ScrapCollector.range` to the new aura
+/// range stored on `SlowOnHit.range` — ScrapMagnet's collector and slow
+/// aura share a radius. Towers WITH `UpgradeTrack<Magnet>` manage collection
+/// range via `scale_magnet_on_track`.
 pub fn sync_collector_on_upgrade(
     mut towers: Query<
         (&SlowOnHit, &mut ScrapCollector, &TowerState),
-        (With<Tower>, Without<MagnetTier>, Changed<TowerTier>),
+        (
+            With<Tower>,
+            Without<UpgradeTrack<Magnet>>,
+            Changed<TowerTier>,
+        ),
     >,
 ) {
     for (slow, mut collector, tower_state) in &mut towers {
@@ -434,92 +637,6 @@ pub fn sync_collector_on_upgrade(
         }
         collector.range = slow.range.0;
     }
-}
-
-/// Press M to upgrade the magnet tier of the inspected tower.
-pub fn apply_magnet_upgrade(
-    mut commands: Commands,
-    keyboard: Res<ButtonInput<KeyCode>>,
-    inspected: Res<InspectedTower>,
-    mut towers: Query<
-        (
-            &mut MagnetTier,
-            &mut ScrapCollector,
-            &mut TowerCost,
-            &Transform,
-            &Children,
-            Option<&CollectionAuraRingConfig>,
-            &TowerState,
-        ),
-        With<Tower>,
-    >,
-    magnet_auras: Query<Entity, With<MagnetAura>>,
-    mut pile_scrap: ResMut<PileScrap>,
-) {
-    if !keyboard.just_pressed(KeyCode::KeyM) {
-        return;
-    }
-    let Some(entity) = inspected.0 else { return };
-    let Ok((mut tier, mut collector, mut cost, transform, children, magnet_aura, tower_state)) =
-        towers.get_mut(entity)
-    else {
-        return;
-    };
-
-    if !tower_state.is_operational() {
-        return;
-    }
-
-    if tier.0 >= MAX_MAGNET_TIER {
-        return;
-    }
-
-    let ucost = MAGNET_UPGRADE_COSTS[tier.0 as usize];
-    if pile_scrap.amount < ucost {
-        return;
-    }
-
-    // Deduct and track.
-    pile_scrap.amount -= ucost;
-    cost.0 += ucost;
-    let old_tier = tier.0;
-    tier.0 += 1;
-
-    // Scale collection range by the tier-to-tier ratio.
-    collector.range *= MAGNET_RANGE_MULT[tier.0 as usize] / MAGNET_RANGE_MULT[old_tier as usize];
-
-    // Despawn old magnet aura children before re-inserting config.
-    for child in children.iter() {
-        if magnet_auras.contains(child) {
-            commands.entity(child).despawn();
-        }
-    }
-
-    // Re-insert CollectionAuraRingConfig to trigger the Added<> reactive system.
-    let color = magnet_aura
-        .map(|c| c.color)
-        .unwrap_or(crate::common::constants::MAGNET_AURA_COLOR);
-    let mut ecmds = commands.entity(entity);
-    ecmds.remove::<CollectionAuraRingConfig>();
-    ecmds.insert(CollectionAuraRingConfig {
-        range: collector.range,
-        color,
-    });
-
-    // Floating text feedback.
-    let pos = transform.translation.truncate();
-    commands.spawn((
-        Text2d::new(format!("Magnet {}", tier.0)),
-        TextFont {
-            font_size: 14.0,
-            ..default()
-        },
-        TextColor(Color::srgb(0.4, 0.7, 1.0)),
-        Transform::from_translation(pos.extend(10.0)),
-        SellText {
-            timer: Timer::from_seconds(0.8, TimerMode::Once),
-        },
-    ));
 }
 
 /// Press R to repair the inspected damaged tower.
@@ -968,7 +1085,7 @@ pub fn update_upgrade_panel(
             &BaseCost,
             &PanelStats,
             Option<&TargetingMode>,
-            Option<&MagnetTier>,
+            Option<&UpgradeTrack<Magnet>>,
             Option<&ScrapCollector>,
             Option<&TowerHealth>,
             &TowerState,
@@ -1001,7 +1118,7 @@ pub fn update_upgrade_panel(
         base_cost,
         panel,
         targeting_mode,
-        magnet_tier,
+        magnet_track,
         collector,
         tower_health,
         tower_state,
@@ -1076,11 +1193,12 @@ pub fn update_upgrade_panel(
             spawn_text_line(parent, "\nMAX TIER", Color::srgb(0.4, 0.9, 0.4), 13.0);
         }
 
-        // Magnet upgrade button: any tower with MagnetTier shows the upgrade
-        // button; any tower with a ScrapCollector but no MagnetTier shows MAX.
-        if let Some(mt) = magnet_tier {
-            if mt.0 < MAX_MAGNET_TIER {
-                let mcost = MAGNET_UPGRADE_COSTS[mt.0 as usize];
+        // Magnet upgrade button: any tower with `UpgradeTrack<Magnet>` shows
+        // the upgrade button; any tower with a ScrapCollector but no track
+        // shows MAX.
+        if let Some(mt) = magnet_track {
+            if mt.tier < Magnet::MAX_TIER {
+                let mcost = Magnet::COSTS[mt.tier as usize];
                 let mcost_color = if pile_scrap.amount >= mcost {
                     LABEL_COLOR
                 } else {

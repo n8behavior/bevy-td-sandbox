@@ -2,6 +2,7 @@ use bevy::prelude::*;
 
 use crate::common::constants::MAGNET_AURA_COLOR;
 use crate::tower::components::*;
+use crate::tower::upgrade::{Magnet, UpgradeTrack};
 
 #[derive(Component)]
 pub struct TarPit;
@@ -40,7 +41,7 @@ fn register(mut registry: ResMut<TowerRegistry>) {
                     color: MAGNET_AURA_COLOR,
                 },
                 ScrapCollector { range: 30.0 },
-                MagnetTier(0),
+                UpgradeTrack::<Magnet>::default(),
                 TarPit,
                 // No BlocksNav — enemies walk through
                 TowerColor(color),
