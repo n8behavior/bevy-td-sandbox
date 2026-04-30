@@ -11,8 +11,7 @@ use crate::pile::resources::PileState;
 
 use super::components::{BaseArcRange, ChainCooldown, ChainLightning, LightningArc};
 use crate::tower::components::{
-    BaseStats, PanelStats, StatLine, TargetingMode, Tower, TowerHealth, TowerState, TowerStats,
-    TowerTier,
+    BaseStats, PanelStats, StatLine, TargetingMode, Tower, TowerHealth, TowerState, TowerTier,
 };
 use crate::tower::events::TowerFired;
 use crate::tower::systems::best_target_from;
@@ -30,7 +29,6 @@ pub fn chain_lightning_fire(
         (
             Entity,
             &Transform,
-            &TowerStats,
             &ChainLightning,
             &mut ChainCooldown,
             Option<&TargetingMode>,
@@ -45,16 +43,8 @@ pub fn chain_lightning_fire(
     config: Res<GridConfig>,
 ) {
     let pile_center_world = grid_to_world_cfg(pile_state.center, &config);
-    for (
-        tower_entity,
-        tower_tf,
-        stats,
-        chain,
-        mut cooldown,
-        targeting,
-        tower_health,
-        tower_state,
-    ) in &mut towers
+    for (tower_entity, tower_tf, chain, mut cooldown, targeting, tower_health, tower_state) in
+        &mut towers
     {
         if !tower_state.is_operational() {
             continue;
@@ -75,7 +65,7 @@ pub fn chain_lightning_fire(
                 .iter()
                 .map(|(e, h, tf, _)| (e, tf.translation.truncate(), h.current)),
             tower_pos,
-            stats.range,
+            chain.primary_range.0,
             mode,
             pile_center_world,
         ) else {
@@ -90,7 +80,7 @@ pub fn chain_lightning_fire(
         // Build chain (read-only pass via .iter() / .get()).
         let mut chain_targets: Vec<(Entity, Vec2, f32)> = Vec::new();
         let mut hit_set = vec![first_target];
-        let mut current_damage = stats.damage * eff;
+        let mut current_damage = chain.damage.0 * eff;
 
         if let Ok((_, _, tf, _)) = enemies.get(first_target) {
             let pos = tf.translation.truncate();

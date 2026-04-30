@@ -15,6 +15,7 @@ use crate::common::constants::{
     REPAIR_COST_FRAC, REPAIR_RUBBLE_COST_FRAC, TOWER_HP_COST_MULT, TOWER_HP_TIER_MULT,
 };
 
+use super::chain_lightning::components::ChainLightning;
 use super::components::*;
 use super::placement::{SELL_REFUND_PERCENT, SelectedTower, SellText};
 use super::targeting::TargetingButton;
@@ -227,6 +228,7 @@ pub fn inspect_tower(
 }
 
 /// Press U to upgrade the inspected tower.
+#[allow(clippy::type_complexity)]
 pub fn apply_upgrade(
     mut commands: Commands,
     keyboard: Res<ButtonInput<KeyCode>>,
@@ -235,14 +237,15 @@ pub fn apply_upgrade(
         (
             &mut TowerTier,
             &BaseStats,
-            &mut TowerStats,
+            &TowerColor,
             &mut TowerCost,
             &mut Sprite,
             &Transform,
             &Children,
-            Option<&mut TurretState>,
+            Option<&mut Turret>,
             Option<&mut AoEOnHit>,
             Option<&mut SlowOnHit>,
+            Option<&mut ChainLightning>,
             (
                 Option<&RangeRingConfig>,
                 Option<&SlowAuraRingConfig>,
@@ -264,7 +267,7 @@ pub fn apply_upgrade(
     let Ok((
         mut tier,
         base,
-        mut stats,
+        tower_color,
         mut cost,
         mut sprite,
         transform,
@@ -272,6 +275,7 @@ pub fn apply_upgrade(
         turret,
         aoe,
         slow,
+        chain,
         (range_ring, aura_ring, tower_health),
         tower_state,
     )) = towers.get_mut(entity)
@@ -309,14 +313,16 @@ pub fn apply_upgrade(
         health.current = new_max * old_frac;
     }
 
-    // Apply stat multipliers from base.
-    stats.damage = damage_at_tier(base.damage, tier.0);
-    stats.range = range_at_tier(base.range, tier.0);
-
+    // Per-capability tier scaling. Each capability owns the slice of base
+    // stats it cares about; non-applicable capabilities are absent from the
+    // entity and skipped.
     if let Some(mut turret) = turret {
+        turret.damage = Damage(damage_at_tier(base.damage, tier.0));
+        turret.range = Range(range_at_tier(base.range, tier.0));
         let new_dur = cooldown_at_tier(base.cooldown_secs, tier.0);
         turret
             .cooldown
+            .0
             .set_duration(Duration::from_secs_f32(new_dur));
     }
     if let Some(mut aoe) = aoe {
@@ -324,10 +330,15 @@ pub fn apply_upgrade(
         aoe.damage = damage_at_tier(base.aoe_damage, tier.0);
     }
     if let Some(mut slow) = slow {
+        slow.range = Range(range_at_tier(base.range, tier.0));
         slow.factor = slow_factor_at_tier(base.slow_factor, tier.0);
     }
-    // Chain Lightning tier scaling (arc_range, cooldown) is handled
-    // reactively by `chain_lightning::systems::scale_chain_on_tier_change`.
+    if let Some(mut chain) = chain {
+        chain.damage = Damage(damage_at_tier(base.damage, tier.0));
+        chain.primary_range = Range(range_at_tier(base.range, tier.0));
+        // Chain Lightning's per-tower scaling (arc_range, ChainCooldown) is
+        // handled reactively by `chain_lightning::systems::scale_chain_on_tier_change`.
+    }
 
     // Despawn old ring children before re-inserting configs.
     for child in children.iter() {
@@ -336,21 +347,25 @@ pub fn apply_upgrade(
         }
     }
 
-    // Re-insert ring configs to trigger the Added<> reactive systems.
+    // Re-insert ring configs to trigger the Added<> reactive systems. The
+    // visual range is recomputed from the per-tower base stat so it tracks
+    // whichever capability owns it (the legacy unified TowerStats.range is
+    // gone).
+    let new_visual_range = range_at_tier(base.range, tier.0);
     let mut ecmds = commands.entity(entity);
     if let Some(rr) = range_ring {
         let new_rr = RangeRingConfig {
-            range: stats.range,
+            range: new_visual_range,
             color: rr.color,
         };
         ecmds.remove::<RangeRingConfig>();
         ecmds.insert(new_rr);
     }
     if let Some(ar) = aura_ring {
-        // Use updated stats.range so the aura visual scales with upgrades
-        // (affects TarPit slow aura and ScrapMagnet pull aura).
+        // Aura ring matches the new aura range (TarPit slow aura, ScrapMagnet
+        // pull aura). Both scale via base.range.
         let new_ar = SlowAuraRingConfig {
-            range: stats.range,
+            range: new_visual_range,
             color: ar.color,
         };
         ecmds.remove::<SlowAuraRingConfig>();
@@ -358,7 +373,7 @@ pub fn apply_upgrade(
     }
 
     // Visual feedback: white flash.
-    let new_color = tier_color(base.color, tier.0);
+    let new_color = tier_color(tower_color.0, tier.0);
     sprite.color = Color::WHITE;
     ecmds.insert(UpgradeFlash {
         timer: Timer::from_seconds(0.15, TimerMode::Once),
@@ -382,19 +397,20 @@ pub fn apply_upgrade(
 }
 
 /// When a tower WITHOUT `MagnetTier` (i.e. ScrapMagnet) gets a stat
-/// upgrade, sync its `ScrapCollector.range` to the new `TowerStats.range`.
+/// upgrade, sync its `ScrapCollector.range` to the new aura range stored on
+/// `SlowOnHit.range` (ScrapMagnet's collector and slow aura share a radius).
 /// Towers WITH `MagnetTier` manage collection range via the magnet system.
 pub fn sync_collector_on_upgrade(
     mut towers: Query<
-        (&TowerStats, &mut ScrapCollector, &TowerState),
+        (&SlowOnHit, &mut ScrapCollector, &TowerState),
         (With<Tower>, Without<MagnetTier>, Changed<TowerTier>),
     >,
 ) {
-    for (stats, mut collector, tower_state) in &mut towers {
+    for (slow, mut collector, tower_state) in &mut towers {
         if !tower_state.is_placed() {
             continue;
         }
-        collector.range = stats.range;
+        collector.range = slow.range.0;
     }
 }
 
@@ -493,6 +509,7 @@ pub fn apply_magnet_upgrade(
 }
 
 /// Press R to repair the inspected damaged tower.
+#[allow(clippy::type_complexity)]
 pub fn apply_repair(
     mut commands: Commands,
     keyboard: Res<ButtonInput<KeyCode>>,
@@ -502,6 +519,7 @@ pub fn apply_repair(
             Entity,
             &mut TowerHealth,
             &BaseStats,
+            &TowerColor,
             &TowerTier,
             &mut Sprite,
             &Transform,
@@ -527,6 +545,7 @@ pub fn apply_repair(
         entity,
         mut health,
         base,
+        tower_color,
         tier,
         mut sprite,
         transform,
@@ -605,7 +624,7 @@ pub fn apply_repair(
     }
 
     // Visual: white flash restoring to healthy tier color.
-    let healthy_color = tier_color(base.color, tier.0);
+    let healthy_color = tier_color(tower_color.0, tier.0);
     sprite.color = Color::WHITE;
     commands.entity(entity).insert(UpgradeFlash {
         timer: Timer::from_seconds(0.15, TimerMode::Once),
@@ -717,15 +736,19 @@ fn hp_color(state: &TowerState, health: &TowerHealth) -> Color {
 /// RATE (turret), AOE, SLOW, COLLECT — everything driven by shared components.
 /// Per-tower extras (e.g. Chain Lightning's ARC) are written by per-tower
 /// systems into `PanelStats.extra`.
+///
+/// DMG and RNG are sourced from whichever capability owns them: `Turret` for
+/// projectile turrets, `ChainLightning` for chain towers, or `SlowOnHit` for
+/// pure aura towers (which only have a range).
 #[allow(clippy::type_complexity)]
 pub fn rebuild_common_stats(
     mut towers: Query<
         (
             &mut PanelStats,
-            &TowerStats,
             &TowerTier,
             &BaseStats,
-            Option<&TurretState>,
+            Option<&Turret>,
+            Option<&ChainLightning>,
             Option<&AoEOnHit>,
             Option<&SlowOnHit>,
             Option<&TowerHealth>,
@@ -735,10 +758,10 @@ pub fn rebuild_common_stats(
         (
             With<Tower>,
             Or<(
-                Changed<TowerStats>,
+                Changed<Turret>,
+                Changed<ChainLightning>,
                 Changed<TowerTier>,
                 Changed<TowerHealth>,
-                Changed<TurretState>,
                 Changed<AoEOnHit>,
                 Changed<SlowOnHit>,
                 Changed<ScrapCollector>,
@@ -747,7 +770,7 @@ pub fn rebuild_common_stats(
         ),
     >,
 ) {
-    for (mut panel, stats, tier, base, turret, aoe, slow, health, collector, tower_state) in
+    for (mut panel, tier, base, turret, chain, aoe, slow, health, collector, tower_state) in
         &mut towers
     {
         panel.common.clear();
@@ -766,21 +789,48 @@ pub fn rebuild_common_stats(
             });
         }
 
-        panel.common.push(StatLine {
-            label: "DMG",
-            value: format!("{:.0}", stats.damage),
-            color: STAT_COLOR,
-        });
-        panel.common.push(StatLine {
-            label: "RNG",
-            value: format!("{:.0}", stats.range),
-            color: STAT_COLOR,
-        });
+        // DMG comes from whichever firing capability is present.
+        if let Some(t) = turret {
+            panel.common.push(StatLine {
+                label: "DMG",
+                value: format!("{:.0}", t.damage.0),
+                color: STAT_COLOR,
+            });
+        } else if let Some(c) = chain {
+            panel.common.push(StatLine {
+                label: "DMG",
+                value: format!("{:.0}", c.damage.0),
+                color: STAT_COLOR,
+            });
+        }
+
+        // RNG comes from the primary-range field of whichever capability owns
+        // it. Pure aura towers (TarPit, ScrapMagnet) advertise their slow
+        // aura's range as RNG.
+        if let Some(t) = turret {
+            panel.common.push(StatLine {
+                label: "RNG",
+                value: format!("{:.0}", t.range.0),
+                color: STAT_COLOR,
+            });
+        } else if let Some(c) = chain {
+            panel.common.push(StatLine {
+                label: "RNG",
+                value: format!("{:.0}", c.primary_range.0),
+                color: STAT_COLOR,
+            });
+        } else if let Some(s) = slow {
+            panel.common.push(StatLine {
+                label: "RNG",
+                value: format!("{:.0}", s.range.0),
+                color: STAT_COLOR,
+            });
+        }
 
         if let Some(t) = turret {
             panel.common.push(StatLine {
                 label: "FIRE RATE",
-                value: format!("{:.2}s", t.cooldown.duration().as_secs_f32()),
+                value: format!("{:.2}s", t.cooldown.0.duration().as_secs_f32()),
                 color: STAT_COLOR,
             });
         }
@@ -811,16 +861,22 @@ pub fn rebuild_common_stats(
 
         if tier.0 < MAX_TIER {
             let next = tier.0 + 1;
-            panel.next_tier_common.push(StatLine {
-                label: "DMG",
-                value: format!("{:.0}", damage_at_tier(base.damage, next)),
-                color: STAT_COLOR,
-            });
-            panel.next_tier_common.push(StatLine {
-                label: "RNG",
-                value: format!("{:.0}", range_at_tier(base.range, next)),
-                color: STAT_COLOR,
-            });
+            // Only preview DMG for towers that actually deal damage.
+            if turret.is_some() || chain.is_some() {
+                panel.next_tier_common.push(StatLine {
+                    label: "DMG",
+                    value: format!("{:.0}", damage_at_tier(base.damage, next)),
+                    color: STAT_COLOR,
+                });
+            }
+            // RNG preview applies to any tower with a range capability.
+            if turret.is_some() || chain.is_some() || slow.is_some() {
+                panel.next_tier_common.push(StatLine {
+                    label: "RNG",
+                    value: format!("{:.0}", range_at_tier(base.range, next)),
+                    color: STAT_COLOR,
+                });
+            }
             if aoe.is_some() && base.aoe_radius > 0.0 {
                 panel.next_tier_common.push(StatLine {
                     label: "AOE",

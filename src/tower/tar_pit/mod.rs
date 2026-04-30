@@ -23,18 +23,16 @@ fn register(mut registry: ResMut<TowerRegistry>) {
         key: KeyCode::Digit2,
         special_label: "SLOW",
         spawn_fn: |cmds| {
-            let damage = 2.0;
             let range = 70.0;
             let slow_factor = 0.4;
             let color = Color::srgb(0.3, 0.25, 0.2);
-            let stats = TowerStats { damage, range };
             cmds.insert((
                 RangeRingConfig {
-                    range: stats.range,
+                    range,
                     color: Color::srgba(0.3, 0.1, 0.35, 0.25),
                 },
                 SlowAuraRingConfig {
-                    range: stats.range,
+                    range,
                     color: Color::srgba(0.4, 0.15, 0.45, 0.55),
                 },
                 CollectionAuraRingConfig {
@@ -46,8 +44,9 @@ fn register(mut registry: ResMut<TowerRegistry>) {
                 BaseMagnetRange(30.0),
                 TarPit,
                 // No BlocksNav — enemies walk through
-                stats,
+                TowerColor(color),
                 SlowOnHit {
+                    range: Range(range),
                     factor: slow_factor,
                     duration: 0.5,
                 },
@@ -56,7 +55,7 @@ fn register(mut registry: ResMut<TowerRegistry>) {
                 PanelStats::default(),
                 BaseStats {
                     cost: 75,
-                    damage,
+                    damage: 0.0,
                     range,
                     cooldown_secs: 0.0,
                     aoe_radius: 0.0,

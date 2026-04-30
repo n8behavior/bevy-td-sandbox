@@ -2,13 +2,21 @@
 
 use bevy::prelude::*;
 
+use crate::tower::components::{Damage, Range};
+
 /// Marker component for Chain Lightning towers.
 #[derive(Component)]
 pub struct ChainLightningMarker;
 
-/// Chain lightning behavior config.
+/// Chain lightning capability. Owns the per-shot damage, the primary
+/// acquisition range used to find the first target, the per-hop arc range
+/// used to walk the chain, and the falloff applied to each hop's damage.
+/// Replaces the previous reliance on the legacy `TowerStats` for damage and
+/// range.
 #[derive(Component)]
 pub struct ChainLightning {
+    pub damage: Damage,
+    pub primary_range: Range,
     pub arc_range: f32,
     pub damage_falloff: f32,
 }

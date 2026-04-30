@@ -216,16 +216,14 @@ fn spawn_projectile(
 // ---------------------------------------------------------------------------
 
 /// Turret state machine: targeting, aiming, firing.
-/// Only runs on towers with TurretState + AimTolerance + ProjectileVisuals.
+/// Only runs on towers with the `Turret` capability + `ProjectileVisuals`.
 pub fn turret_state_machine(
     mut commands: Commands,
     mut towers: Query<
         (
             Entity,
             &Transform,
-            &TowerStats,
-            &mut TurretState,
-            &AimTolerance,
+            &mut Turret,
             &ProjectileVisuals,
             Option<&AoEOnHit>,
             Option<&TargetingMode>,
@@ -240,65 +238,57 @@ pub fn turret_state_machine(
     config: Res<GridConfig>,
 ) {
     let pile_center_world = grid_to_world_cfg(pile_state.center, &config);
-    for (
-        entity,
-        tower_tf,
-        stats,
-        mut state,
-        aim_tol,
-        visuals,
-        aoe,
-        targeting,
-        tower_health,
-        tower_state,
-    ) in &mut towers
+    for (entity, tower_tf, mut turret, visuals, aoe, targeting, tower_health, tower_state) in
+        &mut towers
     {
         if !tower_state.is_operational() {
             continue;
         }
         let eff = tower_health.map_or(1.0, |h| h.effectiveness());
-        let range = stats.range;
+        let range = turret.range.0;
+        let aim_tolerance = turret.aim_tolerance;
+        let damage = turret.damage.0;
         let tower_pos = tower_tf.translation.truncate();
         let mode = targeting.copied().unwrap_or_default();
 
         // Cooldown ticks scaled by effectiveness (slower fire when damaged).
-        state
+        turret
             .cooldown
+            .0
             .tick(Duration::from_secs_f64(time.delta_secs_f64() * eff as f64));
 
         let best = find_best_target(&enemies, tower_pos, range, mode, pile_center_world);
 
-        let current_target = state.target();
+        let current_target = match turret.phase {
+            TurretPhase::Acquiring { target } | TurretPhase::Tracking { target } => Some(target),
+            TurretPhase::Idle => None,
+        };
         let current_valid =
             current_target.is_some_and(|e| target_valid(e, &enemies, tower_pos, range));
         let aimed = current_target
             .and_then(|e| enemies.get(e).ok())
             .is_some_and(|(_, target_tf, _)| {
-                is_aimed_at(tower_tf, target_tf, tower_pos, aim_tol.0)
+                is_aimed_at(tower_tf, target_tf, tower_pos, aim_tolerance)
             });
 
         match advance_turret(
-            &state.phase,
+            &turret.phase,
             best,
             current_valid,
             aimed,
-            state.cooldown.is_finished(),
+            turret.cooldown.0.is_finished(),
         ) {
             TurretDecision::Stay => {}
             TurretDecision::Transition(new_phase) => {
-                state.phase = new_phase;
+                turret.phase = new_phase;
             }
             TurretDecision::Fire => {
-                let target = state.target().unwrap();
-                spawn_projectile(
-                    &mut commands,
-                    visuals,
-                    tower_tf,
-                    stats.damage * eff,
-                    target,
-                    aoe,
-                );
-                state.cooldown.reset();
+                let target = match turret.phase {
+                    TurretPhase::Acquiring { target } | TurretPhase::Tracking { target } => target,
+                    TurretPhase::Idle => unreachable!("Fire decision implies a locked target"),
+                };
+                spawn_projectile(&mut commands, visuals, tower_tf, damage * eff, target, aoe);
+                turret.cooldown.0.reset();
                 commands.trigger(TowerFired { entity });
             }
         }
@@ -312,24 +302,15 @@ pub fn turret_state_machine(
 /// Continuously slow enemies within range of any tower with SlowOnHit.
 pub fn slow_aura(
     mut commands: Commands,
-    aura_towers: Query<
-        (
-            &Transform,
-            &TowerStats,
-            &SlowOnHit,
-            Option<&TowerHealth>,
-            &TowerState,
-        ),
-        With<Tower>,
-    >,
+    aura_towers: Query<(&Transform, &SlowOnHit, Option<&TowerHealth>, &TowerState), With<Tower>>,
     enemies: Query<(Entity, &Transform), With<Enemy>>,
 ) {
-    for (tower_tf, stats, slow, tower_health, tower_state) in aura_towers.iter() {
+    for (tower_tf, slow, tower_health, tower_state) in aura_towers.iter() {
         if !tower_state.is_operational() {
             continue;
         }
         let eff = tower_health.map_or(1.0, |h| h.effectiveness());
-        let range = stats.range;
+        let range = slow.range.0;
         let tower_pos = tower_tf.translation.truncate();
 
         for (enemy_entity, enemy_tf) in &enemies {
@@ -346,7 +327,7 @@ pub fn slow_aura(
 }
 
 // ---------------------------------------------------------------------------
-// Rotation (reads target from TurretState)
+// Rotation (reads target from Turret.phase)
 // ---------------------------------------------------------------------------
 
 /// Radians per second the tower turret rotates.
@@ -354,16 +335,19 @@ const TOWER_ROTATION_SPEED: f32 = 3.0;
 
 /// Smoothly rotate towers toward their current target (shortest arc).
 pub fn rotate_towers_to_target(
-    mut towers: Query<(&mut Transform, &TurretState, &TowerState), With<Tower>>,
+    mut towers: Query<(&mut Transform, &Turret, &TowerState), With<Tower>>,
     targets: Query<&Transform, Without<Tower>>,
     time: Res<Time>,
 ) {
-    for (mut tower_tf, turret_state, tower_state) in &mut towers {
+    for (mut tower_tf, turret, tower_state) in &mut towers {
         if !tower_state.is_placed() {
             continue;
         }
-        let target_dir = turret_state
-            .target()
+        let current_target = match turret.phase {
+            TurretPhase::Acquiring { target } | TurretPhase::Tracking { target } => Some(target),
+            TurretPhase::Idle => None,
+        };
+        let target_dir = current_target
             .and_then(|e| targets.get(e).ok())
             .map(|target_tf| {
                 (target_tf.translation.truncate() - tower_tf.translation.truncate()).normalize()
@@ -437,7 +421,7 @@ pub fn on_tower_becomes_rubble(
             Entity,
             &Children,
             &mut Sprite,
-            Option<&mut TurretState>,
+            Option<&mut Turret>,
             &TowerState,
         ),
         Changed<TowerState>,
@@ -480,7 +464,7 @@ pub fn update_tower_degradation_visual(
     mut towers: Query<
         (
             &TowerHealth,
-            &BaseStats,
+            &TowerColor,
             &TowerTier,
             &mut Sprite,
             &TowerState,
@@ -488,39 +472,11 @@ pub fn update_tower_degradation_visual(
         (With<Tower>, Without<UpgradeFlash>, Changed<TowerHealth>),
     >,
 ) {
-    for (health, base, tier, mut sprite, tower_state) in &mut towers {
+    for (health, color, tier, mut sprite, tower_state) in &mut towers {
         if !tower_state.is_operational() {
             continue;
         }
-        sprite.color = degradation_color(base.color, tier.0, health);
-    }
-}
-
-/// Mirrors the legacy turret-state components (`TowerStats`, `TurretState`,
-/// `AimTolerance`) into the new `Turret` capability aggregate. The legacy
-/// components remain the source of truth during the issue #81 migration step
-/// 1; this system keeps `Turret` in lockstep so subsequent steps can flip
-/// readers and writers to the new aggregate without any behavior change.
-///
-/// Runs only when at least one of the source components changes for an
-/// entity, so the per-frame cost is bounded by upgrades + state-machine
-/// transitions, not the tower count.
-pub fn sync_turret_from_legacy(
-    mut q: Query<
-        (&TowerStats, &TurretState, &AimTolerance, &mut Turret),
-        Or<(
-            Changed<TowerStats>,
-            Changed<TurretState>,
-            Changed<AimTolerance>,
-        )>,
-    >,
-) {
-    for (stats, state, aim, mut turret) in &mut q {
-        turret.damage = Damage(stats.damage);
-        turret.range = Range(stats.range);
-        turret.cooldown.0 = state.cooldown.clone();
-        turret.aim_tolerance = aim.0;
-        turret.phase = state.phase;
+        sprite.color = degradation_color(color.0, tier.0, health);
     }
 }
 

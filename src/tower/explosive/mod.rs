@@ -61,11 +61,10 @@ fn register(mut registry: ResMut<TowerRegistry>) {
             let aoe_radius = 70.0;
             let aoe_damage = 25.0;
             let color = Color::srgb(0.9, 0.3, 0.1);
-            let stats = TowerStats { damage, range };
             let collect_range = 30.0;
             cmds.insert((
                 RangeRingConfig {
-                    range: stats.range,
+                    range,
                     color: Color::srgba(0.9, 0.2, 0.0, 0.15),
                 },
                 ScrapCollector {
@@ -74,9 +73,8 @@ fn register(mut registry: ResMut<TowerRegistry>) {
                 Explosive,
                 BlocksNav,
                 TargetingMode::default(),
-                stats,
-                AimTolerance(aim_tolerance),
-                TurretState::with_cooldown(cooldown),
+                Turret::new(Damage(damage), Range(range), cooldown, aim_tolerance),
+                TowerColor(color),
                 ProjectileVisuals {
                     speed: 200.0,
                     color: Color::srgb(1.0, 1.0, 0.6),
@@ -103,10 +101,6 @@ fn register(mut registry: ResMut<TowerRegistry>) {
                     slow_factor: 1.0,
                     color,
                 },
-            ));
-            cmds.insert((
-                Turret::new(Damage(damage), Range(range), cooldown, aim_tolerance),
-                TowerColor(color),
             ));
             let max_hp = 125.0 * TOWER_HP_COST_MULT;
             cmds.insert(TowerHealth {

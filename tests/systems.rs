@@ -822,7 +822,7 @@ fn find_best_target_closest_mode() {
     // Tower should have acquired the closest enemy.
     let turret = app
         .world_mut()
-        .query::<&TurretState>()
+        .query::<&Turret>()
         .iter(app.world())
         .next()
         .unwrap();

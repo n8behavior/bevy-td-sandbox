@@ -210,7 +210,6 @@ impl Plugin for TowerPlugin {
                     systems::scrap_magnet_collect,
                     systems::on_tower_becomes_rubble,
                     systems::update_tower_degradation_visual,
-                    systems::sync_turret_from_legacy,
                 )
                     .run_if(in_state(GameState::Playing)),
             );

@@ -33,11 +33,9 @@ fn register(mut registry: ResMut<TowerRegistry>) {
         key: KeyCode::Digit5,
         special_label: "PULL",
         spawn_fn: |cmds| {
-            let damage = 0.0;
             let range = SCRAP_MAGNET_RANGE;
             let slow_factor = 0.5;
             let color = Color::srgb(0.2, 0.5, 0.8);
-            let stats = TowerStats { damage, range };
             cmds.insert((
                 RangeRingConfig {
                     range,
@@ -50,8 +48,9 @@ fn register(mut registry: ResMut<TowerRegistry>) {
                 ScrapMagnet,
                 ScrapCollector { range },
                 BlocksNav,
-                stats,
+                TowerColor(color),
                 SlowOnHit {
+                    range: Range(range),
                     factor: slow_factor,
                     duration: 0.5,
                 },
@@ -60,7 +59,7 @@ fn register(mut registry: ResMut<TowerRegistry>) {
                 PanelStats::default(),
                 BaseStats {
                     cost: 100,
-                    damage,
+                    damage: 0.0,
                     range,
                     cooldown_secs: 0.0,
                     aoe_radius: 0.0,

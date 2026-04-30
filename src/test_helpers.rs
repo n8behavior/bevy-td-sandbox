@@ -15,8 +15,7 @@ use crate::pile::systems::{compute_pile_cells, pile_radius};
 use crate::states::{GameMode, GameState, PlayPhase};
 use crate::stats::resources::RunStats;
 use crate::tower::components::{
-    AimTolerance, ProjectileVisuals, SlowOnHit, TargetingMode, Tower, TowerState, TowerStats,
-    TurretState,
+    Damage, ProjectileVisuals, Range, SlowOnHit, TargetingMode, Tower, TowerState, Turret,
 };
 use crate::wave::resources::WaveManager;
 
@@ -163,8 +162,9 @@ pub fn spawn_test_grid(app: &mut App, width: u32, height: u32) -> Entity {
 
 /// Builder for tower entities in tests.
 ///
-/// Spawns with `Tower`, `TowerState::Active`, `Transform`, and `TowerStats`.
-/// Optional components (slow aura, turret) are added via method chaining.
+/// Spawns with `Tower`, `TowerState::Active`, and `Transform`. Optional
+/// components — `SlowOnHit` (aura) and `Turret` (firing) — are added via
+/// method chaining.
 ///
 /// # Defaults
 /// - `pos`: `Vec3::ZERO`
@@ -242,7 +242,7 @@ impl TowerBuilder {
         self
     }
 
-    /// Add turret components: `TurretState`, `AimTolerance(0.1)`, default
+    /// Add a `Turret` aggregate (with default 0.1 aim tolerance), default
     /// `ProjectileVisuals`, and `TargetingMode::Closest`.
     pub fn with_turret(mut self, cooldown: f32) -> Self {
         self.turret_cooldown = Some(cooldown);
@@ -272,19 +272,22 @@ impl TowerBuilder {
             Tower,
             TowerState::Active,
             Transform::from_translation(self.pos),
-            TowerStats {
-                damage: self.damage,
-                range: self.range,
-            },
         ));
         if let Some((factor, duration)) = self.slow {
-            entity.insert(SlowOnHit { factor, duration });
+            entity.insert(SlowOnHit {
+                range: Range(self.range),
+                factor,
+                duration,
+            });
         }
         if let Some(cooldown) = self.turret_cooldown {
-            entity.insert(TurretState::with_cooldown(cooldown));
-        }
-        if let Some(tolerance) = self.aim_tolerance {
-            entity.insert(AimTolerance(tolerance));
+            let tolerance = self.aim_tolerance.unwrap_or(0.1);
+            entity.insert(Turret::new(
+                Damage(self.damage),
+                Range(self.range),
+                cooldown,
+                tolerance,
+            ));
         }
         if let Some(visuals) = self.projectile_visuals {
             entity.insert(visuals);

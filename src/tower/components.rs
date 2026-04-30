@@ -157,19 +157,13 @@ impl TowerHealth {
     }
 }
 
-#[derive(Component, Clone)]
-pub struct TowerStats {
-    pub damage: f32,
-    /// Effective range in world units.
-    pub range: f32,
-}
-
-/// Aim tolerance in radians. Only on turret towers.
-#[derive(Component)]
-pub struct AimTolerance(pub f32);
-
+/// Aura capability: continuously slows enemies within `range` by multiplying
+/// their speed by `factor` for `duration` seconds. Bundles area, strength,
+/// and persistence into one component so the slow_aura system needs only
+/// `&SlowOnHit` to operate.
 #[derive(Component)]
 pub struct SlowOnHit {
+    pub range: Range,
     pub factor: f32,
     pub duration: f32,
 }
@@ -201,37 +195,14 @@ pub struct ProjectileVisuals {
 }
 
 // ---------------------------------------------------------------------------
-// Turret state machine
+// Turret firing-phase enum (used as a field of the `Turret` capability)
 // ---------------------------------------------------------------------------
 
-/// Turret firing state machine. Ticks cooldown in all phases, fires when
-/// aimed + cooldown ready. Only present on projectile-firing towers.
-#[derive(Component)]
-pub struct TurretState {
-    pub phase: TurretPhase,
-    pub cooldown: Timer,
-}
-
-impl TurretState {
-    pub fn with_cooldown(secs: f32) -> Self {
-        let mut cooldown = Timer::from_seconds(secs, TimerMode::Once);
-        // Start fully charged so first shot fires on aim lock.
-        cooldown.tick(cooldown.duration());
-        Self {
-            phase: TurretPhase::Idle,
-            cooldown,
-        }
-    }
-
-    /// Extract target entity from any phase that has one.
-    pub fn target(&self) -> Option<Entity> {
-        match self.phase {
-            TurretPhase::Acquiring { target } | TurretPhase::Tracking { target } => Some(target),
-            TurretPhase::Idle => None,
-        }
-    }
-}
-
+/// Phase of a turret's targeting state machine. Stored as a field on the
+/// `Turret` capability component (see below). The shared `turret_state_machine`
+/// system advances this phase; per-tower systems can override it (e.g. force
+/// `Idle` while a `Reloading` component is present) before the state machine
+/// runs.
 #[derive(Default, Debug, PartialEq, Clone, Copy)]
 pub enum TurretPhase {
     #[default]
@@ -245,13 +216,13 @@ pub enum TurretPhase {
 }
 
 // ---------------------------------------------------------------------------
-// Composable capabilities (new model — issue #81)
+// Composable capabilities (issue #81)
 //
-// During the migration these coexist with the legacy `TowerStats`,
-// `TurretState`, and `AimTolerance` components. The legacy components remain
-// the source of truth in step 1; `sync_turret_from_legacy` keeps `Turret` in
-// lockstep so future steps can flip readers/writers to the new aggregate
-// without behavior change.
+// Each capability is a `Component` that owns the slice of state it cares
+// about as fields, expressed via domain-newtype properties (`Damage`,
+// `Range`, `Cooldown`, `Speed`). The implicit "kind" of a property is its
+// home: `Turret.range` is firing range, `ScrapCollector.range` is magnet
+// pull range, `ChainLightning.arc_range` is chain hop range.
 // ---------------------------------------------------------------------------
 
 /// Per-shot damage value. Domain newtype — used as a field on capability
@@ -289,11 +260,10 @@ impl Cooldown {
 pub struct Speed(pub f32);
 
 /// Aggregate firing capability for projectile-launching towers. Owns the
-/// damage, range, cooldown, aiming tolerance, and current phase as
-/// fields — replacing the wide-flat `TowerStats` + `TurretState` + `AimTolerance`
-/// trio. Custom turret-like behaviors (e.g. a Mortar Reloading phase) extend
-/// purely additively by inserting an extra component and a per-tower system
-/// that mutates `phase` before the shared `turret_state_machine` runs.
+/// damage, range, cooldown, aiming tolerance, and current phase as fields.
+/// Custom turret-like behaviors (e.g. a Mortar Reloading phase) extend purely
+/// additively by inserting an extra component and a per-tower system that
+/// mutates `phase` before the shared `turret_state_machine` runs.
 #[derive(Component)]
 pub struct Turret {
     pub damage: Damage,

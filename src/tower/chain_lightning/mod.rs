@@ -78,11 +78,10 @@ fn register(mut registry: ResMut<TowerRegistry>) {
             let cooldown = 2.0;
             let arc_range = 60.0;
             let color = Color::srgb(0.3, 0.6, 1.0);
-            let stats = TowerStats { damage, range };
             let collect_range = 30.0;
             cmds.insert((
                 RangeRingConfig {
-                    range: stats.range,
+                    range,
                     color: Color::srgba(0.3, 0.5, 1.0, 0.15),
                 },
                 ScrapCollector {
@@ -91,8 +90,10 @@ fn register(mut registry: ResMut<TowerRegistry>) {
                 ChainLightningMarker,
                 BlocksNav,
                 TargetingMode::default(),
-                stats,
+                TowerColor(color),
                 ChainLightning {
+                    damage: Damage(damage),
+                    primary_range: Range(range),
                     arc_range,
                     damage_falloff: 0.7,
                 },
