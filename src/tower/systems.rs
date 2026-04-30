@@ -13,7 +13,7 @@ use crate::projectile::components::{AoEPayload, Projectile, TrailEmitter};
 use crate::stats::resources::RunStats;
 
 use super::components::*;
-use super::events::{TowerFired, TowerWantsToFire};
+use super::events::{TowerBecameRubble, TowerFired, TowerWantsToFire};
 use super::upgrade::{Primary, UpgradeTrack, degradation_color};
 
 // ---------------------------------------------------------------------------
@@ -438,25 +438,18 @@ pub fn scrap_magnet_collect(
 // Tower damage / rubble systems
 // ---------------------------------------------------------------------------
 
-/// When a tower becomes rubble, set sprite to grey, despawn ring children,
-/// and reset turret state.
+/// When a tower becomes rubble, apply the universal effects (grey sprite,
+/// turret-phase reset, remove upgrade flash, play sound) and trigger
+/// `TowerBecameRubble`. Per-capability observers listen on the event to
+/// despawn their own visual children (range rings, auras, magnet rings).
 pub fn on_tower_becomes_rubble(
     mut commands: Commands,
     mut rubble_towers: Query<
-        (
-            Entity,
-            &Children,
-            &mut Sprite,
-            Option<&mut Turret>,
-            &TowerState,
-        ),
+        (Entity, &mut Sprite, Option<&mut Turret>, &TowerState),
         Changed<TowerState>,
     >,
-    range_rings: Query<Entity, With<RangeRing>>,
-    aura_visuals: Query<Entity, With<AuraVisual>>,
-    magnet_auras: Query<Entity, With<MagnetAura>>,
 ) {
-    for (entity, children, mut sprite, turret, state) in &mut rubble_towers {
+    for (entity, mut sprite, turret, state) in &mut rubble_towers {
         if *state != TowerState::Rubble {
             continue;
         }
@@ -466,20 +459,11 @@ pub fn on_tower_becomes_rubble(
             turret.phase = TurretPhase::Idle;
         }
 
-        // Despawn visual ring children (keep config components for repair).
-        for child in children.iter() {
-            if range_rings.contains(child)
-                || aura_visuals.contains(child)
-                || magnet_auras.contains(child)
-            {
-                commands.entity(child).despawn();
-            }
-        }
-
         // Remove the UpgradeFlash so the rubble color sticks.
         commands.entity(entity).remove::<UpgradeFlash>();
 
         commands.trigger(PlaySound(GameSound::TowerDestroyed));
+        commands.trigger(TowerBecameRubble { entity });
     }
 }
 

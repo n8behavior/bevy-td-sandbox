@@ -29,3 +29,24 @@ pub struct TowerWantsToFire {
     /// Final damage for the shot (already scaled by tower effectiveness).
     pub damage: f32,
 }
+
+/// Targeted at a tower entity that just transitioned into `TowerState::Rubble`.
+/// The shared `on_tower_becomes_rubble` system handles universal effects
+/// (sprite tint, turret-phase reset, sound); per-capability observers
+/// listen on this event to despawn their own visual children (range rings,
+/// auras, magnet rings) so each capability owns its lifecycle cleanup.
+#[derive(EntityEvent)]
+pub struct TowerBecameRubble {
+    /// The rubble tower — automatically the event target.
+    pub entity: Entity,
+}
+
+/// Targeted at a tower entity that just transitioned out of `TowerState::Rubble`
+/// back into `Active` via `apply_repair`. Per-capability observers listen on
+/// this event to re-insert their own ring config components, retriggering
+/// the reactive `Added<...RingConfig>` spawners that build the visual children.
+#[derive(EntityEvent)]
+pub struct TowerRepaired {
+    /// The repaired tower — automatically the event target.
+    pub entity: Entity,
+}

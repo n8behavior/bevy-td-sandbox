@@ -121,6 +121,125 @@ fn spawn_collection_aura_rings(
     }
 }
 
+// ---------------------------------------------------------------------------
+// Per-capability lifecycle observers (TowerBecameRubble / TowerRepaired)
+//
+// Each ring class owns its own pair: an observer that despawns its visual
+// children when the tower becomes rubble, and an observer that re-inserts
+// the matching `*RingConfig` component when the tower is repaired (which
+// re-triggers the reactive `Added<...RingConfig>` spawners above).
+// ---------------------------------------------------------------------------
+
+/// On `TowerBecameRubble`, despawn any `RangeRing` children of the tower so
+/// the visual disappears while the tower is dead.
+fn despawn_range_ring_on_rubble(
+    trigger: On<events::TowerBecameRubble>,
+    children_query: Query<&Children>,
+    range_rings: Query<Entity, With<RangeRing>>,
+    mut commands: Commands,
+) {
+    let Ok(children) = children_query.get(trigger.entity) else {
+        return;
+    };
+    for child in children.iter() {
+        if range_rings.contains(child) {
+            commands.entity(child).despawn();
+        }
+    }
+}
+
+/// On `TowerBecameRubble`, despawn any slow-aura `AuraVisual` children.
+fn despawn_aura_visual_on_rubble(
+    trigger: On<events::TowerBecameRubble>,
+    children_query: Query<&Children>,
+    aura_visuals: Query<Entity, With<AuraVisual>>,
+    mut commands: Commands,
+) {
+    let Ok(children) = children_query.get(trigger.entity) else {
+        return;
+    };
+    for child in children.iter() {
+        if aura_visuals.contains(child) {
+            commands.entity(child).despawn();
+        }
+    }
+}
+
+/// On `TowerBecameRubble`, despawn any collection-aura `MagnetAura` children.
+fn despawn_magnet_aura_on_rubble(
+    trigger: On<events::TowerBecameRubble>,
+    children_query: Query<&Children>,
+    magnet_auras: Query<Entity, With<MagnetAura>>,
+    mut commands: Commands,
+) {
+    let Ok(children) = children_query.get(trigger.entity) else {
+        return;
+    };
+    for child in children.iter() {
+        if magnet_auras.contains(child) {
+            commands.entity(child).despawn();
+        }
+    }
+}
+
+/// On `TowerRepaired`, re-insert the tower's `RangeRingConfig` to retrigger
+/// the reactive `spawn_range_rings` system.
+fn reinsert_range_ring_on_repair(
+    trigger: On<events::TowerRepaired>,
+    configs: Query<&RangeRingConfig>,
+    mut commands: Commands,
+) {
+    let Ok(config) = configs.get(trigger.entity) else {
+        return;
+    };
+    let new = RangeRingConfig {
+        range: config.range,
+        color: config.color,
+    };
+    commands.entity(trigger.entity).remove::<RangeRingConfig>();
+    commands.entity(trigger.entity).insert(new);
+}
+
+/// On `TowerRepaired`, re-insert the tower's `SlowAuraRingConfig` to
+/// retrigger the reactive `spawn_aura_rings` system.
+fn reinsert_aura_ring_on_repair(
+    trigger: On<events::TowerRepaired>,
+    configs: Query<&SlowAuraRingConfig>,
+    mut commands: Commands,
+) {
+    let Ok(config) = configs.get(trigger.entity) else {
+        return;
+    };
+    let new = SlowAuraRingConfig {
+        range: config.range,
+        color: config.color,
+    };
+    commands
+        .entity(trigger.entity)
+        .remove::<SlowAuraRingConfig>();
+    commands.entity(trigger.entity).insert(new);
+}
+
+/// On `TowerRepaired`, re-insert the tower's `CollectionAuraRingConfig` to
+/// retrigger the reactive `spawn_collection_aura_rings` system.
+fn reinsert_collection_aura_on_repair(
+    trigger: On<events::TowerRepaired>,
+    configs: Query<&CollectionAuraRingConfig>,
+    mut commands: Commands,
+) {
+    let Ok(config) = configs.get(trigger.entity) else {
+        return;
+    };
+    let new = CollectionAuraRingConfig {
+        range: config.range,
+        color: config.color,
+    };
+    commands
+        .entity(trigger.entity)
+        .remove::<CollectionAuraRingConfig>();
+    commands.entity(trigger.entity).insert(new);
+}
+
 /// Sort tower blueprints by key so the menu order matches key assignments,
 /// regardless of which Startup `register` system ran first.
 fn sort_blueprints(mut registry: ResMut<TowerRegistry>) {
@@ -149,6 +268,12 @@ impl Plugin for TowerPlugin {
             .add_message::<upgrade::UpgradeApplied<upgrade::Primary>>()
             .add_message::<upgrade::UpgradeApplied<upgrade::Magnet>>()
             .add_observer(systems::default_fire_observer)
+            .add_observer(despawn_range_ring_on_rubble)
+            .add_observer(despawn_aura_visual_on_rubble)
+            .add_observer(despawn_magnet_aura_on_rubble)
+            .add_observer(reinsert_range_ring_on_repair)
+            .add_observer(reinsert_aura_ring_on_repair)
+            .add_observer(reinsert_collection_aura_on_repair)
             .add_plugins((
                 scrap_gun::ScrapGunPlugin,
                 tar_pit::TarPitPlugin,

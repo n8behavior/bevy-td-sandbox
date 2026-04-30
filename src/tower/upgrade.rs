@@ -16,6 +16,7 @@ use crate::common::constants::{REPAIR_COST_FRAC, REPAIR_RUBBLE_COST_FRAC, TOWER_
 
 use super::chain_lightning::components::ChainLightning;
 use super::components::*;
+use super::events::TowerRepaired;
 use super::placement::{SELL_REFUND_PERCENT, SelectedTower, SellText};
 use super::targeting::TargetingButton;
 
@@ -635,17 +636,10 @@ pub fn apply_repair(
             &UpgradeTrack<Primary>,
             &mut Sprite,
             &Transform,
-            &Children,
             &mut TowerState,
-            Option<&RangeRingConfig>,
-            Option<&SlowAuraRingConfig>,
-            Option<&CollectionAuraRingConfig>,
         ),
         With<Tower>,
     >,
-    range_rings: Query<Entity, With<RangeRing>>,
-    aura_visuals: Query<Entity, With<AuraVisual>>,
-    magnet_auras: Query<Entity, With<MagnetAura>>,
     mut pile_scrap: ResMut<PileScrap>,
     mut run_stats: Option<ResMut<RunStats>>,
 ) {
@@ -661,11 +655,7 @@ pub fn apply_repair(
         tier,
         mut sprite,
         transform,
-        children,
         mut tower_state,
-        range_ring,
-        aura_ring,
-        magnet_aura,
     )) = towers.get_mut(entity)
     else {
         return;
@@ -696,43 +686,10 @@ pub fn apply_repair(
 
     if is_rubble {
         *tower_state = TowerState::Active;
-
-        // Despawn any stale ring children that survived.
-        for child in children.iter() {
-            if range_rings.contains(child)
-                || aura_visuals.contains(child)
-                || magnet_auras.contains(child)
-            {
-                commands.entity(child).despawn();
-            }
-        }
-
-        // Re-insert ring configs to trigger Added<> reactive spawning.
-        let mut ecmds = commands.entity(entity);
-        if let Some(rr) = range_ring {
-            let rr_new = RangeRingConfig {
-                range: rr.range,
-                color: rr.color,
-            };
-            ecmds.remove::<RangeRingConfig>();
-            ecmds.insert(rr_new);
-        }
-        if let Some(ar) = aura_ring {
-            let ar_new = SlowAuraRingConfig {
-                range: ar.range,
-                color: ar.color,
-            };
-            ecmds.remove::<SlowAuraRingConfig>();
-            ecmds.insert(ar_new);
-        }
-        if let Some(ma) = magnet_aura {
-            let ma_new = CollectionAuraRingConfig {
-                range: ma.range,
-                color: ma.color,
-            };
-            ecmds.remove::<CollectionAuraRingConfig>();
-            ecmds.insert(ma_new);
-        }
+        // Per-capability observers listen on `TowerRepaired` to re-insert
+        // their ring config components, retriggering the reactive ring
+        // spawners.
+        commands.trigger(TowerRepaired { entity });
     }
 
     // Visual: white flash restoring to healthy tier color.
