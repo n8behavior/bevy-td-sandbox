@@ -14,7 +14,7 @@ use crate::stats::resources::RunStats;
 
 use super::components::*;
 use super::events::{TowerFired, TowerWantsToFire};
-use super::upgrade::degradation_color;
+use super::upgrade::{Primary, UpgradeTrack, degradation_color};
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -491,7 +491,7 @@ pub fn update_tower_degradation_visual(
         (
             &TowerHealth,
             &TowerColor,
-            &TowerTier,
+            &UpgradeTrack<Primary>,
             &mut Sprite,
             &TowerState,
         ),
@@ -502,7 +502,7 @@ pub fn update_tower_degradation_visual(
         if !tower_state.is_operational() {
             continue;
         }
-        sprite.color = degradation_color(color.0, tier.0, health);
+        sprite.color = degradation_color(color.0, tier.tier, health);
     }
 }
 

@@ -11,11 +11,14 @@ use crate::pile::resources::PileState;
 
 use super::components::{ChainCooldown, ChainLightning, LightningArc};
 use crate::tower::components::{
-    PanelStats, StatLine, TargetingMode, Tower, TowerHealth, TowerState, TowerTier,
+    PanelStats, StatLine, TargetingMode, Tower, TowerHealth, TowerState,
 };
 use crate::tower::events::TowerFired;
 use crate::tower::systems::best_target_from;
-use crate::tower::upgrade::{ARC_RANGE_MULT, COOLDOWN_MULT, DAMAGE_MULT, RANGE_MULT, TierChanged};
+use crate::tower::upgrade::{
+    ARC_RANGE_MULT, COOLDOWN_MULT, DAMAGE_MULT, Primary, RANGE_MULT, UpgradeApplied, UpgradeKind,
+    UpgradeTrack,
+};
 
 /// Stat color used by the upgrade panel for non-interactive stat lines.
 /// Matches `tower::upgrade::STAT_COLOR`; redeclared here to keep this module
@@ -155,17 +158,22 @@ fn spawn_lightning_arc(commands: &mut Commands, from: Vec2, to: Vec2, color: Col
 /// Write Chain Lightning's per-tower stat lines (ARC, FIRE RATE) into
 /// `PanelStats.extra`, plus the next-tier ARC preview into
 /// `PanelStats.next_tier`. Reactive: runs only when chain-specific components
-/// or `TowerTier` change, plus once on spawn (`Added<PanelStats>`).
+/// or the primary tier change, plus once on spawn (`Added<PanelStats>`).
 #[allow(clippy::type_complexity)]
 pub fn rebuild_chain_panel_stats(
     mut towers: Query<
-        (&mut PanelStats, &ChainLightning, &ChainCooldown, &TowerTier),
+        (
+            &mut PanelStats,
+            &ChainLightning,
+            &ChainCooldown,
+            &UpgradeTrack<Primary>,
+        ),
         (
             With<Tower>,
             Or<(
                 Changed<ChainLightning>,
                 Changed<ChainCooldown>,
-                Changed<TowerTier>,
+                Changed<UpgradeTrack<Primary>>,
                 Added<PanelStats>,
             )>,
         ),
@@ -185,8 +193,8 @@ pub fn rebuild_chain_panel_stats(
         });
 
         panel.next_tier_extra.clear();
-        if tier.0 < crate::tower::upgrade::MAX_TIER {
-            let cur = tier.0 as usize;
+        if tier.tier < Primary::MAX_TIER {
+            let cur = tier.tier as usize;
             let next = cur + 1;
             let next_arc = chain.arc_range * ARC_RANGE_MULT[next] / ARC_RANGE_MULT[cur];
             panel.next_tier_extra.push(StatLine {
@@ -198,11 +206,11 @@ pub fn rebuild_chain_panel_stats(
     }
 }
 
-/// React to `TierChanged` on Chain Lightning towers: scale primary range,
-/// damage, arc range, and cooldown using ratio math against the upgrade
-/// multiplier tables.
+/// React to `UpgradeApplied<Primary>` on Chain Lightning towers: scale
+/// primary range, damage, arc range, and cooldown using ratio math against
+/// the upgrade multiplier tables.
 pub fn scale_chain_on_tier_change(
-    mut events: MessageReader<TierChanged>,
+    mut events: MessageReader<UpgradeApplied<Primary>>,
     mut towers: Query<(&mut ChainLightning, &mut ChainCooldown), With<Tower>>,
 ) {
     for ev in events.read() {

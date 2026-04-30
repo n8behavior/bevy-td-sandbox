@@ -23,9 +23,6 @@ use super::targeting::TargetingButton;
 // Constants
 // ---------------------------------------------------------------------------
 
-pub const MAX_TIER: u8 = 2;
-
-const UPGRADE_COST_MULT: [f32; 2] = [1.0, 1.5];
 pub(crate) const DAMAGE_MULT: [f32; 3] = [1.0, 1.4, 2.0];
 pub(crate) const RANGE_MULT: [f32; 3] = [1.0, 1.1, 1.2];
 pub(crate) const COOLDOWN_MULT: [f32; 3] = [1.0, 0.85, 0.7];
@@ -42,27 +39,6 @@ const HINT_COLOR: Color = Color::srgb(0.7, 0.65, 0.5);
 const STAT_COLOR: Color = Color::srgb(0.6, 0.6, 0.55);
 
 // ---------------------------------------------------------------------------
-// Messages
-// ---------------------------------------------------------------------------
-
-/// Broadcast once per primary-tier upgrade. Per-capability scaler systems
-/// (`scale_turret_on_tier`, `scale_aoe_on_tier`, `scale_slow_on_tier`,
-/// `scale_health_on_tier`, and chain_lightning's `scale_chain_on_tier_change`)
-/// listen on this message and apply ratio-based scaling to their components.
-///
-/// **Idempotency contract:** the caller is responsible for emitting this
-/// message exactly once per tier transition. The scalers apply ratio math
-/// (`live *= MULT[new] / MULT[old]`) and are NOT idempotent — emitting the
-/// same `TierChanged` twice will double-apply the scaling. Tier transitions
-/// flow through `apply_upgrade`, which guarantees a single emit.
-#[derive(Message, Debug, Clone, Copy)]
-pub struct TierChanged {
-    pub tower: Entity,
-    pub old_tier: u8,
-    pub new_tier: u8,
-}
-
-// ---------------------------------------------------------------------------
 // Generic upgrade-track machinery
 //
 // Towers can declare any number of independent upgrade dimensions. Each
@@ -75,20 +51,29 @@ pub struct TierChanged {
 
 /// Declares an independent upgrade dimension on a tower (e.g. the "Magnet"
 /// track that scales scrap-collection range). Each implementor provides a
-/// hotkey, a tier ceiling, a per-tier cost table, and presentation hints
-/// for the floating-text feedback shown on upgrade.
+/// hotkey, a tier ceiling, presentation hints, and a cost function.
 pub trait UpgradeKind: Send + Sync + 'static {
     /// Hotkey that gates `apply_track_upgrade::<Self>`.
     const KEY: KeyCode;
     /// Highest tier value the track can reach (inclusive).
     const MAX_TIER: u8;
-    /// Scrap cost for upgrading FROM each tier to the next. Indexed by
-    /// current tier; length must be at least `MAX_TIER`.
-    const COSTS: &'static [u32];
     /// Human-readable label used by the floating-text feedback.
     const LABEL: &'static str;
     /// Color of the floating-text feedback shown on upgrade.
     const FLOAT_COLOR: Color;
+
+    /// Scrap cost for upgrading FROM `current_tier` to `current_tier + 1`.
+    /// Receives the tower's base cost for kinds whose cost scales with the
+    /// tower's original price (e.g. the primary tier). Fixed-cost kinds
+    /// (e.g. Magnet) ignore `base_cost`.
+    fn cost(current_tier: u8, base_cost: u32) -> u32;
+
+    /// Floating-text label shown after an upgrade is applied. The default
+    /// renders `"{LABEL} {new_tier}"`. Kinds that prefer a 1-indexed display
+    /// (like the primary tier) can override.
+    fn float_text(new_tier: u8) -> String {
+        format!("{} {}", Self::LABEL, new_tier)
+    }
 }
 
 /// A typed upgrade-tier counter for the dimension `K`. Towers carry one
@@ -114,8 +99,11 @@ impl<K: UpgradeKind> Default for UpgradeTrack<K> {
 /// scalers listen on this message and apply domain-specific scaling using
 /// the `old_tier` / `new_tier` ratio against their own multiplier table.
 ///
-/// Same idempotency contract as `TierChanged`: callers (i.e.
-/// `apply_track_upgrade::<K>`) emit exactly once per tier transition.
+/// **Idempotency contract:** callers (i.e. `apply_track_upgrade::<K>`)
+/// must emit exactly once per tier transition. Per-capability scalers
+/// apply ratio math (`live *= MULT[new] / MULT[old]`) and are NOT
+/// idempotent — emitting the same message twice double-applies the
+/// scaling.
 #[derive(Message, Debug)]
 pub struct UpgradeApplied<K: UpgradeKind> {
     pub tower: Entity,
@@ -137,7 +125,7 @@ impl<K: UpgradeKind> UpgradeApplied<K> {
 
 /// Generic system: gates on `K::KEY`, validates the inspected tower, debits
 /// scrap, bumps `UpgradeTrack<K>.tier`, and emits `UpgradeApplied<K>`.
-/// Spawns a floating-text feedback node using `K::LABEL` and
+/// Spawns a floating-text feedback node using `K::float_text` and
 /// `K::FLOAT_COLOR`.
 pub fn apply_track_upgrade<K: UpgradeKind>(
     mut commands: Commands,
@@ -148,6 +136,7 @@ pub fn apply_track_upgrade<K: UpgradeKind>(
             Entity,
             &mut UpgradeTrack<K>,
             &mut TowerCost,
+            &BaseCost,
             &Transform,
             &TowerState,
         ),
@@ -161,7 +150,8 @@ pub fn apply_track_upgrade<K: UpgradeKind>(
         return;
     }
     let Some(entity) = inspected.0 else { return };
-    let Ok((tower_entity, mut track, mut cost, transform, tower_state)) = towers.get_mut(entity)
+    let Ok((tower_entity, mut track, mut cost, base_cost, transform, tower_state)) =
+        towers.get_mut(entity)
     else {
         return;
     };
@@ -174,7 +164,7 @@ pub fn apply_track_upgrade<K: UpgradeKind>(
         return;
     }
 
-    let ucost = K::COSTS[track.tier as usize];
+    let ucost = K::cost(track.tier, base_cost.0);
     if pile_scrap.amount < ucost {
         return;
     }
@@ -192,7 +182,7 @@ pub fn apply_track_upgrade<K: UpgradeKind>(
 
     let pos = transform.translation.truncate();
     commands.spawn((
-        Text2d::new(format!("{} {}", K::LABEL, new_tier)),
+        Text2d::new(K::float_text(new_tier)),
         TextFont {
             font_size: 14.0,
             ..default()
@@ -249,8 +239,33 @@ impl PanelSections {
 }
 
 // ---------------------------------------------------------------------------
-// Magnet upgrade kind
+// Built-in upgrade kinds
 // ---------------------------------------------------------------------------
+
+/// The primary combat-tier upgrade dimension (key U). Cost scales with the
+/// tower's base cost via a per-tier multiplier table. Damage, range,
+/// cooldown, AOE, slow factor, and HP all scale via per-capability scalers
+/// listening on `UpgradeApplied<Primary>`.
+#[derive(Debug)]
+pub struct Primary;
+
+impl UpgradeKind for Primary {
+    const KEY: KeyCode = KeyCode::KeyU;
+    const MAX_TIER: u8 = 2;
+    const LABEL: &'static str = "Tier";
+    const FLOAT_COLOR: Color = Color::srgb(0.9, 0.8, 0.2);
+
+    fn cost(current_tier: u8, base_cost: u32) -> u32 {
+        const PRIMARY_UPGRADE_COST_MULT: [f32; 2] = [1.0, 1.5];
+        (base_cost as f32 * PRIMARY_UPGRADE_COST_MULT[current_tier as usize]) as u32
+    }
+
+    fn float_text(new_tier: u8) -> String {
+        // Primary tier is displayed 1-indexed in the panel header, so the
+        // floating-text feedback uses the same convention.
+        format!("Tier {}", new_tier + 1)
+    }
+}
 
 /// The scrap-collector upgrade dimension. Towers with `UpgradeTrack<Magnet>`
 /// can spend scrap (M key) to expand their collection radius.
@@ -260,9 +275,13 @@ pub struct Magnet;
 impl UpgradeKind for Magnet {
     const KEY: KeyCode = KeyCode::KeyM;
     const MAX_TIER: u8 = 3;
-    const COSTS: &'static [u32] = &[25, 50, 75];
     const LABEL: &'static str = "Magnet";
     const FLOAT_COLOR: Color = Color::srgb(0.4, 0.7, 1.0);
+
+    fn cost(current_tier: u8, _base_cost: u32) -> u32 {
+        const MAGNET_UPGRADE_COSTS: [u32; 3] = [25, 50, 75];
+        MAGNET_UPGRADE_COSTS[current_tier as usize]
+    }
 }
 
 /// Per-capability scaler for the Magnet track: scales `ScrapCollector.range`
@@ -370,11 +389,6 @@ fn darken(color: Color, amount: f32) -> Color {
     )
 }
 
-/// Scrap cost to upgrade from `current_tier` to the next tier.
-pub(crate) fn upgrade_cost(base_cost: u32, current_tier: u8) -> u32 {
-    (base_cost as f32 * UPGRADE_COST_MULT[current_tier as usize]) as u32
-}
-
 /// Scrap refund when selling a tower (60% of total investment).
 pub(crate) fn sell_refund(total_cost: u32) -> u32 {
     total_cost * SELL_REFUND_PERCENT / 100
@@ -393,7 +407,7 @@ pub(crate) fn repair_cost(base_cost: u32, is_rubble: bool) -> u32 {
 // ---------------------------------------------------------------------------
 // Per-capability tier scalers
 //
-// Each scaler reads `TierChanged` and mutates only the capability it owns,
+// Each scaler reads `UpgradeApplied<Primary>` and mutates only the capability it owns,
 // using ratio math against its own multiplier table. Towers without the
 // capability are absent from the per-scaler query and skipped automatically.
 // ---------------------------------------------------------------------------
@@ -405,7 +419,7 @@ fn tier_ratio(mults: &[f32], old_tier: u8, new_tier: u8) -> f32 {
 
 /// Scale a `Turret`'s damage, range, and cooldown for the new tier.
 pub fn scale_turret_on_tier(
-    mut events: MessageReader<TierChanged>,
+    mut events: MessageReader<UpgradeApplied<Primary>>,
     mut towers: Query<&mut Turret>,
 ) {
     for ev in events.read() {
@@ -424,7 +438,10 @@ pub fn scale_turret_on_tier(
 }
 
 /// Scale an `AoEOnHit`'s blast radius and explosion damage for the new tier.
-pub fn scale_aoe_on_tier(mut events: MessageReader<TierChanged>, mut towers: Query<&mut AoEOnHit>) {
+pub fn scale_aoe_on_tier(
+    mut events: MessageReader<UpgradeApplied<Primary>>,
+    mut towers: Query<&mut AoEOnHit>,
+) {
     for ev in events.read() {
         let Ok(mut aoe) = towers.get_mut(ev.tower) else {
             continue;
@@ -436,7 +453,7 @@ pub fn scale_aoe_on_tier(mut events: MessageReader<TierChanged>, mut towers: Que
 
 /// Scale a `SlowOnHit`'s aura range and slow factor for the new tier.
 pub fn scale_slow_on_tier(
-    mut events: MessageReader<TierChanged>,
+    mut events: MessageReader<UpgradeApplied<Primary>>,
     mut towers: Query<&mut SlowOnHit>,
 ) {
     for ev in events.read() {
@@ -451,7 +468,7 @@ pub fn scale_slow_on_tier(
 /// Scale `TowerHealth.max` for the new tier while preserving the current
 /// damage fraction (a tower at 50% HP stays at 50% HP after upgrading).
 pub fn scale_health_on_tier(
-    mut events: MessageReader<TierChanged>,
+    mut events: MessageReader<UpgradeApplied<Primary>>,
     mut towers: Query<&mut TowerHealth>,
 ) {
     for ev in events.read() {
@@ -521,142 +538,63 @@ pub fn inspect_tower(
     }
 }
 
-/// Press U to upgrade the inspected tower. Bumps the tier, debits scrap,
-/// and emits a `TierChanged` message; per-capability scaler systems
-/// (`scale_turret_on_tier`, `scale_aoe_on_tier`, `scale_slow_on_tier`,
-/// `scale_health_on_tier`, and chain_lightning's `scale_chain_on_tier_change`)
-/// observe the message and apply ratio-based scaling to their components.
+/// Per-capability scaler that handles the visual side of a primary-tier
+/// upgrade: refreshes the range/aura ring config (so visuals scale with
+/// the new range) and triggers the white-flash sprite tween into the new
+/// tier color. Stat scaling lives in the other `scale_*_on_tier` systems.
 #[allow(clippy::type_complexity)]
-pub fn apply_upgrade(
+pub fn scale_primary_visuals_on_upgrade(
+    mut events: MessageReader<UpgradeApplied<Primary>>,
     mut commands: Commands,
-    keyboard: Res<ButtonInput<KeyCode>>,
-    inspected: Res<InspectedTower>,
-    mut towers: Query<
-        (
-            &mut TowerTier,
-            &BaseCost,
-            &TowerColor,
-            &mut TowerCost,
-            &mut Sprite,
-            &Transform,
-            &Children,
-            Option<&RangeRingConfig>,
-            Option<&SlowAuraRingConfig>,
-            &TowerState,
-        ),
-        With<Tower>,
-    >,
+    mut towers: Query<(
+        &TowerColor,
+        &Children,
+        &mut Sprite,
+        Option<&RangeRingConfig>,
+        Option<&SlowAuraRingConfig>,
+    )>,
     range_rings: Query<Entity, With<RangeRing>>,
     aura_visuals: Query<Entity, With<AuraVisual>>,
-    mut pile_scrap: ResMut<PileScrap>,
-    mut run_stats: Option<ResMut<RunStats>>,
-    mut tier_changed: MessageWriter<TierChanged>,
 ) {
-    if !keyboard.just_pressed(KeyCode::KeyU) {
-        return;
-    }
-    let Some(entity) = inspected.0 else { return };
-    let Ok((
-        mut tier,
-        base_cost,
-        tower_color,
-        mut cost,
-        mut sprite,
-        transform,
-        children,
-        range_ring,
-        aura_ring,
-        tower_state,
-    )) = towers.get_mut(entity)
-    else {
-        return;
-    };
+    for ev in events.read() {
+        let Ok((tower_color, children, mut sprite, range_ring, aura_ring)) =
+            towers.get_mut(ev.tower)
+        else {
+            continue;
+        };
 
-    if !tower_state.is_operational() {
-        return;
-    }
-
-    if tier.0 >= MAX_TIER {
-        return;
-    }
-
-    let ucost = upgrade_cost(base_cost.0, tier.0);
-    if pile_scrap.amount < ucost {
-        return;
-    }
-
-    // Deduct and track.
-    pile_scrap.amount -= ucost;
-    cost.0 += ucost;
-
-    if let Some(run_stats) = run_stats.as_mut() {
-        run_stats.scrap_spent += ucost;
-    }
-    let old_tier = tier.0;
-    tier.0 += 1;
-    let new_tier = tier.0;
-
-    // Broadcast the tier change. Per-capability scalers will react in this
-    // same Update step (chained after `apply_upgrade`).
-    tier_changed.write(TierChanged {
-        tower: entity,
-        old_tier,
-        new_tier,
-    });
-
-    // Despawn old ring children before re-inserting configs.
-    for child in children.iter() {
-        if range_rings.contains(child) || aura_visuals.contains(child) {
-            commands.entity(child).despawn();
+        // Despawn old ring children before re-inserting configs.
+        for child in children.iter() {
+            if range_rings.contains(child) || aura_visuals.contains(child) {
+                commands.entity(child).despawn();
+            }
         }
-    }
 
-    // Re-insert ring configs to trigger the Added<> reactive systems. The
-    // new visual range is the existing config range scaled by the same ratio
-    // the per-capability scalers apply to the live tower range.
-    let range_ratio = tier_ratio(&RANGE_MULT, old_tier, new_tier);
-    let mut ecmds = commands.entity(entity);
-    if let Some(rr) = range_ring {
-        let new_rr = RangeRingConfig {
-            range: rr.range * range_ratio,
-            color: rr.color,
-        };
-        ecmds.remove::<RangeRingConfig>();
-        ecmds.insert(new_rr);
-    }
-    if let Some(ar) = aura_ring {
-        // Aura ring tracks the slow-aura range, which scales by the same
-        // ratio (TarPit slow aura, ScrapMagnet pull aura).
-        let new_ar = SlowAuraRingConfig {
-            range: ar.range * range_ratio,
-            color: ar.color,
-        };
-        ecmds.remove::<SlowAuraRingConfig>();
-        ecmds.insert(new_ar);
-    }
+        let range_ratio = tier_ratio(&RANGE_MULT, ev.old_tier, ev.new_tier);
+        let mut ecmds = commands.entity(ev.tower);
+        if let Some(rr) = range_ring {
+            ecmds.remove::<RangeRingConfig>();
+            ecmds.insert(RangeRingConfig {
+                range: rr.range * range_ratio,
+                color: rr.color,
+            });
+        }
+        if let Some(ar) = aura_ring {
+            ecmds.remove::<SlowAuraRingConfig>();
+            ecmds.insert(SlowAuraRingConfig {
+                range: ar.range * range_ratio,
+                color: ar.color,
+            });
+        }
 
-    // Visual feedback: white flash.
-    let new_color = tier_color(tower_color.0, tier.0);
-    sprite.color = Color::WHITE;
-    ecmds.insert(UpgradeFlash {
-        timer: Timer::from_seconds(0.15, TimerMode::Once),
-        target_color: new_color,
-    });
-
-    // Floating text.
-    let pos = transform.translation.truncate();
-    commands.spawn((
-        Text2d::new(format!("Tier {}", tier.0 + 1)),
-        TextFont {
-            font_size: 14.0,
-            ..default()
-        },
-        TextColor(Color::srgb(0.9, 0.8, 0.2)),
-        Transform::from_translation(pos.extend(10.0)),
-        SellText {
-            timer: Timer::from_seconds(0.8, TimerMode::Once),
-        },
-    ));
+        // Visual feedback: white flash tweening into the new tier color.
+        let new_color = tier_color(tower_color.0, ev.new_tier);
+        sprite.color = Color::WHITE;
+        ecmds.insert(UpgradeFlash {
+            timer: Timer::from_seconds(0.15, TimerMode::Once),
+            target_color: new_color,
+        });
+    }
 }
 
 /// When a tower WITHOUT `UpgradeTrack<Magnet>` (i.e. ScrapMagnet) gets a
@@ -670,7 +608,7 @@ pub fn sync_collector_on_upgrade(
         (
             With<Tower>,
             Without<UpgradeTrack<Magnet>>,
-            Changed<TowerTier>,
+            Changed<UpgradeTrack<Primary>>,
         ),
     >,
 ) {
@@ -694,7 +632,7 @@ pub fn apply_repair(
             &mut TowerHealth,
             &BaseCost,
             &TowerColor,
-            &TowerTier,
+            &UpgradeTrack<Primary>,
             &mut Sprite,
             &Transform,
             &Children,
@@ -798,7 +736,7 @@ pub fn apply_repair(
     }
 
     // Visual: white flash restoring to healthy tier color.
-    let healthy_color = tier_color(tower_color.0, tier.0);
+    let healthy_color = tier_color(tower_color.0, tier.tier);
     sprite.color = Color::WHITE;
     commands.entity(entity).insert(UpgradeFlash {
         timer: Timer::from_seconds(0.15, TimerMode::Once),
@@ -919,7 +857,7 @@ pub fn rebuild_common_stats(
     mut towers: Query<
         (
             &mut PanelStats,
-            &TowerTier,
+            &UpgradeTrack<Primary>,
             Option<&Turret>,
             Option<&ChainLightning>,
             Option<&AoEOnHit>,
@@ -933,7 +871,7 @@ pub fn rebuild_common_stats(
             Or<(
                 Changed<Turret>,
                 Changed<ChainLightning>,
-                Changed<TowerTier>,
+                Changed<UpgradeTrack<Primary>>,
                 Changed<TowerHealth>,
                 Changed<AoEOnHit>,
                 Changed<SlowOnHit>,
@@ -1030,8 +968,8 @@ pub fn rebuild_common_stats(
             });
         }
 
-        if tier.0 < MAX_TIER {
-            let cur = tier.0;
+        if tier.tier < Primary::MAX_TIER {
+            let cur = tier.tier;
             let next = cur + 1;
             let dmg_ratio = tier_ratio(&DAMAGE_MULT, cur, next);
             let rng_ratio = tier_ratio(&RANGE_MULT, cur, next);
@@ -1217,10 +1155,11 @@ fn render_magnet_section(world: &mut World, panel: Entity, tower: Entity, pile_s
     let entity_ref = world.entity(tower);
     let track_tier = entity_ref.get::<UpgradeTrack<Magnet>>().map(|t| t.tier);
     let has_collector = entity_ref.contains::<ScrapCollector>();
+    let base_cost = entity_ref.get::<BaseCost>().map(|c| c.0).unwrap_or(0);
 
     let line = if let Some(tier) = track_tier {
         if tier < Magnet::MAX_TIER {
-            let mcost = Magnet::COSTS[tier as usize];
+            let mcost = Magnet::cost(tier, base_cost);
             let mcost_color = if pile_scrap >= mcost {
                 LABEL_COLOR
             } else {
@@ -1322,7 +1261,16 @@ pub fn register_default_panel_sections(mut sections: ResMut<PanelSections>) {
 pub fn update_upgrade_panel(
     mut commands: Commands,
     inspected: Res<InspectedTower>,
-    towers: Query<(&TowerName, &TowerTier, &BaseCost, &PanelStats, &TowerState), With<Tower>>,
+    towers: Query<
+        (
+            &TowerName,
+            &UpgradeTrack<Primary>,
+            &BaseCost,
+            &PanelStats,
+            &TowerState,
+        ),
+        With<Tower>,
+    >,
     panel_stats_check: Query<(), (With<Tower>, Changed<PanelStats>)>,
     mut panel_query: Query<(Entity, &mut Visibility), With<UpgradePanel>>,
     pile_scrap: Res<PileScrap>,
@@ -1364,7 +1312,12 @@ pub fn update_upgrade_panel(
         // Header
         spawn_text_line(
             parent,
-            format!("== {} (Tier {}/{}) ==", name.0, tier.0 + 1, MAX_TIER + 1),
+            format!(
+                "== {} (Tier {}/{}) ==",
+                name.0,
+                tier.tier + 1,
+                Primary::MAX_TIER + 1
+            ),
             LABEL_COLOR,
             15.0,
         );
@@ -1383,7 +1336,7 @@ pub fn update_upgrade_panel(
                 Color::srgb(0.9, 0.3, 0.3),
                 13.0,
             );
-        } else if tier.0 < MAX_TIER {
+        } else if tier.tier < Primary::MAX_TIER {
             let preview = panel
                 .next_tier_common
                 .iter()
@@ -1400,7 +1353,7 @@ pub fn update_upgrade_panel(
                 );
             }
 
-            let ucost = upgrade_cost(base_cost.0, tier.0);
+            let ucost = Primary::cost(tier.tier, base_cost.0);
             let cost_color = if pile_amount >= ucost {
                 LABEL_COLOR
             } else {
@@ -1428,25 +1381,25 @@ pub fn update_upgrade_panel(
 mod tests {
     use super::*;
 
-    // -- upgrade_cost --
+    // -- Primary::cost --
 
     #[test]
-    fn upgrade_cost_tier_0() {
+    fn primary_cost_tier_0() {
         // Tier 0→1: base_cost * 1.0
-        assert_eq!(upgrade_cost(100, 0), 100);
+        assert_eq!(Primary::cost(0, 100), 100);
     }
 
     #[test]
-    fn upgrade_cost_tier_1() {
+    fn primary_cost_tier_1() {
         // Tier 1→2: base_cost * 1.5
-        assert_eq!(upgrade_cost(100, 1), 150);
+        assert_eq!(Primary::cost(1, 100), 150);
     }
 
-    // -- per-capability scalers (TierChanged) --
+    // -- per-capability scalers (UpgradeApplied<Primary>) --
 
     fn scaler_test_app() -> App {
         let mut app = App::new();
-        app.add_message::<TierChanged>();
+        app.add_message::<UpgradeApplied<Primary>>();
         app
     }
 
@@ -1460,11 +1413,8 @@ mod tests {
             .spawn(Turret::new(Damage(10.0), Range(100.0), 1.0, 0.1))
             .id();
 
-        app.world_mut().write_message(TierChanged {
-            tower: entity,
-            old_tier: 0,
-            new_tier: 1,
-        });
+        app.world_mut()
+            .write_message(UpgradeApplied::<Primary>::new(entity, 0, 1));
         app.update();
 
         let turret = app.world().get::<Turret>(entity).unwrap();
@@ -1481,9 +1431,10 @@ mod tests {
     #[test]
     fn scalers_are_not_idempotent() {
         // The scalers apply ratio math (live *= MULT[new]/MULT[old]) and are
-        // intentionally NOT idempotent. Emitting the same `TierChanged` twice
-        // double-applies the scaling. This is a contract: callers (i.e.
-        // `apply_upgrade`) must emit exactly once per tier transition.
+        // intentionally NOT idempotent. Emitting the same `UpgradeApplied`
+        // twice double-applies the scaling. This is a contract: callers
+        // (i.e. `apply_track_upgrade`) must emit exactly once per tier
+        // transition.
         let mut app = scaler_test_app();
         app.add_systems(Update, scale_turret_on_tier);
 
@@ -1493,16 +1444,10 @@ mod tests {
             .id();
 
         // Two identical messages → ratio applied twice.
-        app.world_mut().write_message(TierChanged {
-            tower: entity,
-            old_tier: 0,
-            new_tier: 1,
-        });
-        app.world_mut().write_message(TierChanged {
-            tower: entity,
-            old_tier: 0,
-            new_tier: 1,
-        });
+        app.world_mut()
+            .write_message(UpgradeApplied::<Primary>::new(entity, 0, 1));
+        app.world_mut()
+            .write_message(UpgradeApplied::<Primary>::new(entity, 0, 1));
         app.update();
 
         let turret = app.world().get::<Turret>(entity).unwrap();
@@ -1528,11 +1473,8 @@ mod tests {
             })
             .id();
 
-        app.world_mut().write_message(TierChanged {
-            tower: entity,
-            old_tier: 0,
-            new_tier: 1,
-        });
+        app.world_mut()
+            .write_message(UpgradeApplied::<Primary>::new(entity, 0, 1));
         app.update();
 
         let h = app.world().get::<TowerHealth>(entity).unwrap();

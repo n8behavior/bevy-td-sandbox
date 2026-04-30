@@ -146,7 +146,7 @@ impl Plugin for TowerPlugin {
             .init_resource::<TowerRegistry>()
             .init_resource::<upgrade::InspectedTower>()
             .init_resource::<upgrade::PanelSections>()
-            .add_message::<upgrade::TierChanged>()
+            .add_message::<upgrade::UpgradeApplied<upgrade::Primary>>()
             .add_message::<upgrade::UpgradeApplied<upgrade::Magnet>>()
             .add_observer(systems::default_fire_observer)
             .add_plugins((
@@ -170,11 +170,12 @@ impl Plugin for TowerPlugin {
                     placement::sell_tower,
                     targeting::handle_targeting_button,
                     upgrade::inspect_tower,
-                    upgrade::apply_upgrade,
+                    upgrade::apply_track_upgrade::<upgrade::Primary>,
                     upgrade::scale_turret_on_tier,
                     upgrade::scale_aoe_on_tier,
                     upgrade::scale_slow_on_tier,
                     upgrade::scale_health_on_tier,
+                    upgrade::scale_primary_visuals_on_upgrade,
                     upgrade::sync_collector_on_upgrade,
                     upgrade::apply_track_upgrade::<upgrade::Magnet>,
                     upgrade::scale_magnet_on_track,

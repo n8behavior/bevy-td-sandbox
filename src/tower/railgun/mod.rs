@@ -6,7 +6,7 @@ use bevy::prelude::*;
 use crate::common::constants::{MAGNET_AURA_COLOR, TOWER_HP_COST_MULT};
 use crate::tower::components::*;
 use crate::tower::events::TowerFired;
-use crate::tower::upgrade::{Magnet, UpgradeTrack};
+use crate::tower::upgrade::{Magnet, Primary, UpgradeTrack};
 
 const FIRE_HZ: f32 = 2200.0;
 const FIRE_MS: u64 = 50;
@@ -83,7 +83,7 @@ fn register(mut registry: ResMut<TowerRegistry>) {
                     particle_size: 6.0,
                     particle_lifetime: 0.4,
                 },
-                TowerTier(0),
+                UpgradeTrack::<Primary>::default(),
                 TowerName("Railgun"),
                 PanelStats::default(),
                 BaseCost(150),

@@ -6,7 +6,7 @@ use bevy::prelude::*;
 use crate::common::constants::{MAGNET_AURA_COLOR, TOWER_HP_COST_MULT};
 use crate::tower::components::*;
 use crate::tower::events::TowerFired;
-use crate::tower::upgrade::{Magnet, UpgradeTrack};
+use crate::tower::upgrade::{Magnet, Primary, UpgradeTrack};
 
 const FIRE_HZ: f32 = 110.0;
 const FIRE_MS: u64 = 250;
@@ -89,7 +89,7 @@ fn register(mut registry: ResMut<TowerRegistry>) {
                     radius: aoe_radius,
                     damage: aoe_damage,
                 },
-                TowerTier(0),
+                UpgradeTrack::<Primary>::default(),
                 TowerName("Explosive"),
                 PanelStats::default(),
                 BaseCost(125),

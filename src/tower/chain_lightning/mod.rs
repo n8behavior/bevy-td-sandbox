@@ -10,7 +10,7 @@ use crate::common::constants::{MAGNET_AURA_COLOR, TOWER_HP_COST_MULT};
 use crate::states::{GameState, PlayPhase};
 use crate::tower::components::*;
 use crate::tower::events::TowerFired;
-use crate::tower::upgrade::{Magnet, UpgradeTrack};
+use crate::tower::upgrade::{Magnet, Primary, UpgradeTrack};
 
 use components::{ChainCooldown, ChainLightning, ChainLightningMarker};
 
@@ -99,7 +99,7 @@ fn register(mut registry: ResMut<TowerRegistry>) {
                     damage_falloff: 0.7,
                 },
                 ChainCooldown::new(cooldown),
-                TowerTier(0),
+                UpgradeTrack::<Primary>::default(),
                 TowerName("Chain Lightning"),
                 PanelStats::default(),
                 BaseCost(125),

@@ -5,6 +5,7 @@ use bevy::prelude::*;
 use crate::common::constants::{MAGNET_AURA_COLOR, SCRAP_MAGNET_RANGE, TOWER_HP_COST_MULT};
 use crate::states::{GameState, PlayPhase};
 use crate::tower::components::*;
+use crate::tower::upgrade::{Primary, UpgradeTrack};
 
 /// Marker for the dedicated Magnet tower type.
 /// Only this tower pulls enemies (via magnetic_pull_enemies).
@@ -54,7 +55,7 @@ fn register(mut registry: ResMut<TowerRegistry>) {
                     factor: slow_factor,
                     duration: 0.5,
                 },
-                TowerTier(0),
+                UpgradeTrack::<Primary>::default(),
                 TowerName("Magnet"),
                 PanelStats::default(),
                 BaseCost(100),

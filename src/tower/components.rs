@@ -100,10 +100,6 @@ pub struct TowerCost(pub u32);
 #[derive(Component, Clone, Copy)]
 pub struct BaseCost(pub u32);
 
-/// Current upgrade tier: 0 = base, 1, 2 = max.
-#[derive(Component)]
-pub struct TowerTier(pub u8);
-
 /// Display name for a placed tower (set by the tower-type plugin).
 #[derive(Component)]
 pub struct TowerName(pub &'static str);

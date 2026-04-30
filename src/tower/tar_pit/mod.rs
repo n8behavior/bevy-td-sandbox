@@ -2,7 +2,7 @@ use bevy::prelude::*;
 
 use crate::common::constants::MAGNET_AURA_COLOR;
 use crate::tower::components::*;
-use crate::tower::upgrade::{Magnet, UpgradeTrack};
+use crate::tower::upgrade::{Magnet, Primary, UpgradeTrack};
 
 #[derive(Component)]
 pub struct TarPit;
@@ -50,7 +50,7 @@ fn register(mut registry: ResMut<TowerRegistry>) {
                     factor: slow_factor,
                     duration: 0.5,
                 },
-                TowerTier(0),
+                UpgradeTrack::<Primary>::default(),
                 TowerName("TarPit"),
                 PanelStats::default(),
                 BaseCost(75),
