@@ -57,16 +57,7 @@ fn register(mut registry: ResMut<TowerRegistry>) {
                 TowerTier(0),
                 TowerName("Magnet"),
                 PanelStats::default(),
-                BaseStats {
-                    cost: 100,
-                    damage: 0.0,
-                    range,
-                    cooldown_secs: 0.0,
-                    aoe_radius: 0.0,
-                    aoe_damage: 0.0,
-                    slow_factor,
-                    color,
-                },
+                BaseCost(100),
             ));
             let max_hp = 100.0 * TOWER_HP_COST_MULT;
             cmds.insert(TowerHealth {

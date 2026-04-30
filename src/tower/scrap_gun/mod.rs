@@ -85,16 +85,7 @@ fn register(mut registry: ResMut<TowerRegistry>) {
                 TowerTier(0),
                 TowerName("ScrapGun"),
                 PanelStats::default(),
-                BaseStats {
-                    cost: 50,
-                    damage,
-                    range,
-                    cooldown_secs: cooldown,
-                    aoe_radius: 0.0,
-                    aoe_damage: 0.0,
-                    slow_factor: 1.0,
-                    color,
-                },
+                BaseCost(50),
             ));
             let max_hp = 50.0 * TOWER_HP_COST_MULT;
             cmds.insert(TowerHealth {
@@ -103,7 +94,6 @@ fn register(mut registry: ResMut<TowerRegistry>) {
             });
             cmds.insert((
                 MagnetTier(0),
-                BaseMagnetRange(collect_range),
                 CollectionAuraRingConfig {
                     range: collect_range,
                     color: MAGNET_AURA_COLOR,

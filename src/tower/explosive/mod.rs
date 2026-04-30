@@ -91,16 +91,7 @@ fn register(mut registry: ResMut<TowerRegistry>) {
                 TowerTier(0),
                 TowerName("Explosive"),
                 PanelStats::default(),
-                BaseStats {
-                    cost: 125,
-                    damage,
-                    range,
-                    cooldown_secs: cooldown,
-                    aoe_radius,
-                    aoe_damage,
-                    slow_factor: 1.0,
-                    color,
-                },
+                BaseCost(125),
             ));
             let max_hp = 125.0 * TOWER_HP_COST_MULT;
             cmds.insert(TowerHealth {
@@ -109,7 +100,6 @@ fn register(mut registry: ResMut<TowerRegistry>) {
             });
             cmds.insert((
                 MagnetTier(0),
-                BaseMagnetRange(collect_range),
                 CollectionAuraRingConfig {
                     range: collect_range,
                     color: MAGNET_AURA_COLOR,

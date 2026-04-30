@@ -9,15 +9,13 @@ use crate::enemy::components::{DamageFlash, Enemy, Health};
 use crate::grid::systems::grid_to_world_cfg;
 use crate::pile::resources::PileState;
 
-use super::components::{BaseArcRange, ChainCooldown, ChainLightning, LightningArc};
+use super::components::{ChainCooldown, ChainLightning, LightningArc};
 use crate::tower::components::{
     PanelStats, StatLine, TargetingMode, Tower, TowerHealth, TowerState, TowerTier,
 };
 use crate::tower::events::TowerFired;
 use crate::tower::systems::best_target_from;
-use crate::tower::upgrade::{
-    ARC_RANGE_MULT, COOLDOWN_MULT, DAMAGE_MULT, RANGE_MULT, TierChanged, arc_range_at_tier,
-};
+use crate::tower::upgrade::{ARC_RANGE_MULT, COOLDOWN_MULT, DAMAGE_MULT, RANGE_MULT, TierChanged};
 
 /// Stat color used by the upgrade panel for non-interactive stat lines.
 /// Matches `tower::upgrade::STAT_COLOR`; redeclared here to keep this module
@@ -161,13 +159,7 @@ fn spawn_lightning_arc(commands: &mut Commands, from: Vec2, to: Vec2, color: Col
 #[allow(clippy::type_complexity)]
 pub fn rebuild_chain_panel_stats(
     mut towers: Query<
-        (
-            &mut PanelStats,
-            &ChainLightning,
-            &ChainCooldown,
-            &BaseArcRange,
-            &TowerTier,
-        ),
+        (&mut PanelStats, &ChainLightning, &ChainCooldown, &TowerTier),
         (
             With<Tower>,
             Or<(
@@ -179,7 +171,7 @@ pub fn rebuild_chain_panel_stats(
         ),
     >,
 ) {
-    for (mut panel, chain, cd, base_arc, tier) in &mut towers {
+    for (mut panel, chain, cd, tier) in &mut towers {
         panel.extra.clear();
         panel.extra.push(StatLine {
             label: "ARC",
@@ -194,10 +186,12 @@ pub fn rebuild_chain_panel_stats(
 
         panel.next_tier_extra.clear();
         if tier.0 < crate::tower::upgrade::MAX_TIER {
-            let next = tier.0 + 1;
+            let cur = tier.0 as usize;
+            let next = cur + 1;
+            let next_arc = chain.arc_range * ARC_RANGE_MULT[next] / ARC_RANGE_MULT[cur];
             panel.next_tier_extra.push(StatLine {
                 label: "ARC",
-                value: format!("{:.0}", arc_range_at_tier(base_arc.0, next)),
+                value: format!("{:.0}", next_arc),
                 color: STAT_COLOR,
             });
         }

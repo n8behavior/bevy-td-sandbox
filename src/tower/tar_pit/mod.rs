@@ -41,7 +41,6 @@ fn register(mut registry: ResMut<TowerRegistry>) {
                 },
                 ScrapCollector { range: 30.0 },
                 MagnetTier(0),
-                BaseMagnetRange(30.0),
                 TarPit,
                 // No BlocksNav — enemies walk through
                 TowerColor(color),
@@ -53,16 +52,7 @@ fn register(mut registry: ResMut<TowerRegistry>) {
                 TowerTier(0),
                 TowerName("TarPit"),
                 PanelStats::default(),
-                BaseStats {
-                    cost: 75,
-                    damage: 0.0,
-                    range,
-                    cooldown_secs: 0.0,
-                    aoe_radius: 0.0,
-                    aoe_damage: 0.0,
-                    slow_factor,
-                    color,
-                },
+                BaseCost(75),
             ));
         },
     });

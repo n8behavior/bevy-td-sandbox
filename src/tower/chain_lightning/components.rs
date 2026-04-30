@@ -11,8 +11,6 @@ pub struct ChainLightningMarker;
 /// Chain lightning capability. Owns the per-shot damage, the primary
 /// acquisition range used to find the first target, the per-hop arc range
 /// used to walk the chain, and the falloff applied to each hop's damage.
-/// Replaces the previous reliance on the legacy `TowerStats` for damage and
-/// range.
 #[derive(Component)]
 pub struct ChainLightning {
     pub damage: Damage,
@@ -20,10 +18,6 @@ pub struct ChainLightning {
     pub arc_range: f32,
     pub damage_falloff: f32,
 }
-
-/// Base arc range for upgrade calculations (immutable snapshot).
-#[derive(Component)]
-pub struct BaseArcRange(pub f32);
 
 /// Cooldown timer for instant-fire towers (no aiming phase).
 #[derive(Component)]

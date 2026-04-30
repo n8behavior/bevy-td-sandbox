@@ -11,7 +11,7 @@ use crate::states::{GameState, PlayPhase};
 use crate::tower::components::*;
 use crate::tower::events::TowerFired;
 
-use components::{BaseArcRange, ChainCooldown, ChainLightning, ChainLightningMarker};
+use components::{ChainCooldown, ChainLightning, ChainLightningMarker};
 
 const FIRE_HZ: f32 = 660.0;
 const FIRE_MS: u64 = 120;
@@ -97,21 +97,11 @@ fn register(mut registry: ResMut<TowerRegistry>) {
                     arc_range,
                     damage_falloff: 0.7,
                 },
-                BaseArcRange(arc_range),
                 ChainCooldown::new(cooldown),
                 TowerTier(0),
                 TowerName("Chain Lightning"),
                 PanelStats::default(),
-                BaseStats {
-                    cost: 125,
-                    damage,
-                    range,
-                    cooldown_secs: cooldown,
-                    aoe_radius: 0.0,
-                    aoe_damage: 0.0,
-                    slow_factor: 1.0,
-                    color,
-                },
+                BaseCost(125),
             ));
             let max_hp = 125.0 * TOWER_HP_COST_MULT;
             cmds.insert(TowerHealth {
@@ -120,7 +110,6 @@ fn register(mut registry: ResMut<TowerRegistry>) {
             });
             cmds.insert((
                 MagnetTier(0),
-                BaseMagnetRange(collect_range),
                 CollectionAuraRingConfig {
                     range: collect_range,
                     color: MAGNET_AURA_COLOR,

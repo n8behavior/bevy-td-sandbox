@@ -16,7 +16,7 @@ use crate::shader::CircleMaterial;
 
 use crate::common::constants::{BRUTE_ATTACK_COOLDOWN, BRUTE_ATTACK_DAMAGE, BRUTE_ATTACK_RANGE};
 use crate::tower::components::{
-    BaseStats, BlocksNav, Tower, TowerHealth, TowerState, TowerTier, UpgradeFlash,
+    BlocksNav, Tower, TowerColor, TowerHealth, TowerState, TowerTier, UpgradeFlash,
 };
 use crate::tower::upgrade::degradation_color;
 use crate::wave::resources::BossTrait;
@@ -563,7 +563,7 @@ pub fn brute_attack_towers(
             Entity,
             &Transform,
             &mut TowerHealth,
-            &BaseStats,
+            &TowerColor,
             &TowerTier,
             &mut Sprite,
             &mut TowerState,
@@ -599,7 +599,7 @@ pub fn brute_attack_towers(
 
         attack.cooldown.reset();
 
-        if let Ok((entity, _, mut health, base, tier, mut sprite, mut tower_state)) =
+        if let Ok((entity, _, mut health, tower_color, tier, mut sprite, mut tower_state)) =
             towers.get_mut(target_entity)
         {
             health.current = (health.current - attack.damage).max(0.0);
@@ -610,7 +610,7 @@ pub fn brute_attack_towers(
             sprite.color = Color::WHITE;
             commands.entity(entity).insert(UpgradeFlash {
                 timer: Timer::from_seconds(0.1, TimerMode::Once),
-                target_color: degradation_color(base.color, tier.0, &health),
+                target_color: degradation_color(tower_color.0, tier.0, &health),
             });
 
             if health.current <= 0.0 {

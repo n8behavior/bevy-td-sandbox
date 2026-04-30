@@ -94,23 +94,15 @@ pub struct BlocksNav;
 #[derive(Component)]
 pub struct TowerCost(pub u32);
 
+/// Immutable base cost of a tower, set at spawn time. Used by upgrade-cost
+/// and repair-cost calculations that scale with the tower's original price
+/// regardless of accumulated investment in `TowerCost`.
+#[derive(Component, Clone, Copy)]
+pub struct BaseCost(pub u32);
+
 /// Current upgrade tier: 0 = base, 1, 2 = max.
 #[derive(Component)]
 pub struct TowerTier(pub u8);
-
-/// Snapshot of a tower's base stats at placement time (before upgrades).
-/// Used to compute multiplied stats at each tier without accumulation errors.
-#[derive(Component, Clone)]
-pub struct BaseStats {
-    pub cost: u32,
-    pub damage: f32,
-    pub range: f32,
-    pub cooldown_secs: f32,
-    pub aoe_radius: f32,
-    pub aoe_damage: f32,
-    pub slow_factor: f32,
-    pub color: Color,
-}
 
 /// Display name for a placed tower (set by the tower-type plugin).
 #[derive(Component)]
@@ -289,9 +281,8 @@ impl Turret {
 }
 
 /// Immutable display color of a tower's body sprite. Used by the upgrade-flash
-/// reset, the degradation tint, and the tier-flash transition. Replaces
-/// `BaseStats.color` as the canonical source of a tower's "default look" so
-/// the wide-flat `BaseStats` struct can be retired.
+/// reset, the degradation tint, and the tier-flash transition. The canonical
+/// source of a tower's "default look".
 #[derive(Component, Clone, Copy)]
 pub struct TowerColor(pub Color);
 
@@ -356,11 +347,6 @@ pub struct ScrapCollector {
 /// (which has built-in max collection range).
 #[derive(Component)]
 pub struct MagnetTier(pub u8);
-
-/// Immutable base scrap collection range, used to compute upgraded range
-/// via multiplier table. Set at tower spawn time.
-#[derive(Component)]
-pub struct BaseMagnetRange(pub f32);
 
 /// Insert on a tower entity to request a scrap collection aura ring child.
 /// A reactive system converts this into a `Mesh2d` + `CircleMaterial`.

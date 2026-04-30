@@ -134,31 +134,6 @@ pub(crate) fn upgrade_cost(base_cost: u32, current_tier: u8) -> u32 {
     (base_cost as f32 * UPGRADE_COST_MULT[current_tier as usize]) as u32
 }
 
-/// Tower damage at the given tier (base scaled by tier multiplier).
-pub(crate) fn damage_at_tier(base_damage: f32, tier: u8) -> f32 {
-    base_damage * DAMAGE_MULT[tier as usize]
-}
-
-/// Tower range at the given tier.
-pub(crate) fn range_at_tier(base_range: f32, tier: u8) -> f32 {
-    base_range * RANGE_MULT[tier as usize]
-}
-
-/// AOE blast radius at the given tier.
-pub(crate) fn aoe_radius_at_tier(base_radius: f32, tier: u8) -> f32 {
-    base_radius * AOE_RADIUS_MULT[tier as usize]
-}
-
-/// Chain lightning arc range at the given tier.
-pub(crate) fn arc_range_at_tier(base_arc: f32, tier: u8) -> f32 {
-    base_arc * ARC_RANGE_MULT[tier as usize]
-}
-
-/// Scrap collection range at the given magnet tier.
-pub(crate) fn magnet_range_at_tier(base_range: f32, tier: u8) -> f32 {
-    base_range * MAGNET_RANGE_MULT[tier as usize]
-}
-
 /// Scrap refund when selling a tower (60% of total investment).
 pub(crate) fn sell_refund(total_cost: u32) -> u32 {
     total_cost * SELL_REFUND_PERCENT / 100
@@ -318,7 +293,7 @@ pub fn apply_upgrade(
     mut towers: Query<
         (
             &mut TowerTier,
-            &BaseStats,
+            &BaseCost,
             &TowerColor,
             &mut TowerCost,
             &mut Sprite,
@@ -342,7 +317,7 @@ pub fn apply_upgrade(
     let Some(entity) = inspected.0 else { return };
     let Ok((
         mut tier,
-        base,
+        base_cost,
         tower_color,
         mut cost,
         mut sprite,
@@ -364,7 +339,7 @@ pub fn apply_upgrade(
         return;
     }
 
-    let ucost = upgrade_cost(base.cost, tier.0);
+    let ucost = upgrade_cost(base_cost.0, tier.0);
     if pile_scrap.amount < ucost {
         return;
     }
@@ -396,24 +371,23 @@ pub fn apply_upgrade(
     }
 
     // Re-insert ring configs to trigger the Added<> reactive systems. The
-    // visual range is recomputed from the per-tower base stat so it tracks
-    // whichever capability owns it (the legacy unified TowerStats.range is
-    // gone).
-    let new_visual_range = range_at_tier(base.range, tier.0);
+    // new visual range is the existing config range scaled by the same ratio
+    // the per-capability scalers apply to the live tower range.
+    let range_ratio = tier_ratio(&RANGE_MULT, old_tier, new_tier);
     let mut ecmds = commands.entity(entity);
     if let Some(rr) = range_ring {
         let new_rr = RangeRingConfig {
-            range: new_visual_range,
+            range: rr.range * range_ratio,
             color: rr.color,
         };
         ecmds.remove::<RangeRingConfig>();
         ecmds.insert(new_rr);
     }
     if let Some(ar) = aura_ring {
-        // Aura ring matches the new aura range (TarPit slow aura, ScrapMagnet
-        // pull aura). Both scale via base.range.
+        // Aura ring tracks the slow-aura range, which scales by the same
+        // ratio (TarPit slow aura, ScrapMagnet pull aura).
         let new_ar = SlowAuraRingConfig {
-            range: new_visual_range,
+            range: ar.range * range_ratio,
             color: ar.color,
         };
         ecmds.remove::<SlowAuraRingConfig>();
@@ -470,7 +444,6 @@ pub fn apply_magnet_upgrade(
     mut towers: Query<
         (
             &mut MagnetTier,
-            &BaseMagnetRange,
             &mut ScrapCollector,
             &mut TowerCost,
             &Transform,
@@ -487,16 +460,8 @@ pub fn apply_magnet_upgrade(
         return;
     }
     let Some(entity) = inspected.0 else { return };
-    let Ok((
-        mut tier,
-        base_range,
-        mut collector,
-        mut cost,
-        transform,
-        children,
-        magnet_aura,
-        tower_state,
-    )) = towers.get_mut(entity)
+    let Ok((mut tier, mut collector, mut cost, transform, children, magnet_aura, tower_state)) =
+        towers.get_mut(entity)
     else {
         return;
     };
@@ -517,10 +482,11 @@ pub fn apply_magnet_upgrade(
     // Deduct and track.
     pile_scrap.amount -= ucost;
     cost.0 += ucost;
+    let old_tier = tier.0;
     tier.0 += 1;
 
-    // Update collection range.
-    collector.range = magnet_range_at_tier(base_range.0, tier.0);
+    // Scale collection range by the tier-to-tier ratio.
+    collector.range *= MAGNET_RANGE_MULT[tier.0 as usize] / MAGNET_RANGE_MULT[old_tier as usize];
 
     // Despawn old magnet aura children before re-inserting config.
     for child in children.iter() {
@@ -566,7 +532,7 @@ pub fn apply_repair(
         (
             Entity,
             &mut TowerHealth,
-            &BaseStats,
+            &BaseCost,
             &TowerColor,
             &TowerTier,
             &mut Sprite,
@@ -592,7 +558,7 @@ pub fn apply_repair(
     let Ok((
         entity,
         mut health,
-        base,
+        base_cost,
         tower_color,
         tier,
         mut sprite,
@@ -617,7 +583,7 @@ pub fn apply_repair(
     }
 
     let is_rubble = *tower_state == TowerState::Rubble;
-    let repair_cost = repair_cost(base.cost, is_rubble);
+    let repair_cost = repair_cost(base_cost.0, is_rubble);
 
     if pile_scrap.amount < repair_cost {
         return;
@@ -794,7 +760,6 @@ pub fn rebuild_common_stats(
         (
             &mut PanelStats,
             &TowerTier,
-            &BaseStats,
             Option<&Turret>,
             Option<&ChainLightning>,
             Option<&AoEOnHit>,
@@ -818,9 +783,7 @@ pub fn rebuild_common_stats(
         ),
     >,
 ) {
-    for (mut panel, tier, base, turret, chain, aoe, slow, health, collector, tower_state) in
-        &mut towers
-    {
+    for (mut panel, tier, turret, chain, aoe, slow, health, collector, tower_state) in &mut towers {
         panel.common.clear();
         panel.next_tier_common.clear();
 
@@ -908,27 +871,53 @@ pub fn rebuild_common_stats(
         }
 
         if tier.0 < MAX_TIER {
-            let next = tier.0 + 1;
-            // Only preview DMG for towers that actually deal damage.
-            if turret.is_some() || chain.is_some() {
+            let cur = tier.0;
+            let next = cur + 1;
+            let dmg_ratio = tier_ratio(&DAMAGE_MULT, cur, next);
+            let rng_ratio = tier_ratio(&RANGE_MULT, cur, next);
+            let aoe_ratio = tier_ratio(&AOE_RADIUS_MULT, cur, next);
+
+            // Only preview DMG for towers that actually deal damage. Compute
+            // the next-tier value as a ratio of the current capability value.
+            if let Some(t) = turret {
                 panel.next_tier_common.push(StatLine {
                     label: "DMG",
-                    value: format!("{:.0}", damage_at_tier(base.damage, next)),
+                    value: format!("{:.0}", t.damage.0 * dmg_ratio),
+                    color: STAT_COLOR,
+                });
+            } else if let Some(c) = chain {
+                panel.next_tier_common.push(StatLine {
+                    label: "DMG",
+                    value: format!("{:.0}", c.damage.0 * dmg_ratio),
                     color: STAT_COLOR,
                 });
             }
             // RNG preview applies to any tower with a range capability.
-            if turret.is_some() || chain.is_some() || slow.is_some() {
+            if let Some(t) = turret {
                 panel.next_tier_common.push(StatLine {
                     label: "RNG",
-                    value: format!("{:.0}", range_at_tier(base.range, next)),
+                    value: format!("{:.0}", t.range.0 * rng_ratio),
+                    color: STAT_COLOR,
+                });
+            } else if let Some(c) = chain {
+                panel.next_tier_common.push(StatLine {
+                    label: "RNG",
+                    value: format!("{:.0}", c.primary_range.0 * rng_ratio),
+                    color: STAT_COLOR,
+                });
+            } else if let Some(s) = slow {
+                panel.next_tier_common.push(StatLine {
+                    label: "RNG",
+                    value: format!("{:.0}", s.range.0 * rng_ratio),
                     color: STAT_COLOR,
                 });
             }
-            if aoe.is_some() && base.aoe_radius > 0.0 {
+            if let Some(a) = aoe
+                && a.radius > 0.0
+            {
                 panel.next_tier_common.push(StatLine {
                     label: "AOE",
-                    value: format!("{:.0}", aoe_radius_at_tier(base.aoe_radius, next)),
+                    value: format!("{:.0}", a.radius * aoe_ratio),
                     color: STAT_COLOR,
                 });
             }
@@ -976,7 +965,7 @@ pub fn update_upgrade_panel(
             &TowerName,
             &TowerTier,
             &TowerCost,
-            &BaseStats,
+            &BaseCost,
             &PanelStats,
             Option<&TargetingMode>,
             Option<&MagnetTier>,
@@ -1009,7 +998,7 @@ pub fn update_upgrade_panel(
         name,
         tier,
         cost,
-        base,
+        base_cost,
         panel,
         targeting_mode,
         magnet_tier,
@@ -1076,7 +1065,7 @@ pub fn update_upgrade_panel(
                 );
             }
 
-            let ucost = upgrade_cost(base.cost, tier.0);
+            let ucost = upgrade_cost(base_cost.0, tier.0);
             let cost_color = if pile_scrap.amount >= ucost {
                 LABEL_COLOR
             } else {
@@ -1110,7 +1099,7 @@ pub fn update_upgrade_panel(
             && health.current < health.max
         {
             let is_rubble = *tower_state == TowerState::Rubble;
-            let rcost = repair_cost(base.cost, is_rubble);
+            let rcost = repair_cost(base_cost.0, is_rubble);
             let repair_color = if pile_scrap.amount >= rcost {
                 LABEL_COLOR
             } else {
@@ -1195,53 +1184,6 @@ mod tests {
     fn upgrade_cost_tier_1() {
         // Tier 1→2: base_cost * 1.5
         assert_eq!(upgrade_cost(100, 1), 150);
-    }
-
-    // -- damage_at_tier --
-
-    #[test]
-    fn damage_progression() {
-        let base = 10.0;
-        assert_eq!(damage_at_tier(base, 0), 10.0);
-        assert_eq!(damage_at_tier(base, 1), 14.0);
-        assert_eq!(damage_at_tier(base, 2), 20.0);
-    }
-
-    // -- range_at_tier --
-
-    #[test]
-    fn range_progression() {
-        let base = 100.0;
-        assert_eq!(range_at_tier(base, 0), 100.0);
-        assert!((range_at_tier(base, 1) - 110.0).abs() < 0.01);
-        assert!((range_at_tier(base, 2) - 120.0).abs() < 0.01);
-    }
-
-    // -- aoe / slow / arc --
-
-    #[test]
-    fn aoe_radius_progression() {
-        let base = 50.0;
-        assert_eq!(aoe_radius_at_tier(base, 0), 50.0);
-        assert_eq!(aoe_radius_at_tier(base, 2), 65.0);
-    }
-
-    #[test]
-    fn arc_range_progression() {
-        let base = 60.0;
-        assert_eq!(arc_range_at_tier(base, 0), 60.0);
-        assert!((arc_range_at_tier(base, 2) - 100.02).abs() < 0.1);
-    }
-
-    // -- magnet_range_at_tier --
-
-    #[test]
-    fn magnet_range_progression() {
-        let base = 30.0;
-        assert_eq!(magnet_range_at_tier(base, 0), 30.0);
-        assert_eq!(magnet_range_at_tier(base, 1), 45.0);
-        assert_eq!(magnet_range_at_tier(base, 2), 60.0);
-        assert_eq!(magnet_range_at_tier(base, 3), 75.0);
     }
 
     // -- per-capability scalers (TierChanged) --
