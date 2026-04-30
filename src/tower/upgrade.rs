@@ -206,6 +206,49 @@ pub fn apply_track_upgrade<K: UpgradeKind>(
 }
 
 // ---------------------------------------------------------------------------
+// Panel section registry
+//
+// The upgrade panel is composed of a fixed shared header (tower name + stats)
+// followed by a sorted list of `PanelSection`s. Each section owns its own
+// queries/lookups via `&mut World` access and renders zero or more text rows
+// as children of the panel entity. Per-tower modules can register sections
+// for their own interactive controls without touching the shared panel
+// system.
+// ---------------------------------------------------------------------------
+
+/// One contributor to the upgrade panel. Sections render in ascending order
+/// of `order`. The render function receives full world access at sync time
+/// (queued via `Commands::queue`) so it can read any components on the
+/// `tower` entity and spawn UI rows as children of the `panel` entity.
+#[derive(Clone, Copy)]
+pub struct PanelSection {
+    pub order: i32,
+    pub render: fn(world: &mut World, panel: Entity, tower: Entity, pile_scrap: u32),
+}
+
+/// Resource-backed list of panel sections. Per-tower (or per-capability)
+/// plugins push their `PanelSection` on Startup; the shared
+/// `update_upgrade_panel` system iterates the list at render time.
+#[derive(Resource, Default)]
+pub struct PanelSections {
+    sections: Vec<PanelSection>,
+}
+
+impl PanelSections {
+    /// Add a section, keeping the list sorted by `order` (lower runs first
+    /// = appears higher in the panel).
+    pub fn add(&mut self, section: PanelSection) {
+        self.sections.push(section);
+        self.sections.sort_by_key(|s| s.order);
+    }
+
+    /// Iterate sections in render order.
+    pub fn iter(&self) -> impl Iterator<Item = &PanelSection> {
+        self.sections.iter()
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Magnet upgrade kind
 // ---------------------------------------------------------------------------
 
@@ -1068,30 +1111,218 @@ fn format_stat(line: &StatLine) -> String {
     format!("{}: {}", line.label, line.value)
 }
 
+// ---------------------------------------------------------------------------
+// Default panel sections
+//
+// Sections receive `&mut World` access (via `Commands::queue`) so they can
+// look up arbitrary components on the inspected tower without forcing the
+// shared panel system to query them. Each section spawns its UI as direct
+// child entities of the panel, using the world helpers below.
+// ---------------------------------------------------------------------------
+
+/// Spawn a text node and attach it as a child of `panel`. World-based
+/// equivalent of `spawn_text_line` for use inside `Commands::queue` closures.
+fn spawn_text_line_world(
+    world: &mut World,
+    panel: Entity,
+    text: impl Into<String>,
+    color: Color,
+    font_size: f32,
+) {
+    let child = world
+        .spawn((
+            Text::new(text.into()),
+            TextColor(color),
+            TextFont {
+                font_size,
+                ..default()
+            },
+        ))
+        .id();
+    world.entity_mut(panel).add_child(child);
+}
+
+/// Spawn the targeting-button row (C/H/L/F) as a child of `panel`.
+/// World-based equivalent of `spawn_targeting_buttons`.
+fn spawn_targeting_buttons_world(
+    world: &mut World,
+    panel: Entity,
+    tower: Entity,
+    current_mode: TargetingMode,
+) {
+    let row = world
+        .spawn(Node {
+            flex_direction: FlexDirection::Row,
+            column_gap: Val::Px(4.0),
+            margin: UiRect::top(Val::Px(2.0)),
+            ..default()
+        })
+        .id();
+
+    for &mode in &TargetingMode::ALL {
+        let bg = if mode == current_mode {
+            Color::srgba(0.3, 0.7, 0.3, 0.8)
+        } else {
+            Color::srgba(0.2, 0.2, 0.2, 0.7)
+        };
+        let btn = world
+            .spawn((
+                Button,
+                Node {
+                    width: Val::Px(28.0),
+                    height: Val::Px(22.0),
+                    justify_content: JustifyContent::Center,
+                    align_items: AlignItems::Center,
+                    ..default()
+                },
+                BackgroundColor(bg),
+                TargetingButton { tower, mode },
+            ))
+            .id();
+        let label = world
+            .spawn((
+                Text::new(mode.label()),
+                TextColor(Color::WHITE),
+                TextFont {
+                    font_size: 13.0,
+                    ..default()
+                },
+            ))
+            .id();
+        world.entity_mut(btn).add_child(label);
+        world.entity_mut(row).add_child(btn);
+    }
+    world.entity_mut(panel).add_child(row);
+}
+
+/// Targeting-mode label + button row. Renders only on towers with a
+/// `TargetingMode` component.
+fn render_targeting_section(world: &mut World, panel: Entity, tower: Entity, _pile_scrap: u32) {
+    let Some(mode) = world.entity(tower).get::<TargetingMode>().copied() else {
+        return;
+    };
+    spawn_text_line_world(
+        world,
+        panel,
+        format!("TARGET: {}", mode.name()),
+        STAT_COLOR,
+        13.0,
+    );
+    spawn_targeting_buttons_world(world, panel, tower, mode);
+}
+
+/// Magnet upgrade button. Towers with `UpgradeTrack<Magnet>` show the next
+/// upgrade cost; towers with a `ScrapCollector` but no track show MAX.
+fn render_magnet_section(world: &mut World, panel: Entity, tower: Entity, pile_scrap: u32) {
+    let entity_ref = world.entity(tower);
+    let track_tier = entity_ref.get::<UpgradeTrack<Magnet>>().map(|t| t.tier);
+    let has_collector = entity_ref.contains::<ScrapCollector>();
+
+    let line = if let Some(tier) = track_tier {
+        if tier < Magnet::MAX_TIER {
+            let mcost = Magnet::COSTS[tier as usize];
+            let mcost_color = if pile_scrap >= mcost {
+                LABEL_COLOR
+            } else {
+                Color::srgb(0.9, 0.3, 0.3)
+            };
+            Some((format!("[M] Magnet: ${mcost}"), mcost_color))
+        } else {
+            Some(("MAGNET: MAX".to_string(), Color::srgb(0.4, 0.7, 1.0)))
+        }
+    } else if has_collector {
+        Some(("MAGNET: MAX".to_string(), Color::srgb(0.4, 0.7, 1.0)))
+    } else {
+        None
+    };
+
+    if let Some((text, color)) = line {
+        spawn_text_line_world(world, panel, text, color, 13.0);
+    }
+}
+
+/// Repair button. Renders only on towers with a `TowerHealth` that is below
+/// max. Cost depends on whether the tower is rubble or merely damaged.
+fn render_repair_section(world: &mut World, panel: Entity, tower: Entity, pile_scrap: u32) {
+    let entity_ref = world.entity(tower);
+    let Some(health) = entity_ref.get::<TowerHealth>() else {
+        return;
+    };
+    if health.current >= health.max {
+        return;
+    }
+    let Some(base_cost) = entity_ref.get::<BaseCost>().map(|c| c.0) else {
+        return;
+    };
+    let Some(tower_state) = entity_ref.get::<TowerState>().copied() else {
+        return;
+    };
+
+    let is_rubble = tower_state == TowerState::Rubble;
+    let rcost = repair_cost(base_cost, is_rubble);
+    let repair_color = if pile_scrap >= rcost {
+        LABEL_COLOR
+    } else {
+        Color::srgb(0.9, 0.3, 0.3)
+    };
+    spawn_text_line_world(
+        world,
+        panel,
+        format!("[R] Repair: ${rcost}"),
+        repair_color,
+        13.0,
+    );
+}
+
+/// Sell hint, shown on every placed tower. Reads `TowerCost` for the refund
+/// amount.
+fn render_sell_section(world: &mut World, panel: Entity, tower: Entity, _pile_scrap: u32) {
+    let Some(cost) = world.entity(tower).get::<TowerCost>().map(|c| c.0) else {
+        return;
+    };
+    let refund = sell_refund(cost);
+    spawn_text_line_world(
+        world,
+        panel,
+        format!("[RMB] Sell: +${refund}"),
+        HINT_COLOR,
+        11.0,
+    );
+}
+
+/// Register the four built-in panel sections (targeting, magnet, repair,
+/// sell). Step 7 of issue #81 keeps these in shared code; future steps can
+/// move them into per-tower plugins.
+pub fn register_default_panel_sections(mut sections: ResMut<PanelSections>) {
+    sections.add(PanelSection {
+        order: 100,
+        render: render_targeting_section,
+    });
+    sections.add(PanelSection {
+        order: 200,
+        render: render_magnet_section,
+    });
+    sections.add(PanelSection {
+        order: 300,
+        render: render_repair_section,
+    });
+    sections.add(PanelSection {
+        order: 400,
+        render: render_sell_section,
+    });
+}
+
 /// Rebuild the upgrade panel contents when the inspected tower changes.
 ///
-/// Renders only from `PanelStats` (current + next-tier stats) plus tower-agnostic
-/// interactive buttons (Upgrade, Magnet, Repair) whose color depends on
-/// `pile_scrap`. No tower-type-specific component queries.
+/// Renders the shared header + `PanelStats` (common + extra stat lines) plus
+/// the hardcoded primary-tier upgrade button. All other interactive controls
+/// are contributed via `PanelSections`; sections render at sync time with
+/// full world access so they can query their own components.
 #[allow(clippy::type_complexity)]
 pub fn update_upgrade_panel(
     mut commands: Commands,
     inspected: Res<InspectedTower>,
-    towers: Query<
-        (
-            &TowerName,
-            &TowerTier,
-            &TowerCost,
-            &BaseCost,
-            &PanelStats,
-            Option<&TargetingMode>,
-            Option<&UpgradeTrack<Magnet>>,
-            Option<&ScrapCollector>,
-            Option<&TowerHealth>,
-            &TowerState,
-        ),
-        With<Tower>,
-    >,
+    towers: Query<(&TowerName, &TowerTier, &BaseCost, &PanelStats, &TowerState), With<Tower>>,
     panel_stats_check: Query<(), (With<Tower>, Changed<PanelStats>)>,
     mut panel_query: Query<(Entity, &mut Visibility), With<UpgradePanel>>,
     pile_scrap: Res<PileScrap>,
@@ -1111,19 +1342,7 @@ pub fn update_upgrade_panel(
         return;
     };
 
-    let Ok((
-        name,
-        tier,
-        cost,
-        base_cost,
-        panel,
-        targeting_mode,
-        magnet_track,
-        collector,
-        tower_health,
-        tower_state,
-    )) = towers.get(entity)
-    else {
+    let Ok((name, tier, base_cost, panel, tower_state)) = towers.get(entity) else {
         *vis = Visibility::Hidden;
         return;
     };
@@ -1136,6 +1355,10 @@ pub fn update_upgrade_panel(
     *vis = Visibility::Inherited;
 
     commands.entity(panel_entity).despawn_related::<Children>();
+
+    // Capture the data the deferred section pass will need.
+    let pile_amount = pile_scrap.amount;
+    let tower = entity;
 
     commands.entity(panel_entity).with_children(|parent| {
         // Header
@@ -1151,13 +1374,8 @@ pub fn update_upgrade_panel(
             spawn_text_line(parent, format_stat(line), line.color, 13.0);
         }
 
-        // Targeting mode label + inline buttons (replaces world-space radial menu).
-        if let Some(mode) = targeting_mode {
-            spawn_text_line(parent, format!("TARGET: {}", mode.name()), STAT_COLOR, 13.0);
-            spawn_targeting_buttons(parent, entity, *mode);
-        }
-
-        // Upgrade button / next-tier preview / max-tier banner.
+        // Upgrade button / next-tier preview / max-tier banner. Stays
+        // hardcoded for now; step 9 will migrate it to a panel section.
         if *tower_state == TowerState::Rubble {
             spawn_text_line(
                 parent,
@@ -1183,7 +1401,7 @@ pub fn update_upgrade_panel(
             }
 
             let ucost = upgrade_cost(base_cost.0, tier.0);
-            let cost_color = if pile_scrap.amount >= ucost {
+            let cost_color = if pile_amount >= ucost {
                 LABEL_COLOR
             } else {
                 Color::srgb(0.9, 0.3, 0.3)
@@ -1192,98 +1410,18 @@ pub fn update_upgrade_panel(
         } else {
             spawn_text_line(parent, "\nMAX TIER", Color::srgb(0.4, 0.9, 0.4), 13.0);
         }
-
-        // Magnet upgrade button: any tower with `UpgradeTrack<Magnet>` shows
-        // the upgrade button; any tower with a ScrapCollector but no track
-        // shows MAX.
-        if let Some(mt) = magnet_track {
-            if mt.tier < Magnet::MAX_TIER {
-                let mcost = Magnet::COSTS[mt.tier as usize];
-                let mcost_color = if pile_scrap.amount >= mcost {
-                    LABEL_COLOR
-                } else {
-                    Color::srgb(0.9, 0.3, 0.3)
-                };
-                spawn_text_line(parent, format!("[M] Magnet: ${mcost}"), mcost_color, 13.0);
-            } else {
-                spawn_text_line(parent, "MAGNET: MAX", Color::srgb(0.4, 0.7, 1.0), 13.0);
-            }
-        } else if collector.is_some() {
-            spawn_text_line(parent, "MAGNET: MAX", Color::srgb(0.4, 0.7, 1.0), 13.0);
-        }
-
-        // Repair button (only when damaged)
-        if let Some(health) = tower_health
-            && health.current < health.max
-        {
-            let is_rubble = *tower_state == TowerState::Rubble;
-            let rcost = repair_cost(base_cost.0, is_rubble);
-            let repair_color = if pile_scrap.amount >= rcost {
-                LABEL_COLOR
-            } else {
-                Color::srgb(0.9, 0.3, 0.3)
-            };
-            spawn_text_line(parent, format!("[R] Repair: ${rcost}"), repair_color, 13.0);
-        }
-
-        // Sell hint
-        spawn_text_line(
-            parent,
-            format!("[RMB] Sell: +${}", sell_refund(cost.0)),
-            HINT_COLOR,
-            11.0,
-        );
-
-        spawn_text_line(parent, "[ESC] Close", HINT_COLOR, 11.0);
     });
-}
 
-/// Spawn one row of 4 targeting-mode buttons (C/H/L/F) inside the panel.
-/// Each button carries a `TargetingButton { tower, mode }` so
-/// `handle_targeting_button` can apply the chosen mode on click.
-fn spawn_targeting_buttons(
-    parent: &mut ChildSpawnerCommands,
-    tower: Entity,
-    current_mode: TargetingMode,
-) {
-    parent
-        .spawn(Node {
-            flex_direction: FlexDirection::Row,
-            column_gap: Val::Px(4.0),
-            margin: UiRect::top(Val::Px(2.0)),
-            ..default()
-        })
-        .with_children(|row| {
-            for &mode in &TargetingMode::ALL {
-                let bg = if mode == current_mode {
-                    Color::srgba(0.3, 0.7, 0.3, 0.8)
-                } else {
-                    Color::srgba(0.2, 0.2, 0.2, 0.7)
-                };
-                row.spawn((
-                    Button,
-                    Node {
-                        width: Val::Px(28.0),
-                        height: Val::Px(22.0),
-                        justify_content: JustifyContent::Center,
-                        align_items: AlignItems::Center,
-                        ..default()
-                    },
-                    BackgroundColor(bg),
-                    TargetingButton { tower, mode },
-                ))
-                .with_children(|btn| {
-                    btn.spawn((
-                        Text::new(mode.label()),
-                        TextColor(Color::WHITE),
-                        TextFont {
-                            font_size: 13.0,
-                            ..default()
-                        },
-                    ));
-                });
-            }
-        });
+    // Run registered panel sections at the next sync point. Sections see
+    // full world access so they can query their own components without
+    // forcing the shared system to do so. The ESC hint is appended last.
+    commands.queue(move |world: &mut World| {
+        let sections: Vec<PanelSection> = world.resource::<PanelSections>().sections.clone();
+        for section in &sections {
+            (section.render)(world, panel_entity, tower, pile_amount);
+        }
+        spawn_text_line_world(world, panel_entity, "[ESC] Close", HINT_COLOR, 11.0);
+    });
 }
 
 #[cfg(test)]

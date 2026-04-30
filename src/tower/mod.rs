@@ -145,6 +145,7 @@ impl Plugin for TowerPlugin {
         app.init_resource::<placement::SelectedTower>()
             .init_resource::<TowerRegistry>()
             .init_resource::<upgrade::InspectedTower>()
+            .init_resource::<upgrade::PanelSections>()
             .add_message::<upgrade::TierChanged>()
             .add_message::<upgrade::UpgradeApplied<upgrade::Magnet>>()
             .add_observer(systems::default_fire_observer)
@@ -156,6 +157,7 @@ impl Plugin for TowerPlugin {
                 scrap_magnet::ScrapMagnetPlugin,
                 chain_lightning::ChainLightningPlugin,
             ))
+            .add_systems(Startup, upgrade::register_default_panel_sections)
             .add_systems(PostStartup, sort_blueprints)
             .add_systems(OnEnter(GameState::Playing), upgrade::setup_upgrade_panel)
             .add_systems(
