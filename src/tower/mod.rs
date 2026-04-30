@@ -12,6 +12,7 @@ pub mod chain_lightning;
 pub mod components;
 pub mod events;
 pub mod explosive;
+pub mod mortar;
 pub mod placement;
 pub mod railgun;
 pub mod scrap_gun;
@@ -281,6 +282,7 @@ impl Plugin for TowerPlugin {
                 railgun::RailgunPlugin,
                 scrap_magnet::ScrapMagnetPlugin,
                 chain_lightning::ChainLightningPlugin,
+                mortar::MortarPlugin,
             ))
             .add_systems(Startup, upgrade::register_default_panel_sections)
             .add_systems(PostStartup, sort_blueprints)
