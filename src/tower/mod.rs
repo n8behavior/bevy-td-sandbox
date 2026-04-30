@@ -146,6 +146,7 @@ impl Plugin for TowerPlugin {
             .init_resource::<TowerRegistry>()
             .init_resource::<upgrade::InspectedTower>()
             .add_message::<upgrade::TierChanged>()
+            .add_observer(systems::default_fire_observer)
             .add_plugins((
                 scrap_gun::ScrapGunPlugin,
                 tar_pit::TarPitPlugin,

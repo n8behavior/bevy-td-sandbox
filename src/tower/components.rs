@@ -286,6 +286,13 @@ impl Turret {
 #[derive(Component, Clone, Copy)]
 pub struct TowerColor(pub Color);
 
+/// Marker for towers that supply their own `TowerWantsToFire` observer and
+/// must opt out of the default projectile-spawning observer. Bespoke firing
+/// behavior (e.g. an arcing mortar shell, a multi-shot burst) lives in the
+/// per-tower module's plugin.
+#[derive(Component)]
+pub struct CustomFire;
+
 // ---------------------------------------------------------------------------
 // Tower registry
 // ---------------------------------------------------------------------------

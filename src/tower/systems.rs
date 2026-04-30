@@ -13,7 +13,7 @@ use crate::projectile::components::{AoEPayload, Projectile, TrailEmitter};
 use crate::stats::resources::RunStats;
 
 use super::components::*;
-use super::events::TowerFired;
+use super::events::{TowerFired, TowerWantsToFire};
 use super::upgrade::degradation_color;
 
 // ---------------------------------------------------------------------------
@@ -179,7 +179,7 @@ pub(crate) fn magnetic_pull(
     direction * pull_speed * strength * dt
 }
 
-fn spawn_projectile(
+pub(crate) fn spawn_projectile(
     commands: &mut Commands,
     visuals: &ProjectileVisuals,
     tower_tf: &Transform,
@@ -216,7 +216,11 @@ fn spawn_projectile(
 // ---------------------------------------------------------------------------
 
 /// Turret state machine: targeting, aiming, firing.
-/// Only runs on towers with the `Turret` capability + `ProjectileVisuals`.
+///
+/// On a `Fire` decision the system triggers `TowerWantsToFire` rather than
+/// spawning a projectile directly. The default `default_fire_observer`
+/// handles the spawn for stock turrets; per-tower observers (with the
+/// `CustomFire` marker) can override the firing behavior.
 pub fn turret_state_machine(
     mut commands: Commands,
     mut towers: Query<
@@ -224,8 +228,6 @@ pub fn turret_state_machine(
             Entity,
             &Transform,
             &mut Turret,
-            &ProjectileVisuals,
-            Option<&AoEOnHit>,
             Option<&TargetingMode>,
             Option<&TowerHealth>,
             &TowerState,
@@ -238,9 +240,7 @@ pub fn turret_state_machine(
     config: Res<GridConfig>,
 ) {
     let pile_center_world = grid_to_world_cfg(pile_state.center, &config);
-    for (entity, tower_tf, mut turret, visuals, aoe, targeting, tower_health, tower_state) in
-        &mut towers
-    {
+    for (entity, tower_tf, mut turret, targeting, tower_health, tower_state) in &mut towers {
         if !tower_state.is_operational() {
             continue;
         }
@@ -287,12 +287,38 @@ pub fn turret_state_machine(
                     TurretPhase::Acquiring { target } | TurretPhase::Tracking { target } => target,
                     TurretPhase::Idle => unreachable!("Fire decision implies a locked target"),
                 };
-                spawn_projectile(&mut commands, visuals, tower_tf, damage * eff, target, aoe);
+                commands.trigger(TowerWantsToFire {
+                    entity,
+                    target,
+                    damage: damage * eff,
+                });
                 turret.cooldown.0.reset();
                 commands.trigger(TowerFired { entity });
             }
         }
     }
+}
+
+/// Default observer for `TowerWantsToFire`: spawns a standard projectile
+/// from the tower's `ProjectileVisuals`, copying the optional `AoEOnHit`
+/// payload onto the projectile. Towers with the `CustomFire` marker are
+/// skipped; their own per-tower observers handle the spawn.
+pub fn default_fire_observer(
+    trigger: On<TowerWantsToFire>,
+    mut commands: Commands,
+    towers: Query<(&Transform, &ProjectileVisuals, Option<&AoEOnHit>), Without<CustomFire>>,
+) {
+    let Ok((tower_tf, visuals, aoe)) = towers.get(trigger.entity) else {
+        return;
+    };
+    spawn_projectile(
+        &mut commands,
+        visuals,
+        tower_tf,
+        trigger.damage,
+        trigger.target,
+        aoe,
+    );
 }
 
 // ---------------------------------------------------------------------------
