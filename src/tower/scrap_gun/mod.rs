@@ -57,6 +57,7 @@ fn register(mut registry: ResMut<TowerRegistry>) {
             let damage = 10.0;
             let range = 80.0;
             let cooldown = 1.0;
+            let aim_tolerance = 0.15;
             let color = Color::srgb(0.7, 0.7, 0.3);
             let stats = TowerStats { damage, range };
             let collect_range = 30.0;
@@ -72,7 +73,7 @@ fn register(mut registry: ResMut<TowerRegistry>) {
                 BlocksNav,
                 TargetingMode::default(),
                 stats,
-                AimTolerance(0.15),
+                AimTolerance(aim_tolerance),
                 TurretState::with_cooldown(cooldown),
                 ProjectileVisuals {
                     speed: 200.0,
@@ -96,6 +97,10 @@ fn register(mut registry: ResMut<TowerRegistry>) {
                     slow_factor: 1.0,
                     color,
                 },
+            ));
+            cmds.insert((
+                Turret::new(Damage(damage), Range(range), cooldown, aim_tolerance),
+                TowerColor(color),
             ));
             let max_hp = 50.0 * TOWER_HP_COST_MULT;
             cmds.insert(TowerHealth {

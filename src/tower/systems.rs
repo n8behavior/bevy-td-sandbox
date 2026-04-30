@@ -496,6 +496,34 @@ pub fn update_tower_degradation_visual(
     }
 }
 
+/// Mirrors the legacy turret-state components (`TowerStats`, `TurretState`,
+/// `AimTolerance`) into the new `Turret` capability aggregate. The legacy
+/// components remain the source of truth during the issue #81 migration step
+/// 1; this system keeps `Turret` in lockstep so subsequent steps can flip
+/// readers and writers to the new aggregate without any behavior change.
+///
+/// Runs only when at least one of the source components changes for an
+/// entity, so the per-frame cost is bounded by upgrades + state-machine
+/// transitions, not the tower count.
+pub fn sync_turret_from_legacy(
+    mut q: Query<
+        (&TowerStats, &TurretState, &AimTolerance, &mut Turret),
+        Or<(
+            Changed<TowerStats>,
+            Changed<TurretState>,
+            Changed<AimTolerance>,
+        )>,
+    >,
+) {
+    for (stats, state, aim, mut turret) in &mut q {
+        turret.damage = Damage(stats.damage);
+        turret.range = Range(stats.range);
+        turret.cooldown.0 = state.cooldown.clone();
+        turret.aim_tolerance = aim.0;
+        turret.phase = state.phase;
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

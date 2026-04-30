@@ -232,7 +232,7 @@ impl TurretState {
     }
 }
 
-#[derive(Default, Debug, PartialEq)]
+#[derive(Default, Debug, PartialEq, Clone, Copy)]
 pub enum TurretPhase {
     #[default]
     Idle,
@@ -243,6 +243,87 @@ pub enum TurretPhase {
         target: Entity,
     },
 }
+
+// ---------------------------------------------------------------------------
+// Composable capabilities (new model — issue #81)
+//
+// During the migration these coexist with the legacy `TowerStats`,
+// `TurretState`, and `AimTolerance` components. The legacy components remain
+// the source of truth in step 1; `sync_turret_from_legacy` keeps `Turret` in
+// lockstep so future steps can flip readers/writers to the new aggregate
+// without behavior change.
+// ---------------------------------------------------------------------------
+
+/// Per-shot damage value. Domain newtype — used as a field on capability
+/// components (e.g. `Turret.damage`, `AoeOnHit.damage`), not as a component
+/// on its own.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct Damage(pub f32);
+
+/// Distance in world units. Domain newtype — used as a field on capability
+/// components (e.g. `Turret.range`, `ScrapCollector.range`,
+/// `ChainLightning.arc_range`). The kind of range is implicit in the field's
+/// home; no generic `Range<K>` is needed because each capability owns the
+/// range that means something to it.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct Range(pub f32);
+
+/// One-shot timer that gates a periodic action (firing, reloading). Domain
+/// newtype — used as a field on capability components, not a component on its
+/// own.
+#[derive(Clone, Debug)]
+pub struct Cooldown(pub Timer);
+
+impl Cooldown {
+    /// Creates a one-shot cooldown of `secs` seconds, pre-ticked to fully
+    /// elapsed so the first action fires immediately on aim lock.
+    pub fn from_secs(secs: f32) -> Self {
+        let mut t = Timer::from_seconds(secs, TimerMode::Once);
+        t.tick(t.duration());
+        Self(t)
+    }
+}
+
+/// Movement or projectile speed in world units per second. Domain newtype.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct Speed(pub f32);
+
+/// Aggregate firing capability for projectile-launching towers. Owns the
+/// damage, range, cooldown, aiming tolerance, and current phase as
+/// fields — replacing the wide-flat `TowerStats` + `TurretState` + `AimTolerance`
+/// trio. Custom turret-like behaviors (e.g. a Mortar Reloading phase) extend
+/// purely additively by inserting an extra component and a per-tower system
+/// that mutates `phase` before the shared `turret_state_machine` runs.
+#[derive(Component)]
+pub struct Turret {
+    pub damage: Damage,
+    pub range: Range,
+    pub cooldown: Cooldown,
+    pub aim_tolerance: f32,
+    pub phase: TurretPhase,
+}
+
+impl Turret {
+    /// Builds a `Turret` from the discrete properties supplied at spawn time.
+    /// `cooldown_secs` becomes a fully-elapsed one-shot timer so the first
+    /// shot fires on aim lock.
+    pub fn new(damage: Damage, range: Range, cooldown_secs: f32, aim_tolerance: f32) -> Self {
+        Self {
+            damage,
+            range,
+            cooldown: Cooldown::from_secs(cooldown_secs),
+            aim_tolerance,
+            phase: TurretPhase::Idle,
+        }
+    }
+}
+
+/// Immutable display color of a tower's body sprite. Used by the upgrade-flash
+/// reset, the degradation tint, and the tier-flash transition. Replaces
+/// `BaseStats.color` as the canonical source of a tower's "default look" so
+/// the wide-flat `BaseStats` struct can be retired.
+#[derive(Component, Clone, Copy)]
+pub struct TowerColor(pub Color);
 
 // ---------------------------------------------------------------------------
 // Tower registry
