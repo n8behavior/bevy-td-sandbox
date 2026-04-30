@@ -1,5 +1,31 @@
 # Changelog
 
+## v0.4.0
+
+- Step 10: Mortar acceptance scaffold (issue #81 acceptance)
+- Step 9: Lifecycle EntityEvents + per-capability ring observers (issue #81)
+- Step 8: TowerTier → UpgradeTrack<Primary>; primary upgrade via track machinery (issue #81)
+- Step 7: PanelSections registry + targeting/magnet/repair/sell sections (issue #81)
+- Step 6: Generic UpgradeKind / UpgradeTrack<K>; migrate Magnet (issue #81)
+- Step 5: TowerWantsToFire event + default observer (issue #81)
+- Step 4: Delete BaseStats, BaseMagnetRange, BaseArcRange (issue #81)
+- Step 3: Tier-scaling via TierChanged message + per-capability scalers (issue #81)
+- Step 2: Make Turret/SlowOnHit/ChainLightning authoritative; delete legacy (issue #81)
+- Step 1: Add Turret aggregate + TowerColor (issue #81)
+- Refactor tower modules to be fully self-contained
+- Bump grid from 1.0.0 to 1.0.1 in the cargo group across 1 directory (#80)
+- Upgrade actions/checkout v4 → v6 to fix Node.js deprecation warnings
+- Use gh run watch with cancelled-run filtering for visible CI output
+- Fix: dereference annotated tag to commit SHA for CI lookup
+- Use annotated tags for --follow-tags compatibility
+- Ship: skip commit when tree is clean (resume case)
+- Poll for CI success on SHA instead of watching a specific run
+- Fix CI race: single push with --follow-tags
+- Quiet git output in release ship recipe
+- Release v0.3.5
+- Add early release guard, quiet CI output, watch deploy workflow
+
+
 ## v0.3.5
 
 - Add early release guard, quiet CI output, watch deploy workflow
