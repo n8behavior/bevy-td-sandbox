@@ -1,12 +1,4 @@
-use crate::enemy::components::EnemyType;
 use bevy::prelude::*;
-
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum BossTrait {
-    Regeneration,
-    Armor,
-    Splitting,
-}
 
 #[derive(Resource)]
 pub struct WaveManager {
@@ -17,12 +9,14 @@ pub struct WaveManager {
     pub spawn_queue: Vec<SpawnEntry>,
 }
 
-/// A single enemy to spawn (flattened from WaveEnemy × count).
+/// A single enemy to spawn (flattened from `WaveEnemy` × count).
+///
+/// Carries only the blueprint name. Wave-difficulty scaling is applied
+/// at spawn time via the `EnemySpawned` event — wave/ doesn't compute
+/// multipliers anymore. Capabilities (e.g. armor, splitting) are
+/// declared by the blueprint itself.
 pub struct SpawnEntry {
-    pub enemy_type: EnemyType,
-    pub health_multiplier: f32,
-    pub speed_multiplier: f32,
-    pub boss_trait: Option<BossTrait>,
+    pub enemy_blueprint: &'static str,
 }
 
 pub struct WaveConfig {
@@ -31,9 +25,6 @@ pub struct WaveConfig {
 }
 
 pub struct WaveEnemy {
-    pub enemy_type: EnemyType,
+    pub enemy_blueprint: &'static str,
     pub count: u32,
-    pub health_multiplier: f32,
-    pub speed_multiplier: f32,
-    pub boss_trait: Option<BossTrait>,
 }

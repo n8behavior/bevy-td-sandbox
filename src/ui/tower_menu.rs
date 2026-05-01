@@ -1,9 +1,9 @@
-use crate::enemy::components::Enemy;
+use crate::enemy::components::{Enemy, EnemyRegistry};
 use crate::states::{GameMode, GameState, PlayPhase};
 use crate::tower::components::{TargetingMode, TowerRegistry};
 use crate::tower::placement::SelectedTower;
 use crate::ui::hud::{HudPanel, HudState};
-use crate::wave::resources::{BossTrait, WaveManager};
+use crate::wave::resources::WaveManager;
 use bevy::prelude::*;
 
 const LABEL_COLOR: Color = Color::srgb(0.95, 0.85, 0.5);
@@ -191,6 +191,7 @@ pub fn update_wave_preview(
     phase: Option<Res<State<PlayPhase>>>,
     hud_state: Res<HudState>,
     enemies: Query<(), With<Enemy>>,
+    registry: Res<EnemyRegistry>,
     mut panel_query: Query<(Entity, &mut Visibility), With<WavePreviewPanel>>,
 ) {
     let Ok((panel_entity, mut vis)) = panel_query.single_mut() else {
@@ -282,21 +283,15 @@ pub fn update_wave_preview(
         ));
 
         for we in &wave.enemies {
-            let base_hp = we.enemy_type.base_health() * we.health_multiplier;
-            let base_spd = we.enemy_type.base_speed() * we.speed_multiplier;
-            let color = we.enemy_type.ui_color();
-            let trait_label = match we.boss_trait {
-                Some(BossTrait::Regeneration) => " [REGEN]",
-                Some(BossTrait::Armor) => " [ARMORED]",
-                Some(BossTrait::Splitting) => " [SPLITTING]",
-                None => "",
+            // Look up presentation metadata from the registry; fall back
+            // to a neutral label if a blueprint isn't registered yet.
+            let (color, label) = match registry.lookup(we.enemy_blueprint) {
+                Some(bp) => (bp.ui_color, bp.name),
+                None => (STAT_COLOR, we.enemy_blueprint),
             };
 
             parent.spawn((
-                Text::new(format!(
-                    " {:>2}x {:?}  HP:{:.0}  SPD:{:.0}{trait_label}",
-                    we.count, we.enemy_type, base_hp, base_spd,
-                )),
+                Text::new(format!(" {:>2}x {label}", we.count)),
                 TextColor(color),
                 TextFont {
                     font_size: 13.0,

@@ -1,112 +1,71 @@
+//! Enemy module components.
+//!
+//! This file holds **shared scaffolding** every enemy is built from
+//! (`Enemy`, `Health`, `MoveSpeed`, animations, the `HealthBar` child) plus
+//! the universal **capability components** any blueprint can opt into
+//! (`Regeneration`, `Armor`, `SplitsOnDeath`, `StealsScrap`, `AttacksTowers`).
+//!
+//! Per-enemy markers and bespoke capabilities live in each enemy's own
+//! sub-module (e.g. `enemy::brute::components::BruteAttack`).
+//!
+//! The blueprint registry (`EnemyBlueprint`, `EnemyRegistry`) lets per-type
+//! plugins register themselves so wave/endless code can spawn enemies by
+//! name (`registry.lookup("Shambler")`) without touching shared code.
+//! This mirrors `tower::components::TowerBlueprint`/`TowerRegistry`.
+
+use bevy::ecs::system::EntityCommands;
+use bevy::platform::collections::HashMap;
 use bevy::prelude::*;
 
+// ---------------------------------------------------------------------------
+// Core marker + identity
+// ---------------------------------------------------------------------------
+
+/// Marker for any active enemy entity.
 #[derive(Component)]
 pub struct Enemy;
 
-#[derive(Component, Clone, Copy, PartialEq, Eq, Debug)]
-pub enum EnemyType {
-    Shambler,
-    Runner,
-    Brute,
-    Boss,
-}
+/// Blueprint name copied onto the entity at spawn time. Observers that need
+/// to bucket events by enemy type (stats, debug logs, UI) read this instead
+/// of matching on a central enum. Mirrors `tower::components::TowerName`.
+#[derive(Component, Clone, Copy, Debug)]
+pub struct EnemyName(pub &'static str);
 
-/// Per-variant stat block for enemies. Consolidates color, health, speed,
-/// loot value, and size so adding a new variant requires one update.
-pub struct EnemyStats {
-    pub color: Color,
-    pub ui_color: Color,
-    pub health: f32,
-    pub speed: f32,
-    pub loot: u32,
-    pub size: f32,
-}
+// ---------------------------------------------------------------------------
+// Shared per-entity components
+// ---------------------------------------------------------------------------
 
-impl EnemyType {
-    pub fn stats(&self) -> EnemyStats {
-        match self {
-            EnemyType::Shambler => EnemyStats {
-                color: Color::srgb(0.4, 0.7, 0.3),
-                ui_color: Color::srgb(0.5, 0.9, 0.4),
-                health: 50.0,
-                speed: 40.0,
-                loot: 10,
-                size: 14.0,
-            },
-            EnemyType::Runner => EnemyStats {
-                color: Color::srgb(0.9, 0.8, 0.2),
-                ui_color: Color::srgb(1.0, 0.9, 0.3),
-                health: 30.0,
-                speed: 80.0,
-                loot: 15,
-                size: 10.0,
-            },
-            EnemyType::Brute => EnemyStats {
-                color: Color::srgb(0.6, 0.2, 0.5),
-                ui_color: Color::srgb(0.8, 0.4, 0.7),
-                health: 150.0,
-                speed: 25.0,
-                loot: 30,
-                size: 18.0,
-            },
-            EnemyType::Boss => EnemyStats {
-                color: Color::srgb(0.8, 0.1, 0.1),
-                ui_color: Color::srgb(1.0, 0.3, 0.3),
-                health: 350.0,
-                speed: 20.0,
-                loot: 150,
-                size: 28.0,
-            },
-        }
-    }
-
-    pub fn color(&self) -> Color {
-        self.stats().color
-    }
-
-    pub fn base_health(&self) -> f32 {
-        self.stats().health
-    }
-
-    pub fn base_speed(&self) -> f32 {
-        self.stats().speed
-    }
-
-    pub fn loot_value(&self) -> u32 {
-        self.stats().loot
-    }
-
-    pub fn ui_color(&self) -> Color {
-        self.stats().ui_color
-    }
-
-    pub fn size(&self) -> f32 {
-        self.stats().size
-    }
-}
-
+/// Hit points. Optional — a "Ghost" enemy that can't be damaged simply
+/// omits this component, and the shared damage/death systems no-op for it.
 #[derive(Component)]
 pub struct Health {
     pub current: f32,
     pub max: f32,
 }
 
+/// Movement speed. `current` is what `enemy_movement` consumes each tick;
+/// `apply_slow_effects` resets it from `base` and applies any active slow.
+/// Optional — stationary enemies omit it.
 #[derive(Component)]
 pub struct MoveSpeed {
     pub base: f32,
     pub current: f32,
 }
 
+/// Active slow effect. While present, `current` speed = `base * factor`.
+/// Removed when the timer finishes.
 #[derive(Component)]
 pub struct SlowEffect {
     pub factor: f32,
     pub remaining: Timer,
 }
 
+/// Loot dropped on death (in scrap units). Read by the default
+/// `EnemyDied` observer that spawns a `ScrapDrop`.
 #[derive(Component)]
 pub struct LootValue(pub u32);
 
-/// Scale-up animation on spawn (enemies & towers).
+/// Scale-up animation on spawn (enemies, towers, scrap drops).
 #[derive(Component)]
 pub struct SpawnAnimation {
     pub timer: Timer,
@@ -118,63 +77,23 @@ pub struct DeathAnimation {
     pub timer: Timer,
 }
 
-/// Per-cell random jitter so enemies don't all walk the exact same pixel path.
+/// Per-cell random jitter so enemies don't all walk the exact same pixel
+/// path. Refreshed each time the agent advances to a new cell.
 #[derive(Component)]
 pub struct CellJitter(pub Vec2);
 
-/// Brief white flash on damage.
+/// Brief white flash on damage; restores `original_color` when finished.
 #[derive(Component)]
 pub struct DamageFlash {
     pub timer: Timer,
     pub original_color: Color,
 }
 
-/// Expanding/fading AoE burst visual.
+/// Expanding/fading AoE burst visual (shader-driven circle).
 #[derive(Component)]
 pub struct AoEBurst {
     pub timer: Timer,
     pub max_radius: f32,
-}
-
-#[derive(Component, Default, PartialEq, Eq, Debug, Clone, Copy)]
-pub enum EnemyState {
-    #[default]
-    Approaching,
-    Fleeing,
-}
-
-/// Scrap stolen from the pile that the enemy is carrying.
-#[derive(Component)]
-pub struct StolenScrap(pub u32);
-
-/// Marker for the visual decal on enemies carrying stolen scrap.
-#[derive(Component)]
-pub struct ScrapCarrierDecal;
-
-/// Boss trait: slow HP recovery over time.
-#[derive(Component)]
-pub struct Regeneration {
-    pub rate: f32,
-}
-
-/// Boss trait: flat damage reduction per hit (minimum 1 damage).
-#[derive(Component)]
-pub struct Armor {
-    pub reduction: f32,
-}
-
-/// Boss trait: on death, spawn smaller enemies at this position.
-#[derive(Component)]
-pub struct SplitsOnDeath {
-    pub count: u32,
-}
-
-/// Brute tower attack: cooldown timer and damage per hit.
-/// Only present on Brute enemies.
-#[derive(Component)]
-pub struct BruteAttack {
-    pub cooldown: Timer,
-    pub damage: f32,
 }
 
 /// Visual health bar rendered above an enemy sprite.
@@ -183,56 +102,122 @@ pub struct HealthBar {
     pub y_offset: f32,
 }
 
+// ---------------------------------------------------------------------------
+// Scrap-stealer capability
+// ---------------------------------------------------------------------------
+
+/// Capability marker for enemies whose goal is "approach pile → steal
+/// scrap → flee to map edge". Without this marker, `enemy_reached_pile`
+/// and `enemy_escaped` skip the entity.
+#[derive(Component)]
+pub struct StealsScrap;
+
+/// State machine for `StealsScrap` enemies.
+///
+/// `Approaching` → `Fleeing` once the pile is reached. Other capability
+/// markers (e.g. `AttacksTowers`) drive different goals and don't read
+/// this component.
+#[derive(Component, Default, PartialEq, Eq, Debug, Clone, Copy)]
+pub enum EnemyState {
+    #[default]
+    Approaching,
+    Fleeing,
+}
+
+/// Scrap stolen from the pile that a `StealsScrap` enemy is carrying.
+#[derive(Component)]
+pub struct StolenScrap(pub u32);
+
+/// Visual decal child indicating an enemy is carrying stolen scrap.
+#[derive(Component)]
+pub struct ScrapCarrierDecal;
+
+// ---------------------------------------------------------------------------
+// Universal capabilities — any blueprint can opt in by inserting these
+// ---------------------------------------------------------------------------
+
+/// Heal over time. Driven by the shared `regeneration_system`.
+#[derive(Component)]
+pub struct Regeneration {
+    pub rate: f32,
+}
+
+/// Flat damage reduction per hit (minimum 1 damage). Read by
+/// `projectile/systems.rs::apply_damage`.
+#[derive(Component)]
+pub struct Armor {
+    pub reduction: f32,
+}
+
+/// On death, spawn `count` enemies of `spawn_blueprint` at the death
+/// position. Made universal in this refactor — the splitter blueprint
+/// chooses what it splits into instead of hardcoding "Shambler".
+#[derive(Component)]
+pub struct SplitsOnDeath {
+    pub count: u32,
+    pub spawn_blueprint: &'static str,
+}
+
+/// Capability for enemies that attack adjacent towers. Carries the
+/// per-enemy attack values so different attackers can have different
+/// cooldowns and damage. The shared `attacks_towers_system` filters by
+/// this component and applies damage to nearby tower entities.
+#[derive(Component)]
+pub struct AttacksTowers {
+    pub cooldown: Timer,
+    pub damage: f32,
+    pub range: f32,
+}
+
+// ---------------------------------------------------------------------------
+// Blueprint registry — direct analog of TowerBlueprint / TowerRegistry
+// ---------------------------------------------------------------------------
+
+/// A blueprint describing how to spawn one enemy type. Per-enemy plugins
+/// push one of these into `EnemyRegistry` during startup. Mirrors
+/// `tower::components::TowerBlueprint`.
+///
+/// Blueprints carry **only registry metadata** (name, colors). All
+/// gameplay components are inserted by `spawn_fn` so each enemy can opt
+/// in or out freely. A "Ghost" enemy that can't take damage simply omits
+/// `Health` from its `spawn_fn`.
+pub struct EnemyBlueprint {
+    pub name: &'static str,
+    /// Representative color for menu/wave-info displays.
+    pub color: Color,
+    /// Contrast color for end-of-run kill counts and other panel UI.
+    pub ui_color: Color,
+    /// Inserts every gameplay component (markers, Sprite, Health,
+    /// MoveSpeed, capabilities, etc.) onto the freshly spawned entity.
+    pub spawn_fn: fn(&mut EntityCommands),
+}
+
+/// Registry of all available enemy types. Per-enemy plugins push their
+/// blueprints during startup; wave/endless/spawn helpers look up entries
+/// by name.
+#[derive(Resource, Default)]
+pub struct EnemyRegistry {
+    pub blueprints: Vec<EnemyBlueprint>,
+}
+
+impl EnemyRegistry {
+    /// Find a blueprint by exact name match. Returns `None` if no entry
+    /// exists — callers should treat this as a missing registration.
+    pub fn lookup(&self, name: &str) -> Option<&EnemyBlueprint> {
+        self.blueprints.iter().find(|b| b.name == name)
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Run-stat support: kill counts keyed by blueprint name
+// ---------------------------------------------------------------------------
+
+/// Convenience type for stats observers and end-of-run UIs.
+pub type EnemyKillCounts = HashMap<&'static str, u32>;
+
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    const ALL_TYPES: [EnemyType; 4] = [
-        EnemyType::Shambler,
-        EnemyType::Runner,
-        EnemyType::Brute,
-        EnemyType::Boss,
-    ];
-
-    #[test]
-    fn all_types_have_positive_stats() {
-        for ty in &ALL_TYPES {
-            assert!(ty.base_health() > 0.0, "{ty:?} health");
-            assert!(ty.base_speed() > 0.0, "{ty:?} speed");
-            assert!(ty.loot_value() > 0, "{ty:?} loot");
-            assert!(ty.size() > 0.0, "{ty:?} size");
-        }
-    }
-
-    #[test]
-    fn runner_faster_than_shambler() {
-        assert!(EnemyType::Runner.base_speed() > EnemyType::Shambler.base_speed());
-    }
-
-    #[test]
-    fn boss_has_highest_health() {
-        let boss_hp = EnemyType::Boss.base_health();
-        for ty in &ALL_TYPES {
-            assert!(boss_hp >= ty.base_health(), "{ty:?} has more HP than Boss");
-        }
-    }
-
-    #[test]
-    fn boss_has_highest_loot() {
-        let boss_loot = EnemyType::Boss.loot_value();
-        for ty in &ALL_TYPES {
-            assert!(
-                boss_loot >= ty.loot_value(),
-                "{ty:?} has more loot than Boss"
-            );
-        }
-    }
-
-    #[test]
-    fn brute_has_second_highest_loot() {
-        assert!(EnemyType::Brute.loot_value() > EnemyType::Shambler.loot_value());
-        assert!(EnemyType::Brute.loot_value() > EnemyType::Runner.loot_value());
-    }
 
     #[test]
     fn enemy_state_default_is_approaching() {
@@ -240,15 +225,21 @@ mod tests {
     }
 
     #[test]
-    fn stats_fields_match_accessors() {
-        for ty in &ALL_TYPES {
-            let s = ty.stats();
-            assert_eq!(ty.color(), s.color, "{ty:?} color");
-            assert_eq!(ty.ui_color(), s.ui_color, "{ty:?} ui_color");
-            assert_eq!(ty.base_health(), s.health, "{ty:?} health");
-            assert_eq!(ty.base_speed(), s.speed, "{ty:?} speed");
-            assert_eq!(ty.loot_value(), s.loot, "{ty:?} loot");
-            assert_eq!(ty.size(), s.size, "{ty:?} size");
-        }
+    fn registry_lookup_returns_none_for_missing() {
+        let reg = EnemyRegistry::default();
+        assert!(reg.lookup("Shambler").is_none());
+    }
+
+    #[test]
+    fn registry_lookup_finds_blueprint() {
+        let mut reg = EnemyRegistry::default();
+        reg.blueprints.push(EnemyBlueprint {
+            name: "TestEnemy",
+            color: Color::WHITE,
+            ui_color: Color::WHITE,
+            spawn_fn: |_| {},
+        });
+        assert!(reg.lookup("TestEnemy").is_some());
+        assert!(reg.lookup("Other").is_none());
     }
 }

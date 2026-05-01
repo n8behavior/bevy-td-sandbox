@@ -6,8 +6,8 @@ use rand::seq::SliceRandom;
 use crate::audio::{GameSound, PlaySound};
 use crate::common::constants::GridConfig;
 use crate::economy::components::ScrapDrop;
-use crate::enemy::components::{Enemy, EnemyType};
-use crate::enemy::systems::spawn_enemy;
+use crate::enemy::components::{Enemy, EnemyRegistry};
+use crate::enemy::spawn::spawn_from_blueprint;
 use crate::pile::resources::{EdgeCells, PileScrap, PileState};
 use crate::pile::systems::nearest_pile_cell;
 use crate::states::{GameState, PlayPhase};
@@ -15,8 +15,6 @@ use crate::states::{GameState, PlayPhase};
 use super::resources::*;
 
 const TOTAL_WAVES: u32 = 20;
-const HEALTH_SCALING_PER_WAVE: f32 = 0.15;
-const SPEED_SCALING_PER_WAVE: f32 = 0.05;
 const BOSS_WAVE_INTERVAL: u32 = 5;
 const RUNNER_UNLOCK_WAVE: u32 = 3;
 const BRUTE_UNLOCK_WAVE: u32 = 6;
@@ -30,17 +28,13 @@ pub fn start_wave(mut wave_mgr: ResMut<WaveManager>) {
         return;
     }
 
-    // Build a flat, shuffled spawn queue from the wave config.
     let wave = &wave_mgr.waves[wave_idx];
     let mut queue: Vec<SpawnEntry> = wave
         .enemies
         .iter()
         .flat_map(|we| {
             (0..we.count).map(move |_| SpawnEntry {
-                enemy_type: we.enemy_type,
-                health_multiplier: we.health_multiplier,
-                speed_multiplier: we.speed_multiplier,
-                boss_trait: we.boss_trait,
+                enemy_blueprint: we.enemy_blueprint,
             })
         })
         .collect();
@@ -61,6 +55,7 @@ pub fn spawn_enemies(
     grid_query: Query<Entity, With<OrdinalGrid>>,
     edge_cells: Res<EdgeCells>,
     pile_state: Res<PileState>,
+    registry: Res<EnemyRegistry>,
 ) {
     let Ok(grid_entity) = grid_query.single() else {
         return;
@@ -80,25 +75,31 @@ pub fn spawn_enemies(
         return;
     };
 
-    // Pick a random edge cell for this enemy's spawn.
     let mut rng = rand::rng();
     let spawn_pos = *edge_cells.0.choose(&mut rng).unwrap();
     let goal_pos = nearest_pile_cell(spawn_pos, &pile_state);
 
-    if entry.boss_trait.is_some() {
+    let Some(blueprint) = registry.lookup(entry.enemy_blueprint) else {
+        warn!(
+            "spawn_enemies: blueprint '{}' not found in registry",
+            entry.enemy_blueprint
+        );
+        return;
+    };
+
+    if entry.enemy_blueprint == "Boss" {
         commands.trigger(PlaySound(GameSound::WaveBossSpawn));
     }
 
-    spawn_enemy(
+    let wave = wave_mgr.current_wave + 1;
+    spawn_from_blueprint(
         &mut commands,
-        entry.enemy_type,
+        blueprint,
         spawn_pos,
         goal_pos,
         grid_entity,
-        entry.health_multiplier,
-        entry.speed_multiplier,
         &config,
-        entry.boss_trait,
+        wave,
     );
 }
 
@@ -161,27 +162,15 @@ pub fn handle_start_wave_input(
 
 pub fn generate_waves() -> Vec<WaveConfig> {
     let mut waves = Vec::new();
-    let mut rng = rand::rng();
-    let boss_traits = [
-        BossTrait::Regeneration,
-        BossTrait::Armor,
-        BossTrait::Splitting,
-    ];
 
     for i in 0..TOTAL_WAVES {
         let wave_num = i + 1;
-        let health_mult = 1.0 + (i as f32 * HEALTH_SCALING_PER_WAVE);
-        let speed_mult = 1.0 + (i as f32 * SPEED_SCALING_PER_WAVE);
 
         if wave_num % BOSS_WAVE_INTERVAL == 0 {
-            let boss_trait = *boss_traits.choose(&mut rng).unwrap();
             waves.push(WaveConfig {
                 enemies: vec![WaveEnemy {
-                    enemy_type: EnemyType::Boss,
+                    enemy_blueprint: "Boss",
                     count: 1,
-                    health_multiplier: health_mult,
-                    speed_multiplier: speed_mult,
-                    boss_trait: Some(boss_trait),
                 }],
                 spawn_interval: 1.0,
             });
@@ -191,30 +180,21 @@ pub fn generate_waves() -> Vec<WaveConfig> {
         let base_count = 5 + i * 2;
 
         let mut enemies = vec![WaveEnemy {
-            enemy_type: EnemyType::Shambler,
+            enemy_blueprint: "Shambler",
             count: base_count,
-            health_multiplier: health_mult,
-            speed_multiplier: speed_mult,
-            boss_trait: None,
         }];
 
         if wave_num >= RUNNER_UNLOCK_WAVE {
             enemies.push(WaveEnemy {
-                enemy_type: EnemyType::Runner,
+                enemy_blueprint: "Runner",
                 count: (base_count / 2).max(2),
-                health_multiplier: health_mult,
-                speed_multiplier: speed_mult,
-                boss_trait: None,
             });
         }
 
         if wave_num >= BRUTE_UNLOCK_WAVE {
             enemies.push(WaveEnemy {
-                enemy_type: EnemyType::Brute,
+                enemy_blueprint: "Brute",
                 count: (base_count / 4).max(1),
-                health_multiplier: health_mult,
-                speed_multiplier: speed_mult,
-                boss_trait: None,
             });
         }
 
@@ -272,15 +252,10 @@ mod tests {
                     "wave {wave_num} should have 1 enemy group"
                 );
                 assert_eq!(
-                    wave.enemies[0].enemy_type,
-                    EnemyType::Boss,
+                    wave.enemies[0].enemy_blueprint, "Boss",
                     "wave {wave_num} should be a boss wave"
                 );
                 assert_eq!(wave.enemies[0].count, 1, "boss wave should have 1 boss");
-                assert!(
-                    wave.enemies[0].boss_trait.is_some(),
-                    "boss should have a trait"
-                );
             }
         }
     }
@@ -292,9 +267,7 @@ mod tests {
             let wave_num = i + 1;
             if wave_num % 5 != 0 {
                 assert!(
-                    wave.enemies
-                        .iter()
-                        .any(|e| e.enemy_type == EnemyType::Shambler),
+                    wave.enemies.iter().any(|e| e.enemy_blueprint == "Shambler"),
                     "wave {wave_num} should have shamblers"
                 );
             }
@@ -304,22 +277,14 @@ mod tests {
     #[test]
     fn runners_appear_from_wave_3() {
         let waves = generate_waves();
-        // Wave 2 (index 1) should NOT have runners (unless it's a boss wave)
         let wave2 = &waves[1];
         assert!(
-            !wave2
-                .enemies
-                .iter()
-                .any(|e| e.enemy_type == EnemyType::Runner),
+            !wave2.enemies.iter().any(|e| e.enemy_blueprint == "Runner"),
             "wave 2 should not have runners"
         );
-        // Wave 3 (index 2) should have runners
         let wave3 = &waves[2];
         assert!(
-            wave3
-                .enemies
-                .iter()
-                .any(|e| e.enemy_type == EnemyType::Runner),
+            wave3.enemies.iter().any(|e| e.enemy_blueprint == "Runner"),
             "wave 3 should have runners"
         );
     }
@@ -327,58 +292,16 @@ mod tests {
     #[test]
     fn brutes_appear_from_wave_6() {
         let waves = generate_waves();
-        // Wave 4 (index 3) should NOT have brutes
         let wave4 = &waves[3];
         assert!(
-            !wave4
-                .enemies
-                .iter()
-                .any(|e| e.enemy_type == EnemyType::Brute),
+            !wave4.enemies.iter().any(|e| e.enemy_blueprint == "Brute"),
             "wave 4 should not have brutes"
         );
-        // Wave 6 (index 5) should have brutes
         let wave6 = &waves[5];
         assert!(
-            wave6
-                .enemies
-                .iter()
-                .any(|e| e.enemy_type == EnemyType::Brute),
+            wave6.enemies.iter().any(|e| e.enemy_blueprint == "Brute"),
             "wave 6 should have brutes"
         );
-    }
-
-    #[test]
-    fn health_multiplier_scales_correctly() {
-        let waves = generate_waves();
-        for (i, wave) in waves.iter().enumerate() {
-            let expected = 1.0 + (i as f32 * HEALTH_SCALING_PER_WAVE);
-            for enemy in &wave.enemies {
-                assert!(
-                    (enemy.health_multiplier - expected).abs() < 0.001,
-                    "wave {} health mult: got {}, expected {}",
-                    i + 1,
-                    enemy.health_multiplier,
-                    expected
-                );
-            }
-        }
-    }
-
-    #[test]
-    fn speed_multiplier_scales_correctly() {
-        let waves = generate_waves();
-        for (i, wave) in waves.iter().enumerate() {
-            let expected = 1.0 + (i as f32 * SPEED_SCALING_PER_WAVE);
-            for enemy in &wave.enemies {
-                assert!(
-                    (enemy.speed_multiplier - expected).abs() < 0.001,
-                    "wave {} speed mult: got {}, expected {}",
-                    i + 1,
-                    enemy.speed_multiplier,
-                    expected
-                );
-            }
-        }
     }
 
     #[test]

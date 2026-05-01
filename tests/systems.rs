@@ -454,10 +454,7 @@ fn wave_does_not_resolve_with_nonempty_queue() {
         .resource_mut::<WaveManager>()
         .spawn_queue
         .push(bevy_td_sandbox::wave::resources::SpawnEntry {
-            enemy_type: EnemyType::Shambler,
-            health_multiplier: 1.0,
-            speed_multiplier: 1.0,
-            boss_trait: None,
+            enemy_blueprint: "Shambler",
         });
     app.update();
     app.update();
@@ -532,19 +529,49 @@ fn spawn_enemies_app() -> App {
 
     let mut mgr = test_wave_manager();
     mgr.spawn_queue.push(SpawnEntry {
-        enemy_type: EnemyType::Shambler,
-        health_multiplier: 1.0,
-        speed_multiplier: 1.0,
-        boss_trait: None,
+        enemy_blueprint: "Shambler",
     });
     mgr.spawn_timer = Timer::from_seconds(0.0, TimerMode::Repeating);
     app.insert_resource(mgr);
+
+    // `spawn_enemies` looks up blueprints from the registry; register a
+    // minimal Shambler blueprint that inserts the components the test
+    // assertions expect.
+    let mut registry = bevy_td_sandbox::enemy::components::EnemyRegistry::default();
+    registry.blueprints.push(test_enemy_blueprint());
+    app.insert_resource(registry);
 
     // Use Update (not FixedUpdate) so the system runs with real time deltas
     // in test. FixedUpdate doesn't accumulate enough wall-clock time between
     // app.update() calls in a test harness.
     app.add_systems(Update, spawn_enemies);
     app
+}
+
+/// Minimal Shambler blueprint for tests: inserts the marker, Health, and
+/// MoveSpeed without sprite/health-bar visuals.
+fn test_enemy_blueprint() -> bevy_td_sandbox::enemy::components::EnemyBlueprint {
+    use bevy_td_sandbox::enemy::components::*;
+    EnemyBlueprint {
+        name: "Shambler",
+        color: Color::WHITE,
+        ui_color: Color::WHITE,
+        spawn_fn: |cmds| {
+            cmds.insert((
+                StealsScrap,
+                EnemyState::default(),
+                Health {
+                    current: 50.0,
+                    max: 50.0,
+                },
+                MoveSpeed {
+                    base: 40.0,
+                    current: 40.0,
+                },
+                LootValue(10),
+            ));
+        },
+    }
 }
 
 /// Timer not finished → no enemy spawned, queue intact.

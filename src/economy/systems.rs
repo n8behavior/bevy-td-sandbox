@@ -3,8 +3,8 @@ use rand::{Rng, RngExt};
 
 use crate::audio::{GameSound, PlaySound};
 use crate::common::constants::*;
-use crate::enemy::components::SpawnAnimation;
-use crate::enemy::systems::EnemyDied;
+use crate::enemy::components::{LootValue, SpawnAnimation, StolenScrap};
+use crate::enemy::events::EnemyDied;
 use crate::particles::systems::spawn_scrap_sparkle;
 
 use super::components::ScrapDrop;
@@ -39,17 +39,27 @@ pub fn compute_scrap_alpha(remaining_secs: f32) -> Option<f32> {
 }
 
 /// Spawn a [`ScrapDrop`] entity with glow child and sparkle particles.
-pub fn on_enemy_died_spawn_drop(trigger: On<EnemyDied>, mut commands: Commands) {
-    let event = &*trigger;
+///
+/// Reads `LootValue` and (optionally) `StolenScrap` from the dying enemy
+/// to compute the total drop value. No-ops for enemies that lack
+/// `LootValue` or whose total is zero.
+pub fn on_enemy_died_spawn_drop(
+    trigger: On<EnemyDied>,
+    enemies: Query<(&Transform, &LootValue, Option<&StolenScrap>)>,
+    mut commands: Commands,
+) {
+    let Ok((tf, loot, stolen)) = enemies.get(trigger.entity) else {
+        return;
+    };
 
-    let total_value = compute_scrap_value(event.loot_value, event.stolen_scrap);
+    let total_value = compute_scrap_value(loot.0, stolen.map_or(0, |s| s.0));
     if total_value == 0 {
         return;
     }
 
     let mut rng = rand::rng();
     let offset = compute_drop_offset(&mut rng);
-    let pos = event.position + offset;
+    let pos = tf.translation.truncate() + offset;
 
     commands
         .spawn((
@@ -73,8 +83,15 @@ pub fn on_enemy_died_spawn_drop(trigger: On<EnemyDied>, mut commands: Commands) 
 }
 
 /// Play the scrap-drop sound when loot is awarded.
-pub fn on_enemy_died_scrap_sound(trigger: On<EnemyDied>, mut commands: Commands) {
-    let total_value = compute_scrap_value(trigger.loot_value, trigger.stolen_scrap);
+pub fn on_enemy_died_scrap_sound(
+    trigger: On<EnemyDied>,
+    enemies: Query<(&LootValue, Option<&StolenScrap>)>,
+    mut commands: Commands,
+) {
+    let Ok((loot, stolen)) = enemies.get(trigger.entity) else {
+        return;
+    };
+    let total_value = compute_scrap_value(loot.0, stolen.map_or(0, |s| s.0));
     if total_value == 0 {
         return;
     }

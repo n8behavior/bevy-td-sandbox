@@ -141,16 +141,22 @@ pub fn setup_game_over(
                     }
                 }
 
-                // Kill breakdown.
+                // Kill breakdown — iterate the per-blueprint counter so
+                // adding a new enemy type adds a row automatically.
+                let mut entries: Vec<(&&'static str, &u32)> = stats.kills.iter().collect();
+                entries.sort_by_key(|(name, _)| *name);
+                let breakdown = entries
+                    .iter()
+                    .map(|(name, count)| format!("{name}: {count}"))
+                    .collect::<Vec<_>>()
+                    .join("  ");
+                let total_line = if breakdown.is_empty() {
+                    format!("Kills: {}", stats.total_kills())
+                } else {
+                    format!("Kills: {}  ({breakdown})", stats.total_kills())
+                };
                 parent.spawn((
-                    Text::new(format!(
-                        "Kills: {}  (Shambler: {}  Runner: {}  Brute: {}  Boss: {})",
-                        stats.total_kills(),
-                        stats.kills_shambler,
-                        stats.kills_runner,
-                        stats.kills_brute,
-                        stats.kills_boss,
-                    )),
+                    Text::new(total_line),
                     TextColor(stat_color),
                     stat_font.clone(),
                 ));

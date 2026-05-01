@@ -1,3 +1,11 @@
+//! Shared enemy systems: movement, slow pipeline, animations, death
+//! detection, default lifecycle observers, and capability systems.
+//!
+//! Per-enemy bespoke behavior lives in each enemy's submodule
+//! (`enemy::brute::systems`, `enemy::boss::systems`, etc.). This file
+//! holds only the generic, capability-driven systems that can run for
+//! any enemy that opts into the relevant capability marker.
+
 use bevy::prelude::*;
 use bevy_northstar::prelude::*;
 use rand::{Rng, RngExt};
@@ -5,7 +13,6 @@ use rand::{Rng, RngExt};
 use bevy::sprite_render::MeshMaterial2d;
 
 use crate::audio::{GameSound, PlaySound};
-use crate::camera::components::ScreenShake;
 use crate::common::constants::{GridConfig, SCRAP_COLOR, TILE_SIZE};
 use crate::common::math::rotate_toward;
 use crate::grid::systems::{grid_to_world_cfg, world_to_grid};
@@ -13,15 +20,18 @@ use crate::particles::systems::spawn_death_particles;
 use crate::pile::resources::{EdgeCells, PileScrap, PileState};
 use crate::pile::systems::{nearest_edge_cell, nearest_pile_cell};
 use crate::shader::CircleMaterial;
-
-use crate::common::constants::{BRUTE_ATTACK_COOLDOWN, BRUTE_ATTACK_DAMAGE, BRUTE_ATTACK_RANGE};
 use crate::tower::components::{
     BlocksNav, Tower, TowerColor, TowerHealth, TowerState, UpgradeFlash,
 };
 use crate::tower::upgrade::{Primary, UpgradeTrack, degradation_color};
-use crate::wave::resources::BossTrait;
 
 use super::components::*;
+use super::events::{EnemyDied, EnemyEscaped, EnemySpawned};
+use super::spawn::spawn_from_blueprint;
+
+// ---------------------------------------------------------------------------
+// Constants
+// ---------------------------------------------------------------------------
 
 /// Radians per second enemies rotate toward their travel direction.
 const ENEMY_ROTATION_SPEED: f32 = 6.0;
@@ -32,8 +42,19 @@ const CELL_JITTER_RANGE: f32 = 7.0;
 /// Duration of the shrink+fade death animation (seconds).
 const DEATH_ANIM_SECS: f32 = 0.3;
 
-/// Random offset within a grid cell so enemies don't overlap on the same pixel path.
-/// Each axis is sampled uniformly from `[-CELL_JITTER_RANGE, CELL_JITTER_RANGE]`.
+/// Per-wave health multiplier growth: `1.0 + (wave - 1) * RATE`.
+const HEALTH_SCALING_PER_WAVE: f32 = 0.15;
+
+/// Per-wave speed multiplier growth: `1.0 + (wave - 1) * RATE`.
+const SPEED_SCALING_PER_WAVE: f32 = 0.05;
+
+// ---------------------------------------------------------------------------
+// Pure helpers
+// ---------------------------------------------------------------------------
+
+/// Random offset within a grid cell so enemies don't overlap on the same
+/// pixel path. Each axis is sampled uniformly from
+/// `[-CELL_JITTER_RANGE, CELL_JITTER_RANGE]`.
 pub fn random_cell_jitter(rng: &mut impl Rng) -> Vec2 {
     Vec2::new(
         rng.random_range(-CELL_JITTER_RANGE..CELL_JITTER_RANGE),
@@ -58,25 +79,21 @@ pub fn is_at_map_edge(pos: Vec2, grid_width: u32, grid_height: u32) -> bool {
         || pos.y >= half_h - margin
 }
 
-#[derive(Event)]
-pub struct EnemyDied {
-    pub position: Vec2,
-    pub loot_value: u32,
-    /// Additional scrap the enemy had stolen from the pile.
-    pub stolen_scrap: u32,
-    /// Number of enemies to spawn on death (boss splitting trait).
-    pub splits: u32,
-    /// Type of enemy that died (for stats tracking).
-    pub enemy_type: EnemyType,
-    /// Sprite color at time of death (for death particles).
-    pub color: Color,
+/// Wave-based health multiplier. Each capability owns its own scaling
+/// formula; this one belongs with `Health` and is consumed by
+/// `scale_health_on_spawn`.
+pub fn health_mult_for_wave(wave: u32) -> f32 {
+    1.0 + (wave.saturating_sub(1) as f32) * HEALTH_SCALING_PER_WAVE
 }
 
-#[derive(Event)]
-pub struct EnemyEscaped {
-    pub stolen_scrap: u32,
-    pub enemy_type: EnemyType,
+/// Wave-based move-speed multiplier.
+pub fn speed_mult_for_wave(wave: u32) -> f32 {
+    1.0 + (wave.saturating_sub(1) as f32) * SPEED_SCALING_PER_WAVE
 }
+
+// ---------------------------------------------------------------------------
+// Movement
+// ---------------------------------------------------------------------------
 
 pub fn enemy_movement(
     mut query: Query<
@@ -98,14 +115,11 @@ pub fn enemy_movement(
     let grid = grid_query.single().ok();
     let mut rng = rand::rng();
     for (entity, mut agent_pos, next_pos, mut transform, speed, jitter) in &mut query {
-        // Each enemy walks toward a jittered point within the next grid cell
-        // so that enemies on the same path don't stack on identical pixels.
         let jitter_vec = jitter.as_deref().map_or(Vec2::ZERO, |j| j.0);
         let target_world = (grid_to_world_cfg(next_pos.0, &config) + jitter_vec).extend(1.0);
         let direction = target_world - transform.translation;
         let distance = direction.length();
 
-        // Rotate toward direction of travel.
         if distance > 1.0 {
             let to_target = direction.truncate().normalize();
             rotate_toward(
@@ -116,13 +130,10 @@ pub fn enemy_movement(
             );
         }
 
-        // Move toward the jittered target; snap on arrival.
         let step_size = speed.current * time.delta_secs();
         let arrived = distance < 1.0 || step_size >= distance;
 
         if arrived {
-            // Snap to cell, advance pathfinding, and roll a fresh jitter
-            // offset for the next leg.
             agent_pos.0 = next_pos.0;
             transform.translation = target_world;
             commands.entity(entity).remove::<NextPos>();
@@ -131,11 +142,6 @@ pub fn enemy_movement(
                 .insert(CellJitter(random_cell_jitter(&mut rng)));
         } else {
             transform.translation += direction / distance * step_size;
-            // Keep AgentPos in sync with the visual position so that
-            // path recalculation (GridChanged) starts from where the
-            // enemy actually is, not from a stale completed waypoint.
-            // Only update to passable cells — a tower placed on the cell
-            // the enemy is crossing must not poison AgentPos.
             if let Some(grid_pos) = world_to_grid(transform.translation.truncate(), &config) {
                 let candidate = UVec3::new(grid_pos.x as u32, grid_pos.y as u32, 0);
                 if let Some(g) = grid
@@ -148,8 +154,15 @@ pub fn enemy_movement(
     }
 }
 
+// ---------------------------------------------------------------------------
+// Scrap-stealer lifecycle (gated by StealsScrap)
+// ---------------------------------------------------------------------------
+
 /// Approaching enemies that reach a pile cell steal scrap and start fleeing.
 /// If the pile is empty, enemies flee to the edge with nothing.
+///
+/// Filtered by `With<StealsScrap>` — only enemies that opt into this
+/// goal run the steal/flee loop.
 pub fn enemy_reached_pile(
     mut commands: Commands,
     mut enemies: Query<
@@ -162,7 +175,7 @@ pub fn enemy_reached_pile(
             Option<&Pathfind>,
             Option<&Path>,
         ),
-        With<Enemy>,
+        (With<Enemy>, With<StealsScrap>),
     >,
     mut pile_scrap: ResMut<PileScrap>,
     edge_cells: Res<EdgeCells>,
@@ -171,7 +184,6 @@ pub fn enemy_reached_pile(
         if *state != EnemyState::Approaching {
             continue;
         }
-        // Enemy is still navigating toward the pile.
         let path_active = next_pos.is_some()
             || pathfind_req.is_some()
             || path.is_some_and(|p| !p.path().is_empty());
@@ -179,7 +191,6 @@ pub fn enemy_reached_pile(
             continue;
         }
 
-        // Enemy reached the pile — steal what we can and flee.
         let steal_amount = compute_steal_amount(loot.0, pile_scrap.amount);
         pile_scrap.amount = pile_scrap.amount.saturating_sub(steal_amount);
 
@@ -191,7 +202,6 @@ pub fn enemy_reached_pile(
 
         if steal_amount > 0 {
             commands.entity(entity).insert(StolenScrap(steal_amount));
-            // Visual decal: small gold square to indicate carried scrap.
             commands.entity(entity).with_child((
                 ScrapCarrierDecal,
                 Sprite::from_color(SCRAP_COLOR, Vec2::splat(6.0)),
@@ -202,21 +212,13 @@ pub fn enemy_reached_pile(
 }
 
 /// Fleeing enemies that reach the map edge escape with stolen scrap.
+/// Filtered by `With<StealsScrap>`.
 pub fn enemy_escaped(
     mut commands: Commands,
-    enemies: Query<
-        (
-            Entity,
-            &EnemyState,
-            &Transform,
-            &EnemyType,
-            Option<&StolenScrap>,
-        ),
-        With<Enemy>,
-    >,
+    enemies: Query<(Entity, &EnemyState, &Transform), (With<Enemy>, With<StealsScrap>)>,
     config: Res<GridConfig>,
 ) {
-    for (entity, state, transform, enemy_type, stolen) in &enemies {
+    for (entity, state, transform) in &enemies {
         if *state != EnemyState::Fleeing {
             continue;
         }
@@ -224,11 +226,7 @@ pub fn enemy_escaped(
         if !is_at_map_edge(pos, config.width, config.height) {
             continue;
         }
-        // Stolen scrap is permanently lost — already subtracted from pile.
-        commands.trigger(EnemyEscaped {
-            stolen_scrap: stolen.map_or(0, |s| s.0),
-            enemy_type: *enemy_type,
-        });
+        commands.trigger(EnemyEscaped { entity });
         commands.entity(entity).remove::<Enemy>();
         commands.entity(entity).insert(DeathAnimation {
             timer: Timer::from_seconds(DEATH_ANIM_SECS, TimerMode::Once),
@@ -236,37 +234,17 @@ pub fn enemy_escaped(
     }
 }
 
-/// Mark enemies with zero health as dying: remove `Enemy`, trigger loot event.
-pub fn check_enemy_death(
-    mut commands: Commands,
-    enemies: Query<
-        (
-            Entity,
-            &Health,
-            &Transform,
-            &LootValue,
-            &Sprite,
-            &EnemyType,
-            Option<&StolenScrap>,
-            Option<&SplitsOnDeath>,
-        ),
-        With<Enemy>,
-    >,
-) {
-    for (entity, health, transform, loot, sprite, enemy_type, stolen, splits) in &enemies {
-        if health.current <= 0.0 {
-            let stolen_amount = stolen.map_or(0, |s| s.0);
-            let split_count = splits.map_or(0, |s| s.count);
-            let position = transform.translation.truncate();
-            commands.trigger(EnemyDied {
-                position,
-                loot_value: loot.0,
-                stolen_scrap: stolen_amount,
-                splits: split_count,
-                enemy_type: *enemy_type,
-                color: sprite.color,
-            });
+// ---------------------------------------------------------------------------
+// Death detection
+// ---------------------------------------------------------------------------
 
+/// Mark enemies with zero health as dying. Triggers `EnemyDied` (an
+/// `EntityEvent`) — observers query the dying entity for whatever they
+/// need (loot, position, sprite color, capability components).
+pub fn check_enemy_death(mut commands: Commands, enemies: Query<(Entity, &Health), With<Enemy>>) {
+    for (entity, health) in &enemies {
+        if health.current <= 0.0 {
+            commands.trigger(EnemyDied { entity });
             commands.entity(entity).remove::<Enemy>();
             commands.entity(entity).insert(DeathAnimation {
                 timer: Timer::from_seconds(DEATH_ANIM_SECS, TimerMode::Once),
@@ -275,26 +253,111 @@ pub fn check_enemy_death(
     }
 }
 
+// ---------------------------------------------------------------------------
+// Default EnemyDied observers (loot, particles, sound)
+// ---------------------------------------------------------------------------
+
+/// Play the global enemy-death sound. Fires for every enemy.
 pub fn on_enemy_died_sound(_trigger: On<EnemyDied>, mut commands: Commands) {
     commands.trigger(PlaySound(GameSound::EnemyDeath));
 }
 
-pub fn on_enemy_died_particles(trigger: On<EnemyDied>, mut commands: Commands) {
-    spawn_death_particles(
-        &mut commands,
-        trigger.position,
-        trigger.color,
-        &mut rand::rng(),
-    );
-}
-
-pub fn on_enemy_died_shake(trigger: On<EnemyDied>, mut shake: ResMut<ScreenShake>) {
-    if matches!(trigger.enemy_type, EnemyType::Boss) {
-        shake.intensity = 6.0;
-        shake.timer = Timer::from_seconds(0.5, TimerMode::Once);
-        shake.decay = 0.03;
+/// Spawn the death-particle burst at the dying enemy's position, tinted
+/// with its current sprite color. No-ops for enemies that lack a Sprite
+/// or Transform.
+pub fn on_enemy_died_particles(
+    trigger: On<EnemyDied>,
+    enemies: Query<(&Transform, &Sprite)>,
+    mut commands: Commands,
+) {
+    if let Ok((tf, sprite)) = enemies.get(trigger.entity) {
+        spawn_death_particles(
+            &mut commands,
+            tf.translation.truncate(),
+            sprite.color,
+            &mut rand::rng(),
+        );
     }
 }
+
+// ---------------------------------------------------------------------------
+// Capability lifecycle observers
+// ---------------------------------------------------------------------------
+
+/// On death of an enemy carrying `SplitsOnDeath`, spawn `count` enemies
+/// of the configured blueprint at the death position. Replaces the
+/// previously hardcoded `on_boss_split` (which always spawned Shamblers).
+pub fn on_splits_on_death(
+    trigger: On<EnemyDied>,
+    enemies: Query<(&Transform, &SplitsOnDeath)>,
+    mut commands: Commands,
+    config: Res<GridConfig>,
+    grid_query: Query<Entity, With<OrdinalGrid>>,
+    pile_state: Res<PileState>,
+    registry: Res<EnemyRegistry>,
+) {
+    let Ok((tf, splits)) = enemies.get(trigger.entity) else {
+        return;
+    };
+    let Ok(grid_entity) = grid_query.single() else {
+        return;
+    };
+    let Some(grid_pos) = world_to_grid(tf.translation.truncate(), &config) else {
+        return;
+    };
+    let Some(blueprint) = registry.lookup(splits.spawn_blueprint) else {
+        warn!(
+            "SplitsOnDeath references unknown blueprint '{}'",
+            splits.spawn_blueprint
+        );
+        return;
+    };
+
+    let spawn_pos = UVec3::new(grid_pos.x as u32, grid_pos.y as u32, 0);
+    let goal_pos = nearest_pile_cell(spawn_pos, &pile_state);
+
+    for _ in 0..splits.count {
+        spawn_from_blueprint(
+            &mut commands,
+            blueprint,
+            spawn_pos,
+            goal_pos,
+            grid_entity,
+            &config,
+            // Splits inherit no wave scaling (they're "free" extras
+            // already balanced against the parent's stats).
+            1,
+        );
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Wave-difficulty scaling observers (per capability)
+// ---------------------------------------------------------------------------
+
+/// Scale Health on spawn using `health_mult_for_wave`. No-ops for enemies
+/// without `Health` (e.g. a hypothetical Ghost).
+pub fn scale_health_on_spawn(trigger: On<EnemySpawned>, mut q: Query<&mut Health>) {
+    if let Ok(mut h) = q.get_mut(trigger.entity) {
+        let mult = health_mult_for_wave(trigger.wave);
+        h.max *= mult;
+        h.current = h.max;
+    }
+}
+
+/// Scale MoveSpeed on spawn using `speed_mult_for_wave`. No-ops for
+/// stationary enemies without `MoveSpeed`.
+pub fn scale_speed_on_spawn(trigger: On<EnemySpawned>, mut q: Query<&mut MoveSpeed>) {
+    if let Ok(mut s) = q.get_mut(trigger.entity) {
+        let mult = speed_mult_for_wave(trigger.wave);
+        s.base *= mult;
+        s.current = s.base;
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Speed / slow pipeline
+// ---------------------------------------------------------------------------
 
 /// Reset all enemy speeds to base each tick, before slow effects re-apply.
 pub fn reset_speed(mut query: Query<&mut MoveSpeed, With<Enemy>>) {
@@ -318,6 +381,10 @@ pub fn apply_slow_effects(
     }
 }
 
+// ---------------------------------------------------------------------------
+// Visuals
+// ---------------------------------------------------------------------------
+
 pub fn update_health_bars(
     enemies: Query<(&Health, &Transform, &Children), With<Enemy>>,
     mut bars: Query<(&HealthBar, &mut Sprite, &mut Transform), Without<Enemy>>,
@@ -335,8 +402,6 @@ pub fn update_health_bars(
                 } else {
                     Color::srgb(0.9, 0.2, 0.1)
                 };
-                // Counter-rotate position and orientation so the bar stays
-                // centered above the enemy regardless of its rotation.
                 let inv = enemy_tf.rotation.inverse();
                 let desired_offset = Vec3::new(-bar_width * (1.0 - frac) / 2.0, bar.y_offset, 0.1);
                 bar_tf.translation = inv * desired_offset;
@@ -355,7 +420,6 @@ pub fn animate_spawn(
     for (entity, mut anim, mut transform) in &mut query {
         anim.timer.tick(time.delta());
         let t = anim.timer.fraction();
-        // Ease-out cubic: 1 - (1-t)^3
         let scale = 1.0 - (1.0 - t).powi(3);
         transform.scale = Vec3::splat(scale);
         if anim.timer.is_finished() {
@@ -374,7 +438,6 @@ pub fn animate_death(
     for (entity, mut anim, mut transform, mut sprite) in &mut query {
         anim.timer.tick(time.delta());
         let t = anim.timer.fraction();
-        // Shrink and fade out.
         let scale = 1.0 - t;
         transform.scale = Vec3::splat(scale);
         sprite.color = sprite.color.with_alpha(1.0 - t);
@@ -427,84 +490,12 @@ pub fn animate_aoe_burst(
     }
 }
 
-pub fn spawn_enemy(
-    commands: &mut Commands,
-    enemy_type: EnemyType,
-    spawn_pos: UVec3,
-    goal_pos: UVec3,
-    grid_entity: Entity,
-    health_mult: f32,
-    speed_mult: f32,
-    config: &GridConfig,
-    boss_trait: Option<BossTrait>,
-) {
-    debug!("enemy spawned at {spawn_pos:?} → goal {goal_pos:?}");
-    let world_pos = grid_to_world_cfg(spawn_pos, config);
-    let size = enemy_type.size();
-    let health = enemy_type.base_health() * health_mult;
-    let speed = enemy_type.base_speed() * speed_mult;
-    let mut rng = rand::rng();
+// ---------------------------------------------------------------------------
+// Universal capabilities
+// ---------------------------------------------------------------------------
 
-    let entity_id = commands
-        .spawn((
-            Enemy,
-            enemy_type,
-            EnemyState::Approaching,
-            Health {
-                current: health,
-                max: health,
-            },
-            MoveSpeed {
-                base: speed,
-                current: speed,
-            },
-            LootValue(enemy_type.loot_value()),
-            Sprite::from_color(enemy_type.color(), Vec2::splat(size)),
-            Transform::from_translation(world_pos.extend(1.0)).with_scale(Vec3::ZERO),
-            SpawnAnimation {
-                timer: Timer::from_seconds(0.25, TimerMode::Once),
-            },
-            CellJitter(random_cell_jitter(&mut rng)),
-            AgentPos(spawn_pos),
-            AgentOfGrid(grid_entity),
-            Pathfind::new(goal_pos).mode(PathfindMode::AStar),
-        ))
-        .with_child((
-            HealthBar {
-                y_offset: size / 2.0 + 3.0,
-            },
-            Sprite::from_color(Color::srgb(0.2, 0.8, 0.2), Vec2::new(16.0, 2.0)),
-            Transform::from_translation(Vec3::new(0.0, size / 2.0 + 3.0, 0.1)),
-        ))
-        .id();
-
-    if matches!(enemy_type, EnemyType::Brute) {
-        commands.entity(entity_id).insert(BruteAttack {
-            cooldown: Timer::from_seconds(BRUTE_ATTACK_COOLDOWN, TimerMode::Once),
-            damage: BRUTE_ATTACK_DAMAGE,
-        });
-    }
-
-    match boss_trait {
-        Some(BossTrait::Regeneration) => {
-            commands
-                .entity(entity_id)
-                .insert(Regeneration { rate: 5.0 });
-        }
-        Some(BossTrait::Armor) => {
-            commands.entity(entity_id).insert(Armor { reduction: 5.0 });
-        }
-        Some(BossTrait::Splitting) => {
-            commands
-                .entity(entity_id)
-                .insert(SplitsOnDeath { count: 3 });
-        }
-        None => {}
-    }
-}
-
-/// Boss regeneration: heal over time.
-pub fn boss_regeneration(
+/// Heal any enemy carrying `Regeneration` over time.
+pub fn regeneration_system(
     mut query: Query<(&Regeneration, &mut Health), With<Enemy>>,
     time: Res<Time>,
 ) {
@@ -513,51 +504,11 @@ pub fn boss_regeneration(
     }
 }
 
-/// On boss death with splitting trait, spawn smaller enemies at the death position.
-pub fn on_boss_split(
-    trigger: On<EnemyDied>,
-    mut commands: Commands,
-    config: Res<GridConfig>,
-    grid_query: Query<Entity, With<OrdinalGrid>>,
-    pile_state: Res<PileState>,
-) {
-    let event = &*trigger;
-    if event.splits == 0 {
-        return;
-    }
-
-    let Ok(grid_entity) = grid_query.single() else {
-        return;
-    };
-
-    let Some(grid_pos) = world_to_grid(event.position, &config) else {
-        return;
-    };
-    let spawn_pos = UVec3::new(grid_pos.x as u32, grid_pos.y as u32, 0);
-    let goal_pos = nearest_pile_cell(spawn_pos, &pile_state);
-
-    for _ in 0..event.splits {
-        spawn_enemy(
-            &mut commands,
-            EnemyType::Shambler,
-            spawn_pos,
-            goal_pos,
-            grid_entity,
-            1.0,
-            1.0,
-            &config,
-            None,
-        );
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Brute tower attack
-// ---------------------------------------------------------------------------
-
-/// Brutes attack adjacent impassable towers, dealing damage over time.
-pub fn brute_attack_towers(
-    mut brutes: Query<(&Transform, &mut BruteAttack), (With<Enemy>, Without<Tower>)>,
+/// Generalized tower-attack system. Any enemy carrying `AttacksTowers`
+/// damages the nearest operational tower within its range, on its own
+/// cooldown. Replaces the per-Brute `brute_attack_towers` system.
+pub fn attacks_towers_system(
+    mut attackers: Query<(&Transform, &mut AttacksTowers), (With<Enemy>, Without<Tower>)>,
     mut towers: Query<
         (
             Entity,
@@ -573,22 +524,21 @@ pub fn brute_attack_towers(
     mut commands: Commands,
     time: Res<Time>,
 ) {
-    for (brute_tf, mut attack) in &mut brutes {
+    for (attacker_tf, mut attack) in &mut attackers {
         attack.cooldown.tick(time.delta());
         if !attack.cooldown.is_finished() {
             continue;
         }
 
-        let brute_pos = brute_tf.translation.truncate();
+        let attacker_pos = attacker_tf.translation.truncate();
 
-        // Find nearest tower in attack range.
         let mut best: Option<(Entity, f32)> = None;
         for (entity, tower_tf, _, _, _, _, tower_state) in &towers {
             if !tower_state.is_operational() {
                 continue;
             }
-            let dist = brute_pos.distance(tower_tf.translation.truncate());
-            if dist <= BRUTE_ATTACK_RANGE && best.is_none_or(|(_, d)| dist < d) {
+            let dist = attacker_pos.distance(tower_tf.translation.truncate());
+            if dist <= attack.range && best.is_none_or(|(_, d)| dist < d) {
                 best = Some((entity, dist));
             }
         }
@@ -606,7 +556,6 @@ pub fn brute_attack_towers(
 
             commands.trigger(PlaySound(GameSound::EnemyBruteAttack));
 
-            // Flash white then restore to degradation color.
             sprite.color = Color::WHITE;
             commands.entity(entity).insert(UpgradeFlash {
                 timer: Timer::from_seconds(0.1, TimerMode::Once),
@@ -684,7 +633,6 @@ mod tests {
 
     #[test]
     fn edge_left_boundary() {
-        // half_w = 40 * 20 / 2 = 400; margin = 20; threshold = -380
         assert!(is_at_map_edge(Vec2::new(-380.0, 0.0), 40, 32));
         assert!(!is_at_map_edge(Vec2::new(-379.0, 0.0), 40, 32));
     }
@@ -697,7 +645,6 @@ mod tests {
 
     #[test]
     fn edge_top_boundary() {
-        // half_h = 32 * 20 / 2 = 320; margin = 20; threshold = 300
         assert!(is_at_map_edge(Vec2::new(0.0, 300.0), 40, 32));
         assert!(!is_at_map_edge(Vec2::new(0.0, 299.0), 40, 32));
     }
@@ -713,128 +660,28 @@ mod tests {
         assert!(is_at_map_edge(Vec2::new(-380.0, -300.0), 40, 32));
     }
 
-    // -- spawn_enemy integration tests --
+    // -- wave-scaling formulas --
 
-    use crate::test_helpers::test_grid_config;
-    use crate::wave::resources::BossTrait;
-
-    /// Helper: spawn a single enemy via a startup system, return the App.
-    fn spawn_test_app(
-        enemy_type: EnemyType,
-        health_mult: f32,
-        speed_mult: f32,
-        boss_trait: Option<BossTrait>,
-    ) -> App {
-        let mut app = crate::test_helpers::test_app();
-        let config = test_grid_config();
-        let et = enemy_type;
-        let bt = boss_trait;
-        app.add_systems(Startup, move |mut commands: Commands| {
-            let grid_entity = commands.spawn_empty().id();
-            spawn_enemy(
-                &mut commands,
-                et,
-                UVec3::ZERO,
-                UVec3::new(20, 16, 0),
-                grid_entity,
-                health_mult,
-                speed_mult,
-                &config,
-                bt,
-            );
-        });
-        app.update();
-        app
+    #[test]
+    fn health_mult_at_wave_one_is_baseline() {
+        assert!((health_mult_for_wave(1) - 1.0).abs() < f32::EPSILON);
     }
 
     #[test]
-    fn spawn_shambler_has_core_components() {
-        let mut app = spawn_test_app(EnemyType::Shambler, 1.0, 1.0, None);
-        let mut query = app.world_mut().query_filtered::<Entity, With<Enemy>>();
-        let entities: Vec<Entity> = query.iter(app.world()).collect();
-        assert_eq!(entities.len(), 1, "should spawn exactly one enemy");
-
-        let e = entities[0];
-        let world = app.world();
-        assert!(world.get::<Enemy>(e).is_some());
-        assert_eq!(*world.get::<EnemyType>(e).unwrap(), EnemyType::Shambler);
-        assert!(world.get::<Health>(e).is_some());
-        assert!(world.get::<MoveSpeed>(e).is_some());
-        assert!(world.get::<LootValue>(e).is_some());
-        assert!(world.get::<CellJitter>(e).is_some());
-        assert!(world.get::<SpawnAnimation>(e).is_some());
-        assert_eq!(
-            *world.get::<EnemyState>(e).unwrap(),
-            EnemyState::Approaching
-        );
+    fn health_mult_grows_with_wave() {
+        assert!(health_mult_for_wave(5) > health_mult_for_wave(2));
     }
 
     #[test]
-    fn spawn_health_scales_with_multiplier() {
-        let mut app = spawn_test_app(EnemyType::Shambler, 2.0, 1.0, None);
-        let mut query = app.world_mut().query::<&Health>();
-        let health = query.single(app.world()).unwrap();
-        let expected = EnemyType::Shambler.base_health() * 2.0;
-        assert!((health.max - expected).abs() < f32::EPSILON);
-        assert!((health.current - expected).abs() < f32::EPSILON);
+    fn speed_mult_at_wave_one_is_baseline() {
+        assert!((speed_mult_for_wave(1) - 1.0).abs() < f32::EPSILON);
     }
 
     #[test]
-    fn spawn_speed_scales_with_multiplier() {
-        let mut app = spawn_test_app(EnemyType::Runner, 1.0, 1.5, None);
-        let mut query = app.world_mut().query::<&MoveSpeed>();
-        let speed = query.single(app.world()).unwrap();
-        let expected = EnemyType::Runner.base_speed() * 1.5;
-        assert!((speed.base - expected).abs() < f32::EPSILON);
-    }
-
-    #[test]
-    fn spawn_brute_has_brute_attack() {
-        let mut app = spawn_test_app(EnemyType::Brute, 1.0, 1.0, None);
-        let mut query = app.world_mut().query_filtered::<Entity, With<Enemy>>();
-        let e = query.single(app.world()).unwrap();
-        assert!(app.world().get::<BruteAttack>(e).is_some());
-    }
-
-    #[test]
-    fn spawn_non_brute_no_brute_attack() {
-        let mut app = spawn_test_app(EnemyType::Shambler, 1.0, 1.0, None);
-        let mut query = app.world_mut().query_filtered::<Entity, With<Enemy>>();
-        let e = query.single(app.world()).unwrap();
-        assert!(app.world().get::<BruteAttack>(e).is_none());
-    }
-
-    #[test]
-    fn spawn_boss_regeneration_trait() {
-        let mut app = spawn_test_app(EnemyType::Boss, 1.0, 1.0, Some(BossTrait::Regeneration));
-        let mut query = app.world_mut().query_filtered::<Entity, With<Enemy>>();
-        let e = query.single(app.world()).unwrap();
-        assert!(app.world().get::<Regeneration>(e).is_some());
-        assert!(app.world().get::<Armor>(e).is_none());
-        assert!(app.world().get::<SplitsOnDeath>(e).is_none());
-    }
-
-    #[test]
-    fn spawn_boss_armor_trait() {
-        let mut app = spawn_test_app(EnemyType::Boss, 1.0, 1.0, Some(BossTrait::Armor));
-        let mut query = app.world_mut().query_filtered::<Entity, With<Enemy>>();
-        let e = query.single(app.world()).unwrap();
-        assert!(app.world().get::<Armor>(e).is_some());
-    }
-
-    #[test]
-    fn spawn_boss_splitting_trait() {
-        let mut app = spawn_test_app(EnemyType::Boss, 1.0, 1.0, Some(BossTrait::Splitting));
-        let mut query = app.world_mut().query_filtered::<Entity, With<Enemy>>();
-        let e = query.single(app.world()).unwrap();
-        assert!(app.world().get::<SplitsOnDeath>(e).is_some());
-    }
-
-    #[test]
-    fn spawn_loot_matches_type() {
-        let mut app = spawn_test_app(EnemyType::Runner, 1.0, 1.0, None);
-        let mut query = app.world_mut().query::<&LootValue>();
-        let loot = query.single(app.world()).unwrap();
-        assert_eq!(loot.0, EnemyType::Runner.loot_value());
+    fn health_grows_faster_than_speed() {
+        // Per-wave HP growth (15 %) is steeper than speed growth (5 %).
+        let h = health_mult_for_wave(10);
+        let s = speed_mult_for_wave(10);
+        assert!(h > s);
     }
 }
