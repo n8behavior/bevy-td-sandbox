@@ -135,7 +135,7 @@ release VERSION:
     echo ""
     echo "=== {{VERSION}} released ==="
 
-# Prep: CI, version bump, changelog, editor, cargo fmt
+# Prep: pre-flight checks, CI, version bump, changelog, editor, cargo fmt
 [private]
 _release-prep VERSION:
     #!/usr/bin/env bash
@@ -148,9 +148,30 @@ _release-prep VERSION:
         exit 0
     fi
     echo "[prep] v$current → $version"
+    # Pre-flight: fail before anything changes
+    branch="$(git branch --show-current)"
+    if [ "$branch" != "main" ]; then
+        echo "[prep] FAIL: on branch '$branch', releases are cut from main"; exit 1
+    fi
     if [ -n "$(git status --porcelain)" ]; then
         echo "[prep] FAIL: working tree is not clean"; exit 1
     fi
+    if ! gh auth status >/dev/null 2>&1; then
+        echo "[prep] FAIL: gh is not logged in (run: gh auth login)"; exit 1
+    fi
+    git fetch -q origin main
+    if [ "$(git rev-parse HEAD)" != "$(git rev-parse origin/main)" ]; then
+        echo "[prep] FAIL: main is not in sync with origin/main (pull or push first)"
+        git status -sb | head -1
+        exit 1
+    fi
+    if git rev-parse -q --verify "refs/tags/$version" >/dev/null; then
+        echo "[prep] FAIL: tag $version already exists locally"; exit 1
+    fi
+    if git ls-remote --exit-code --tags origin "refs/tags/$version" >/dev/null; then
+        echo "[prep] FAIL: tag $version already exists on origin"; exit 1
+    fi
+    echo "[prep] Pre-flight passed."
     echo "[prep] Running CI (this may take a minute)..."
     if ! just ci > /tmp/release-ci.log 2>&1; then
         echo "[prep] FAIL: CI failed. See /tmp/release-ci.log for details."
@@ -160,7 +181,9 @@ _release-prep VERSION:
     echo "[prep] CI passed."
     # Bump Cargo.toml version
     sed -i "0,/^version = \"$current\"/s//version = \"$bare_version\"/" Cargo.toml
-    echo "[prep] Bumped Cargo.toml to $bare_version"
+    # Record the new version in Cargo.lock too, or CI's --locked builds fail on the release commit
+    cargo update --workspace --quiet
+    echo "[prep] Bumped Cargo.toml and Cargo.lock to $bare_version"
     # Auto-generate changelog draft from commits since last tag
     last_tag="$(git describe --tags --abbrev=0)"
     commits="$(git log --oneline "$last_tag"..HEAD)"

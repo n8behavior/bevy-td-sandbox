@@ -8,8 +8,8 @@ just release vX.Y.Z
 
 This single command handles the entire release:
 
-1. **Pre-flight** — verifies clean tree, no tag conflict, runs `just ci`
-2. **Prep** — bumps `Cargo.toml` version, drafts changelog from commits, opens `$EDITOR`
+1. **Pre-flight** — before changing anything, verifies you're on `main` with a clean tree, `gh` is logged in, `main` matches `origin/main` (after a fetch), and the tag doesn't exist locally or on origin; then runs `just ci`
+2. **Prep** — bumps the version in `Cargo.toml` and `Cargo.lock`, drafts changelog from commits, opens `$EDITOR`
 3. **Test gate** — pauses so you can test native (`just run`) and web (`just web-serve`)
 4. **Publish** — commits, tags, pushes, waits for CI, creates GitHub release
 
