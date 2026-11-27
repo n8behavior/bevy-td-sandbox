@@ -7,6 +7,7 @@ use bevy::audio::Volume;
 use bevy::prelude::*;
 
 use crate::common::constants::{MAGNET_AURA_COLOR, TOWER_HP_COST_MULT};
+use crate::enemy::damage::EnemyDamageSystems;
 use crate::states::{GameState, PlayPhase};
 use crate::tower::components::*;
 use crate::tower::events::TowerFired;
@@ -30,6 +31,7 @@ impl Plugin for ChainLightningPlugin {
             .add_systems(
                 FixedUpdate,
                 systems::chain_lightning_fire
+                    .in_set(EnemyDamageSystems)
                     .run_if(in_state(GameState::Playing))
                     .run_if(in_state(PlayPhase::Defending)),
             )

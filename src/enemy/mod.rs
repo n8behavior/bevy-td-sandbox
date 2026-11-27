@@ -13,10 +13,15 @@
 //! `systems.rs`. Universal capabilities (`Regeneration`, `Armor`,
 //! `SplitsOnDeath`, `StealsScrap`, `AttacksTowers`) live in
 //! `components.rs` so any blueprint can opt in.
+//!
+//! All enemy damage goes through `damage::damage_enemy`. Every system that
+//! damages enemies joins `damage::EnemyDamageSystems`, and the death check
+//! runs after that set.
 
 pub mod boss;
 pub mod brute;
 pub mod components;
+pub mod damage;
 pub mod events;
 pub mod runner;
 pub mod shambler;
@@ -57,7 +62,7 @@ impl Plugin for EnemyPlugin {
                     systems::regeneration_system,
                     systems::enemy_reached_pile,
                     systems::enemy_escaped,
-                    systems::check_enemy_death,
+                    systems::check_enemy_death.after(damage::EnemyDamageSystems),
                     systems::attacks_towers_system,
                 )
                     .run_if(in_state(GameState::Playing))

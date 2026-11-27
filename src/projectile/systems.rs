@@ -3,13 +3,16 @@ use bevy::prelude::*;
 use bevy::sprite_render::MeshMaterial2d;
 
 use crate::camera::components::ScreenShake;
-use crate::enemy::components::{AoEBurst, Armor, Enemy, Health};
+use crate::enemy::components::{AoEBurst, Armor, Enemy, EnemyName, Health};
+use crate::enemy::damage::damage_enemy;
 use crate::enemy::systems::start_damage_flash;
 use crate::particles::systems::spawn_impact_particles;
+use crate::records::DamageDealt;
 use crate::shader::{CircleMaterial, CircleMesh};
 use crate::states::PlayPhase;
 
 use super::components::*;
+use super::events::ProjectileHit;
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -34,6 +37,9 @@ const AOE_SHAKE_SECS: f32 = 0.25;
 /// Screen shake per-frame decay rate for AoE hits.
 const AOE_SHAKE_DECAY: f32 = 0.05;
 
+/// Color of the particles spawned where a projectile hits.
+const IMPACT_COLOR: Color = Color::srgba(1.0, 0.95, 0.6, 0.9);
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -53,16 +59,6 @@ pub(crate) fn move_toward(current: Vec3, target: Vec3, speed: f32, dt: f32) -> V
     } else {
         current + step
     }
-}
-
-/// Apply damage to an enemy, reducing by armor. Armor can never fully
-/// negate damage — minimum 1 point always gets through.
-pub(crate) fn apply_damage(health: &mut Health, raw_damage: f32, armor: Option<f32>) {
-    let effective = match armor {
-        Some(reduction) => (raw_damage - reduction).max(1.0),
-        None => raw_damage,
-    };
-    health.current -= effective;
 }
 
 /// Linear damage falloff: full damage at center, zero at edge.
@@ -96,105 +92,147 @@ pub fn projectile_movement(
     }
 }
 
-struct PendingHit {
-    proj_entity: Entity,
-    target: Entity,
-    damage: f32,
-    hit_pos: Vec3,
-    aoe: Option<(f32, f32)>,
-    armor: Option<f32>,
-}
-
+/// Detect projectiles within `HIT_DISTANCE` of their target: despawn each
+/// one and trigger `ProjectileHit` on the target. The hit's effects are
+/// the observers of `ProjectileHit`. A projectile whose target is gone is
+/// despawned with no hit.
 pub fn projectile_hit_detection(
     mut commands: Commands,
     projectiles: Query<(Entity, &Projectile, &Transform, Option<&AoEPayload>)>,
-    mut enemies: Query<(Entity, &mut Health, &Transform, Option<&Armor>), With<Enemy>>,
-    mut shake: ResMut<ScreenShake>,
-    circle_mesh: Res<CircleMesh>,
-    mut circle_mats: ResMut<Assets<CircleMaterial>>,
+    targets: Query<&Transform, With<Enemy>>,
 ) {
-    let mut hits: Vec<PendingHit> = Vec::new();
-
     for (proj_entity, proj, proj_tf, aoe) in &projectiles {
-        let Ok((_, _, target_tf, target_armor)) = enemies.get(proj.target) else {
+        let Ok(target_tf) = targets.get(proj.target) else {
             commands.entity(proj_entity).despawn();
             continue;
         };
 
-        let distance = proj_tf.translation.distance(target_tf.translation);
-        if distance > HIT_DISTANCE {
+        if proj_tf.translation.distance(target_tf.translation) > HIT_DISTANCE {
             continue;
         }
 
-        hits.push(PendingHit {
-            proj_entity,
-            target: proj.target,
+        commands.entity(proj_entity).despawn();
+        commands.trigger(ProjectileHit {
+            entity: proj.target,
+            source: proj.source,
+            position: proj_tf.translation,
             damage: proj.damage,
-            hit_pos: proj_tf.translation,
-            aoe: aoe.map(|a| (a.radius, a.damage)),
-            armor: target_armor.map(|a| a.reduction),
+            aoe: aoe.copied(),
         });
     }
+}
 
-    for hit in hits {
-        commands.entity(hit.proj_entity).despawn();
+// ---------------------------------------------------------------------------
+// ProjectileHit observers (one per effect; see `ProjectileHit` on ordering)
+// ---------------------------------------------------------------------------
 
-        if let Ok((_, mut health, _, _)) = enemies.get_mut(hit.target) {
-            apply_damage(&mut health, hit.damage, hit.armor);
-            // Flash white on damage.
-            commands.entity(hit.target).queue(start_damage_flash);
+/// Damage the enemy hit, through its armor, and flash it.
+pub fn on_projectile_hit_damage(
+    hit: On<ProjectileHit>,
+    mut commands: Commands,
+    mut enemies: Query<(&mut Health, Option<&Armor>, Option<&EnemyName>), With<Enemy>>,
+    mut records: MessageWriter<DamageDealt>,
+) {
+    let Ok((mut health, armor, name)) = enemies.get_mut(hit.entity) else {
+        return;
+    };
+    damage_enemy(
+        hit.entity,
+        name.map(|n| n.0),
+        &mut health,
+        armor.map(|a| a.reduction),
+        hit.damage,
+        hit.source,
+        &mut records,
+    );
+    commands.entity(hit.entity).queue(start_damage_flash);
+}
+
+/// Splash: damage every other enemy within the AoE radius, with linear
+/// falloff and through its armor, and flash it. No-op without `aoe`.
+pub fn on_projectile_hit_splash(
+    hit: On<ProjectileHit>,
+    mut commands: Commands,
+    mut enemies: Query<
+        (
+            Entity,
+            &mut Health,
+            &Transform,
+            Option<&Armor>,
+            Option<&EnemyName>,
+        ),
+        With<Enemy>,
+    >,
+    mut records: MessageWriter<DamageDealt>,
+) {
+    let Some(aoe) = hit.aoe else {
+        return;
+    };
+    for (entity, mut health, tf, armor, name) in &mut enemies {
+        if entity == hit.entity {
+            continue;
         }
-
-        spawn_impact_particles(
-            &mut commands,
-            hit.hit_pos.truncate(),
-            Color::srgba(1.0, 0.95, 0.6, 0.9),
-            &mut rand::rng(),
+        let dist = tf.translation.distance(hit.position);
+        if dist > aoe.radius {
+            continue;
+        }
+        damage_enemy(
+            entity,
+            name.map(|n| n.0),
+            &mut health,
+            armor.map(|a| a.reduction),
+            aoe.damage * aoe_falloff(dist, aoe.radius),
+            hit.source,
+            &mut records,
         );
-
-        if let Some((radius, aoe_damage)) = hit.aoe {
-            // Screen shake on AoE.
-            shake.intensity = AOE_SHAKE_INTENSITY;
-            shake.timer = Timer::from_seconds(AOE_SHAKE_SECS, TimerMode::Once);
-            shake.decay = AOE_SHAKE_DECAY;
-
-            // Visual burst (circular shader).
-            let burst_mat = circle_mats.add(CircleMaterial {
-                color: Color::srgba(1.0, 0.5, 0.1, 0.4),
-                softness: 0.15,
-                fill_fade: 0.0,
-                ripple_speed: 0.0,
-                time: 0.0,
-            });
-            commands.spawn((
-                AoEBurst {
-                    timer: Timer::from_seconds(AOE_BURST_SECS, TimerMode::Once),
-                    max_radius: radius * 2.0,
-                },
-                Mesh2d(circle_mesh.0.clone()),
-                MeshMaterial2d(burst_mat),
-                Transform::from_translation(hit.hit_pos).with_scale(Vec3::splat(AOE_BURST_SCALE)),
-                DespawnOnExit(PlayPhase::Defending),
-            ));
-
-            let aoe_targets: Vec<(Entity, f32, Option<f32>)> = enemies
-                .iter()
-                .filter(|(e, _, _, _)| *e != hit.target)
-                .filter_map(|(e, _, tf, armor)| {
-                    let dist = tf.translation.distance(hit.hit_pos);
-                    (dist <= radius).then_some((e, dist, armor.map(|a| a.reduction)))
-                })
-                .collect();
-
-            for (aoe_entity, dist, aoe_armor) in aoe_targets {
-                if let Ok((_, mut health, _, _)) = enemies.get_mut(aoe_entity) {
-                    let falloff = aoe_falloff(dist, radius);
-                    apply_damage(&mut health, aoe_damage * falloff, aoe_armor);
-                    commands.entity(aoe_entity).queue(start_damage_flash);
-                }
-            }
-        }
+        commands.entity(entity).queue(start_damage_flash);
     }
+}
+
+/// Spawn impact particles where the projectile hit.
+pub fn on_projectile_hit_particles(hit: On<ProjectileHit>, mut commands: Commands) {
+    spawn_impact_particles(
+        &mut commands,
+        hit.position.truncate(),
+        IMPACT_COLOR,
+        &mut rand::rng(),
+    );
+}
+
+/// Spawn the expanding AoE burst and shake the screen. No-op without `aoe`.
+pub fn on_projectile_hit_burst(
+    hit: On<ProjectileHit>,
+    mut commands: Commands,
+    mut shake: ResMut<ScreenShake>,
+    circle_mesh: Res<CircleMesh>,
+    mut circle_mats: ResMut<Assets<CircleMaterial>>,
+) {
+    let Some(aoe) = hit.aoe else {
+        return;
+    };
+
+    shake.intensity = AOE_SHAKE_INTENSITY;
+    shake.timer = Timer::from_seconds(AOE_SHAKE_SECS, TimerMode::Once);
+    shake.decay = AOE_SHAKE_DECAY;
+
+    // Visual burst (circular shader).
+    let burst_mat = circle_mats.add(CircleMaterial {
+        color: Color::srgba(1.0, 0.5, 0.1, 0.4),
+        softness: 0.15,
+        fill_fade: 0.0,
+        ripple_speed: 0.0,
+        time: 0.0,
+    });
+    commands.spawn((
+        AoEBurst {
+            timer: Timer::from_seconds(AOE_BURST_SECS, TimerMode::Once),
+            max_radius: aoe.radius * 2.0,
+        },
+        Mesh2d(circle_mesh.0.clone()),
+        MeshMaterial2d(burst_mat),
+        Transform::from_translation(hit.position).with_scale(Vec3::splat(AOE_BURST_SCALE)),
+        DespawnOnExit(PlayPhase::Defending),
+    ));
 }
 
 /// Spawn trail particles behind projectiles.
@@ -241,48 +279,6 @@ pub fn fade_trail_particles(
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    // -- apply_damage --
-
-    #[test]
-    fn no_armor_full_damage() {
-        let mut health = Health {
-            current: 100.0,
-            max: 100.0,
-        };
-        apply_damage(&mut health, 25.0, None);
-        assert_eq!(health.current, 75.0);
-    }
-
-    #[test]
-    fn armor_reduces_damage() {
-        let mut health = Health {
-            current: 100.0,
-            max: 100.0,
-        };
-        apply_damage(&mut health, 25.0, Some(10.0));
-        assert_eq!(health.current, 85.0); // 25 - 10 = 15 damage
-    }
-
-    #[test]
-    fn armor_cannot_negate_all() {
-        let mut health = Health {
-            current: 100.0,
-            max: 100.0,
-        };
-        apply_damage(&mut health, 5.0, Some(50.0));
-        assert_eq!(health.current, 99.0); // min 1 damage
-    }
-
-    #[test]
-    fn zero_damage_with_armor() {
-        let mut health = Health {
-            current: 100.0,
-            max: 100.0,
-        };
-        apply_damage(&mut health, 0.0, Some(10.0));
-        assert_eq!(health.current, 99.0); // (0 - 10).max(1) = 1
-    }
 
     // -- move_toward --
 

@@ -29,7 +29,7 @@ use bevy::sprite_render::MeshMaterial2d;
 
 use components::{
     AuraVisual, CollectionAuraRingConfig, MagnetAura, RangeRing, RangeRingConfig,
-    SlowAuraRingConfig, TowerRegistry,
+    SlowAuraRingConfig, TowerRegistry, TowerSerials,
 };
 
 /// Spawn a shader-driven ring child on an entity.
@@ -264,6 +264,7 @@ impl Plugin for TowerPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<placement::SelectedTower>()
             .init_resource::<TowerRegistry>()
+            .init_resource::<TowerSerials>()
             .init_resource::<upgrade::InspectedTower>()
             .init_resource::<upgrade::PanelSections>()
             .add_message::<upgrade::UpgradeApplied<upgrade::Primary>>()
@@ -287,7 +288,10 @@ impl Plugin for TowerPlugin {
             ))
             .add_systems(Startup, upgrade::register_default_panel_sections)
             .add_systems(PostStartup, sort_blueprints)
-            .add_systems(OnEnter(GameState::Playing), upgrade::setup_upgrade_panel)
+            .add_systems(
+                OnEnter(GameState::Playing),
+                (upgrade::setup_upgrade_panel, placement::reset_tower_serials),
+            )
             .add_systems(
                 Update,
                 (

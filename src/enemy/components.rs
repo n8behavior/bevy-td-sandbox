@@ -145,8 +145,8 @@ pub struct Regeneration {
     pub rate: f32,
 }
 
-/// Flat damage reduction per hit (minimum 1 damage). Read by
-/// `projectile/systems.rs::apply_damage`.
+/// Flat damage reduction per hit (minimum 1 damage). Projectile hits and
+/// their splash pass it to `enemy::damage::damage_enemy`.
 #[derive(Component)]
 pub struct Armor {
     pub reduction: f32,

@@ -5,14 +5,16 @@ use std::time::Duration;
 use bevy::prelude::*;
 
 use crate::common::constants::GridConfig;
-use crate::enemy::components::{Enemy, Health};
+use crate::enemy::components::{Enemy, EnemyName, Health};
+use crate::enemy::damage::damage_enemy;
 use crate::enemy::systems::start_damage_flash;
 use crate::grid::systems::grid_to_world_cfg;
 use crate::pile::resources::PileState;
+use crate::records::{DamageDealt, DamageSource};
 
 use super::components::{ChainCooldown, ChainLightning, LightningArc};
 use crate::tower::components::{
-    PanelStats, StatLine, TargetingMode, Tower, TowerHealth, TowerState,
+    PanelStats, StatLine, TargetingMode, Tower, TowerHealth, TowerId, TowerState,
 };
 use crate::tower::events::TowerFired;
 use crate::tower::systems::best_target_from;
@@ -38,17 +40,27 @@ pub fn chain_lightning_fire(
             Option<&TargetingMode>,
             Option<&TowerHealth>,
             &TowerState,
+            &TowerId,
         ),
         With<Tower>,
     >,
-    mut enemies: Query<(Entity, &mut Health, &Transform), With<Enemy>>,
+    mut enemies: Query<(Entity, &mut Health, &Transform, Option<&EnemyName>), With<Enemy>>,
     time: Res<Time>,
     pile_state: Res<PileState>,
     config: Res<GridConfig>,
+    mut records: MessageWriter<DamageDealt>,
 ) {
     let pile_center_world = grid_to_world_cfg(pile_state.center, &config);
-    for (tower_entity, tower_tf, chain, mut cooldown, targeting, tower_health, tower_state) in
-        &mut towers
+    for (
+        tower_entity,
+        tower_tf,
+        chain,
+        mut cooldown,
+        targeting,
+        tower_health,
+        tower_state,
+        tower_id,
+    ) in &mut towers
     {
         if !tower_state.is_operational() {
             continue;
@@ -67,7 +79,7 @@ pub fn chain_lightning_fire(
         let Some(first_target) = best_target_from(
             enemies
                 .iter()
-                .map(|(e, h, tf)| (e, tf.translation.truncate(), h.current)),
+                .map(|(e, h, tf, _)| (e, tf.translation.truncate(), h.current)),
             tower_pos,
             chain.primary_range.0,
             mode,
@@ -86,7 +98,7 @@ pub fn chain_lightning_fire(
         let mut hit_set = vec![first_target];
         let mut current_damage = chain.damage.0 * eff;
 
-        if let Ok((_, _, tf)) = enemies.get(first_target) {
+        if let Ok((_, _, tf, _)) = enemies.get(first_target) {
             let pos = tf.translation.truncate();
             chain_targets.push((first_target, pos, current_damage));
 
@@ -100,7 +112,7 @@ pub fn chain_lightning_fire(
 
                 // Find nearest unhit enemy within arc range.
                 let mut best: Option<(Entity, Vec2, f32)> = None;
-                for (e, _, tf) in enemies.iter() {
+                for (e, _, tf, _) in enemies.iter() {
                     if hit_set.contains(&e) {
                         continue;
                     }
@@ -125,8 +137,17 @@ pub fn chain_lightning_fire(
         let mut prev_pos = tower_pos;
 
         for &(entity, pos, damage) in &chain_targets {
-            if let Ok((_, mut health, _)) = enemies.get_mut(entity) {
-                health.current -= damage;
+            if let Ok((_, mut health, _, name)) = enemies.get_mut(entity) {
+                // Chain Lightning ignores armor (see #104).
+                damage_enemy(
+                    entity,
+                    name.map(|n| n.0),
+                    &mut health,
+                    None,
+                    damage,
+                    DamageSource::Tower(*tower_id),
+                    &mut records,
+                );
                 commands.entity(entity).queue(start_damage_flash);
             }
 

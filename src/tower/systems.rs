@@ -10,6 +10,7 @@ use crate::enemy::components::{Enemy, Health, SlowEffect};
 use crate::grid::systems::grid_to_world_cfg;
 use crate::pile::resources::{PileScrap, PileState};
 use crate::projectile::components::{AoEPayload, Projectile, TrailEmitter};
+use crate::records::DamageSource;
 use crate::stats::resources::RunStats;
 
 use super::components::*;
@@ -179,10 +180,13 @@ pub(crate) fn magnetic_pull(
     direction * pull_speed * strength * dt
 }
 
+/// Spawn a projectile from `tower_tf` toward `target`. `source` names the
+/// firing tower; the projectile keeps it after the tower is gone.
 pub(crate) fn spawn_projectile(
     commands: &mut Commands,
     visuals: &ProjectileVisuals,
     tower_tf: &Transform,
+    source: DamageSource,
     damage: f32,
     target: Entity,
     aoe: Option<&AoEOnHit>,
@@ -192,6 +196,7 @@ pub(crate) fn spawn_projectile(
             damage,
             speed: visuals.speed,
             target,
+            source,
         },
         Sprite::from_color(visuals.color, visuals.size),
         Transform::from_translation(tower_tf.translation + Vec3::Z * 0.5),
@@ -301,20 +306,25 @@ pub fn turret_state_machine(
 
 /// Default observer for `TowerWantsToFire`: spawns a standard projectile
 /// from the tower's `ProjectileVisuals`, copying the optional `AoEOnHit`
-/// payload onto the projectile. Towers with the `CustomFire` marker are
-/// skipped; their own per-tower observers handle the spawn.
+/// payload and the tower's `TowerId` onto the projectile. Towers with the
+/// `CustomFire` marker are skipped; their own per-tower observers handle
+/// the spawn.
 pub fn default_fire_observer(
     trigger: On<TowerWantsToFire>,
     mut commands: Commands,
-    towers: Query<(&Transform, &ProjectileVisuals, Option<&AoEOnHit>), Without<CustomFire>>,
+    towers: Query<
+        (&Transform, &ProjectileVisuals, Option<&AoEOnHit>, &TowerId),
+        Without<CustomFire>,
+    >,
 ) {
-    let Ok((tower_tf, visuals, aoe)) = towers.get(trigger.entity) else {
+    let Ok((tower_tf, visuals, aoe, id)) = towers.get(trigger.entity) else {
         return;
     };
     spawn_projectile(
         &mut commands,
         visuals,
         tower_tf,
+        DamageSource::Tower(*id),
         trigger.damage,
         trigger.target,
         aoe,

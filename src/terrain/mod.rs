@@ -1,6 +1,7 @@
 pub mod components;
 pub mod systems;
 
+use crate::enemy::damage::EnemyDamageSystems;
 use crate::states::{GameState, PlayPhase};
 use bevy::prelude::*;
 
@@ -19,7 +20,7 @@ impl Plugin for TerrainPlugin {
                 FixedUpdate,
                 (
                     systems::apply_puddle_slow,
-                    systems::apply_radioactive_damage,
+                    systems::apply_radioactive_damage.in_set(EnemyDamageSystems),
                 )
                     .after(crate::enemy::systems::apply_slow_effects)
                     .before(crate::enemy::systems::enemy_movement)

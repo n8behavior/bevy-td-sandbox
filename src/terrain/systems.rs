@@ -15,10 +15,12 @@ use bevy_northstar::prelude::*;
 use rand::{Rng, RngExt};
 
 use crate::common::constants::*;
-use crate::enemy::components::{Enemy, Health, MoveSpeed};
+use crate::enemy::components::{Enemy, EnemyName, Health, MoveSpeed};
+use crate::enemy::damage::damage_enemy;
 use crate::grid::components::GridCell;
 use crate::grid::systems::world_to_grid;
 use crate::pile::resources::{EdgeCells, PileState};
+use crate::records::{DamageDealt, DamageSource};
 
 use super::components::{Terrain, TerrainMap};
 
@@ -352,18 +354,28 @@ pub fn apply_puddle_slow(
     }
 }
 
-/// Deal damage-over-time to enemies standing on radioactive cells.
+/// Deal damage-over-time to enemies standing on radioactive cells. Armor
+/// doesn't apply. Writes one `DamageDealt` per enemy per tick.
 pub fn apply_radioactive_damage(
-    mut enemies: Query<(&Transform, &mut Health), With<Enemy>>,
+    mut enemies: Query<(Entity, &Transform, &mut Health, Option<&EnemyName>), With<Enemy>>,
     terrain_map: Res<TerrainMap>,
     config: Res<GridConfig>,
     time: Res<Time>,
+    mut records: MessageWriter<DamageDealt>,
 ) {
-    for (transform, mut health) in &mut enemies {
+    for (entity, transform, mut health, name) in &mut enemies {
         if terrain_at(transform.translation.truncate(), &terrain_map, &config)
             == Some(Terrain::Radioactive)
         {
-            health.current -= RADIOACTIVE_DPS * time.delta_secs();
+            damage_enemy(
+                entity,
+                name.map(|n| n.0),
+                &mut health,
+                None,
+                RADIOACTIVE_DPS * time.delta_secs(),
+                DamageSource::Terrain(Terrain::Radioactive),
+                &mut records,
+            );
         }
     }
 }

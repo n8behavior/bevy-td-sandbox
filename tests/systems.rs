@@ -1,15 +1,20 @@
+use std::time::Duration;
+
 use bevy::prelude::*;
+use bevy::time::TimeUpdateStrategy;
 use bevy_northstar::prelude::*;
 use bevy_td_sandbox::audio::{GameAudioPlugin, GameSound, PlaySound};
 use bevy_td_sandbox::camera::components::{CameraController, ScreenShake};
 use bevy_td_sandbox::camera::systems::{apply_screen_shake, camera_reset};
 use bevy_td_sandbox::common::constants::{
-    PAPER_COLOR, PILE_COLLECTOR_RANGE, PILE_COLOR, PUDDLE_SLOW_FACTOR, SCRAP_MAGNET_RANGE,
+    PAPER_COLOR, PILE_COLLECTOR_RANGE, PILE_COLOR, PUDDLE_SLOW_FACTOR, RADIOACTIVE_DPS,
+    SCRAP_MAGNET_RANGE,
 };
 use bevy_td_sandbox::economy::components::ScrapDrop;
 use bevy_td_sandbox::endless::resources::EndlessSpawner;
 use bevy_td_sandbox::endless::systems::endless_check_game_over;
 use bevy_td_sandbox::endless::systems::endless_spawn_enemies;
+use bevy_td_sandbox::enemy::EnemyPlugin;
 use bevy_td_sandbox::enemy::components::*;
 use bevy_td_sandbox::grid::components::GridCell;
 use bevy_td_sandbox::grid::systems::grid_to_world_cfg;
@@ -17,13 +22,27 @@ use bevy_td_sandbox::pathfinding::systems::recalculate_enemy_paths;
 use bevy_td_sandbox::pile::components::PileCell;
 use bevy_td_sandbox::pile::resources::{PileScrap, PileState};
 use bevy_td_sandbox::pile::systems::{update_pile_state, update_pile_visuals};
+use bevy_td_sandbox::projectile::ProjectilePlugin;
+use bevy_td_sandbox::projectile::components::{AoEPayload, Projectile};
+use bevy_td_sandbox::projectile::events::ProjectileHit;
+use bevy_td_sandbox::projectile::systems::{
+    on_projectile_hit_burst, on_projectile_hit_damage, on_projectile_hit_particles,
+    on_projectile_hit_splash, projectile_hit_detection, projectile_movement,
+};
+use bevy_td_sandbox::records::{DamageDealt, DamageSource};
+use bevy_td_sandbox::shader::{CircleMaterial, CircleMesh};
 use bevy_td_sandbox::states::{GameMode, GameState, PlayPhase};
 use bevy_td_sandbox::terrain::components::{Terrain, TerrainMap};
 use bevy_td_sandbox::terrain::systems::{apply_puddle_slow, apply_radioactive_damage};
 use bevy_td_sandbox::test_helpers::*;
+use bevy_td_sandbox::tower::chain_lightning::components::{ChainCooldown, ChainLightning};
+use bevy_td_sandbox::tower::chain_lightning::systems::chain_lightning_fire;
 use bevy_td_sandbox::tower::components::*;
-use bevy_td_sandbox::tower::placement::SelectedTower;
-use bevy_td_sandbox::tower::systems::slow_aura;
+use bevy_td_sandbox::tower::events::TowerWantsToFire;
+use bevy_td_sandbox::tower::placement::{
+    SelectedTower, confirm_tower_placement, reset_tower_serials,
+};
+use bevy_td_sandbox::tower::systems::{default_fire_observer, slow_aura};
 use bevy_td_sandbox::ui::hud::*;
 use bevy_td_sandbox::ui::tower_menu::{TowerPaletteIndex, highlight_selected_tower};
 use bevy_td_sandbox::wave::resources::{WaveConfig, WaveManager};
@@ -1090,6 +1109,47 @@ fn radioactive_no_damage_off_grid() {
         "off-grid enemy should not take damage, got {}",
         health.current
     );
+}
+
+#[test]
+fn radioactive_tick_writes_damage_dealt() {
+    let mut app = test_app();
+    let config = test_grid_config();
+    app.insert_resource(TimeUpdateStrategy::ManualDuration(Duration::from_millis(
+        250,
+    )));
+
+    let mut terrain_map = TerrainMap::default();
+    terrain_map
+        .cells
+        .insert(IVec2::new(5, 5), Terrain::Radioactive);
+    let world_pos = grid_to_world_cfg(UVec3::new(5, 5, 0), &config);
+    app.insert_resource(config);
+    app.insert_resource(terrain_map);
+
+    // Armor is ignored by radioactive terrain.
+    let enemy = EnemyBuilder::new()
+        .health(100.0, 100.0)
+        .armor(5.0)
+        .named("Runner")
+        .at(world_pos.extend(0.0))
+        .spawn(&mut app);
+    app.add_systems(Update, apply_radioactive_damage);
+
+    // The first update has no time delta; the second ticks 0.25 s.
+    app.update();
+    app.update();
+
+    let records = read_messages::<DamageDealt>(&app);
+    assert_eq!(records.len(), 2, "one record per enemy per tick");
+    let tick = records[1];
+    assert_eq!(tick.source, DamageSource::Terrain(Terrain::Radioactive));
+    assert_eq!(tick.target, enemy);
+    assert_eq!(tick.target_kind, Some("Runner"));
+    let expected = RADIOACTIVE_DPS * 0.25;
+    assert!((tick.raw - expected).abs() < 1e-4, "raw {}", tick.raw);
+    assert!((tick.dealt - expected).abs() < 1e-4, "dealt {}", tick.dealt);
+    assert_eq!(tick.overkill, 0.0);
 }
 
 // ---------------------------------------------------------------------------
@@ -2262,4 +2322,560 @@ fn regression_66_diagonal_cross_chunk_mismatch() {
         "Waypoints/HPA* should NOT find this path (confirms diagonal cross-chunk \
          limitation that caused bug #66)"
     );
+}
+
+// ---------------------------------------------------------------------------
+// TowerId: assigned once, on placement
+// ---------------------------------------------------------------------------
+
+fn test_tower_blueprint(name: &'static str, key: KeyCode) -> TowerBlueprint {
+    TowerBlueprint {
+        name,
+        cost: 10,
+        color: Color::WHITE,
+        ui_color: Color::WHITE,
+        key,
+        special_label: "",
+        spawn_fn: |_| {},
+    }
+}
+
+/// App in `Playing` that runs `confirm_tower_placement`, with a ScrapGun
+/// (index 0) and a Railgun (index 1) blueprint.
+fn placement_app() -> App {
+    let mut app = test_app();
+    insert_pile(&mut app, 10_000);
+    app.init_state::<GameState>();
+    app.init_resource::<ButtonInput<MouseButton>>();
+    app.init_resource::<SelectedTower>();
+    app.init_resource::<TowerSerials>();
+    let mut registry = TowerRegistry::default();
+    registry
+        .blueprints
+        .push(test_tower_blueprint("ScrapGun", KeyCode::Digit1));
+    registry
+        .blueprints
+        .push(test_tower_blueprint("Railgun", KeyCode::Digit4));
+    app.insert_resource(registry);
+    app.add_systems(OnEnter(GameState::Playing), reset_tower_serials);
+    app.add_systems(
+        Update,
+        confirm_tower_placement.run_if(in_state(GameState::Playing)),
+    );
+    set_game_state(&mut app, GameState::Playing);
+    app
+}
+
+fn set_game_state(app: &mut App, state: GameState) {
+    app.world_mut()
+        .resource_mut::<NextState<GameState>>()
+        .set(state);
+    app.update();
+}
+
+/// Place a tower of blueprint `index` on `cell` the way a click does: a
+/// valid preview (with its range ring child) under the cursor, then a left
+/// click. Returns the placed tower.
+fn place_tower(app: &mut App, index: usize, cell: IVec2) -> Entity {
+    let pos = grid_to_world_cfg(
+        UVec3::new(cell.x as u32, cell.y as u32, 0),
+        &test_grid_config(),
+    );
+    let preview = app
+        .world_mut()
+        .spawn((
+            Tower,
+            TowerState::Placing,
+            PlacementValid(true),
+            Transform::from_translation(pos.extend(2.0)),
+        ))
+        .with_child(RangeRing)
+        .id();
+    *app.world_mut().resource_mut::<SelectedTower>() = SelectedTower {
+        index: Some(index),
+        entity: Some(preview),
+    };
+
+    app.world_mut()
+        .resource_mut::<ButtonInput<MouseButton>>()
+        .press(MouseButton::Left);
+    app.update();
+    let mut mouse = app.world_mut().resource_mut::<ButtonInput<MouseButton>>();
+    mouse.release(MouseButton::Left);
+    mouse.clear();
+
+    assert_eq!(
+        app.world().get::<TowerState>(preview),
+        Some(&TowerState::Active),
+        "the preview should be placed"
+    );
+    preview
+}
+
+fn tower_id(app: &App, tower: Entity) -> Option<TowerId> {
+    app.world().get::<TowerId>(tower).copied()
+}
+
+#[test]
+fn placing_towers_assigns_tower_ids() {
+    let mut app = placement_app();
+    let first = place_tower(&mut app, 0, IVec2::new(2, 3));
+    let second = place_tower(&mut app, 0, IVec2::new(5, 3));
+    let railgun = place_tower(&mut app, 1, IVec2::new(8, 9));
+
+    let ids: Vec<String> = [first, second, railgun]
+        .iter()
+        .map(|&t| {
+            tower_id(&app, t)
+                .expect("placed tower has an id")
+                .to_string()
+        })
+        .collect();
+    assert_eq!(
+        ids,
+        [
+            "ScrapGun #1 (2, 3)",
+            "ScrapGun #2 (5, 3)",
+            "Railgun #1 (8, 9)"
+        ]
+    );
+    assert_eq!(
+        tower_id(&app, second),
+        Some(TowerId {
+            kind: "ScrapGun",
+            serial: 2,
+            cell: IVec2::new(5, 3),
+        })
+    );
+
+    // The preview spawned for the next placement gets no id.
+    let preview = app.world().resource::<SelectedTower>().entity.unwrap();
+    assert_eq!(
+        app.world().get::<TowerState>(preview),
+        Some(&TowerState::Placing)
+    );
+    assert_eq!(tower_id(&app, preview), None);
+}
+
+#[test]
+fn tower_ids_restart_in_a_new_run() {
+    let mut app = placement_app();
+    place_tower(&mut app, 0, IVec2::new(2, 3));
+    place_tower(&mut app, 0, IVec2::new(5, 3));
+
+    set_game_state(&mut app, GameState::GameOver);
+    set_game_state(&mut app, GameState::Playing);
+
+    let tower = place_tower(&mut app, 0, IVec2::new(2, 3));
+    assert_eq!(tower_id(&app, tower).map(|id| id.serial), Some(1));
+}
+
+// ---------------------------------------------------------------------------
+// ProjectileHit observers, each triggered directly (no projectile, no tower)
+// ---------------------------------------------------------------------------
+
+const TEST_TOWER: TowerId = TowerId {
+    kind: "TestTower",
+    serial: 1,
+    cell: IVec2::ZERO,
+};
+
+fn projectile_hit(
+    target: Entity,
+    position: Vec3,
+    damage: f32,
+    aoe: Option<AoEPayload>,
+) -> ProjectileHit {
+    ProjectileHit {
+        entity: target,
+        source: DamageSource::Tower(TEST_TOWER),
+        position,
+        damage,
+        aoe,
+    }
+}
+
+/// Trigger `hit` and apply the commands its observers queued.
+fn trigger_hit(app: &mut App, hit: ProjectileHit) {
+    app.world_mut().trigger(hit);
+    app.world_mut().flush();
+}
+
+fn hp(app: &App, enemy: Entity) -> f32 {
+    app.world().get::<Health>(enemy).unwrap().current
+}
+
+fn assert_close(actual: f32, expected: f32, what: &str) {
+    assert!(
+        (actual - expected).abs() < 1e-3,
+        "{what}: got {actual}, want {expected}"
+    );
+}
+
+#[test]
+fn hit_damage_applies_armor_with_a_minimum_of_one() {
+    let mut app = test_app();
+    app.add_observer(on_projectile_hit_damage);
+    let enemy = EnemyBuilder::new()
+        .health(100.0, 100.0)
+        .armor(10.0)
+        .with_sprite()
+        .at(Vec3::ZERO)
+        .spawn(&mut app);
+
+    trigger_hit(&mut app, projectile_hit(enemy, Vec3::ZERO, 25.0, None));
+    assert_close(hp(&app, enemy), 85.0, "25 - 10 armor");
+    assert!(app.world().get::<DamageFlash>(enemy).is_some());
+
+    trigger_hit(&mut app, projectile_hit(enemy, Vec3::ZERO, 5.0, None));
+    assert_close(hp(&app, enemy), 84.0, "armor lets 1 through");
+}
+
+#[test]
+fn hit_splash_falls_off_through_armor_and_skips_the_target() {
+    let mut app = test_app();
+    app.add_observer(on_projectile_hit_splash);
+    let spawn = |app: &mut App, pos: Vec3, armor: Option<f32>| {
+        let mut b = EnemyBuilder::new()
+            .health(100.0, 100.0)
+            .with_sprite()
+            .at(pos);
+        if let Some(a) = armor {
+            b = b.armor(a);
+        }
+        b.spawn(app)
+    };
+    let target = spawn(&mut app, Vec3::ZERO, None);
+    let half_way = spawn(&mut app, Vec3::new(25.0, 0.0, 0.0), Some(5.0));
+    let close = spawn(&mut app, Vec3::new(0.0, 10.0, 0.0), None);
+    let outside = spawn(&mut app, Vec3::new(60.0, 0.0, 0.0), None);
+
+    let aoe = AoEPayload {
+        radius: 50.0,
+        damage: 40.0,
+    };
+    trigger_hit(
+        &mut app,
+        projectile_hit(target, Vec3::ZERO, 30.0, Some(aoe)),
+    );
+
+    assert_close(hp(&app, target), 100.0, "the direct target takes no splash");
+    assert_close(hp(&app, half_way), 85.0, "40 * 0.5 falloff - 5 armor");
+    assert_close(hp(&app, close), 68.0, "40 * 0.8 falloff");
+    assert_close(hp(&app, outside), 100.0, "outside the radius");
+    assert!(app.world().get::<DamageFlash>(half_way).is_some());
+    assert!(app.world().get::<DamageFlash>(outside).is_none());
+
+    // No splash without an AoE payload.
+    trigger_hit(&mut app, projectile_hit(target, Vec3::ZERO, 30.0, None));
+    assert_close(hp(&app, close), 68.0, "no aoe, no splash");
+}
+
+#[test]
+fn hit_spawns_impact_particles_at_the_hit() {
+    use bevy_td_sandbox::particles::components::ImpactParticle;
+
+    let mut app = test_app();
+    app.add_observer(on_projectile_hit_particles);
+    let enemy = EnemyBuilder::new().at(Vec3::ZERO).spawn(&mut app);
+
+    trigger_hit(
+        &mut app,
+        projectile_hit(enemy, Vec3::new(7.0, 3.0, 1.0), 10.0, None),
+    );
+
+    let positions: Vec<Vec2> = app
+        .world_mut()
+        .query_filtered::<&Transform, With<ImpactParticle>>()
+        .iter(app.world())
+        .map(|tf| tf.translation.truncate())
+        .collect();
+    assert!(!positions.is_empty(), "a hit should spawn impact particles");
+    assert!(positions.iter().all(|&p| p == Vec2::new(7.0, 3.0)));
+}
+
+#[test]
+fn hit_bursts_and_shakes_only_with_aoe() {
+    let mut app = test_app_with_assets();
+    app.init_asset::<CircleMaterial>();
+    app.init_resource::<ScreenShake>();
+    app.insert_resource(CircleMesh(Handle::default()));
+    app.add_observer(on_projectile_hit_burst);
+    let enemy = EnemyBuilder::new().at(Vec3::ZERO).spawn(&mut app);
+
+    let bursts = |app: &mut App| {
+        app.world_mut()
+            .query::<&AoEBurst>()
+            .iter(app.world())
+            .map(|b| b.max_radius)
+            .collect::<Vec<_>>()
+    };
+
+    trigger_hit(&mut app, projectile_hit(enemy, Vec3::ZERO, 10.0, None));
+    assert!(bursts(&mut app).is_empty(), "no aoe, no burst");
+    assert_eq!(app.world().resource::<ScreenShake>().intensity, 0.0);
+
+    let aoe = AoEPayload {
+        radius: 40.0,
+        damage: 20.0,
+    };
+    trigger_hit(&mut app, projectile_hit(enemy, Vec3::ZERO, 10.0, Some(aoe)));
+    assert_eq!(bursts(&mut app), [80.0], "one burst, twice the radius");
+    assert!(app.world().resource::<ScreenShake>().intensity > 0.0);
+}
+
+// ---------------------------------------------------------------------------
+// DamageDealt: one record per application, on every enemy-damage path
+// ---------------------------------------------------------------------------
+
+/// App that fires towers through `default_fire_observer` and resolves hits
+/// with the projectile systems and damage observers.
+fn firing_app() -> App {
+    let mut app = test_app();
+    app.add_observer(default_fire_observer)
+        .add_observer(on_projectile_hit_damage)
+        .add_observer(on_projectile_hit_splash)
+        .add_systems(
+            Update,
+            (projectile_movement, projectile_hit_detection).chain(),
+        );
+    app
+}
+
+/// Make `tower` fire at `target`, and spawn the projectile.
+fn fire(app: &mut App, tower: Entity, target: Entity, damage: f32) {
+    app.world_mut().trigger(TowerWantsToFire {
+        entity: tower,
+        target,
+        damage,
+    });
+    app.world_mut().flush();
+}
+
+fn record_for(records: &[DamageDealt], target: Entity) -> DamageDealt {
+    let mine: Vec<_> = records.iter().filter(|r| r.target == target).collect();
+    assert_eq!(mine.len(), 1, "one record for {target}, got {records:?}");
+    *mine[0]
+}
+
+#[test]
+fn turret_projectile_writes_damage_dealt() {
+    let mut app = firing_app();
+    let id = TowerId {
+        kind: "ScrapGun",
+        serial: 2,
+        cell: IVec2::new(4, 5),
+    };
+    let tower = TowerBuilder::turret().id(id).spawn(&mut app);
+    let enemy = EnemyBuilder::new()
+        .health(12.0, 50.0)
+        .armor(2.0)
+        .named("Brute")
+        .with_sprite()
+        .at(Vec3::new(3.0, 0.0, 0.0))
+        .spawn(&mut app);
+
+    fire(&mut app, tower, enemy, 20.0);
+    app.update();
+
+    let records = read_messages::<DamageDealt>(&app);
+    assert_eq!(records.len(), 1);
+    let hit = records[0];
+    assert_eq!(hit.source, DamageSource::Tower(id));
+    assert_eq!(hit.target, enemy);
+    assert_eq!(hit.target_kind, Some("Brute"));
+    assert_close(hit.raw, 20.0, "raw");
+    assert_close(hit.dealt, 12.0, "dealt: the health left");
+    assert_close(hit.overkill, 6.0, "overkill: 18 after armor - 12");
+}
+
+#[test]
+fn explosive_splash_writes_damage_dealt_per_enemy() {
+    let mut app = firing_app();
+    let id = TowerId {
+        kind: "Explosive",
+        serial: 1,
+        cell: IVec2::new(4, 5),
+    };
+    let tower = TowerBuilder::turret().id(id).spawn(&mut app);
+    app.world_mut().entity_mut(tower).insert(AoEOnHit {
+        radius: 50.0,
+        damage: 40.0,
+    });
+    let target = EnemyBuilder::new()
+        .health(100.0, 100.0)
+        .named("Shambler")
+        .with_sprite()
+        .at(Vec3::new(3.0, 0.0, 0.0))
+        .spawn(&mut app);
+    let splashed = EnemyBuilder::new()
+        .health(100.0, 100.0)
+        .armor(5.0)
+        .named("Brute")
+        .with_sprite()
+        .at(Vec3::new(28.0, 0.0, 0.0))
+        .spawn(&mut app);
+    let far = EnemyBuilder::new()
+        .health(100.0, 100.0)
+        .with_sprite()
+        .at(Vec3::new(63.0, 0.0, 0.0))
+        .spawn(&mut app);
+
+    fire(&mut app, tower, target, 30.0);
+    app.update();
+
+    let records = read_messages::<DamageDealt>(&app);
+    assert_eq!(records.len(), 2, "the direct hit and one splash");
+    assert!(records.iter().all(|r| r.source == DamageSource::Tower(id)));
+    assert!(records.iter().all(|r| r.target != far));
+
+    let direct = record_for(&records, target);
+    assert_close(direct.raw, 30.0, "direct raw");
+    assert_close(direct.dealt, 30.0, "direct dealt");
+
+    // 25 units from the hit: half of the AoE damage, then armor.
+    let splash = record_for(&records, splashed);
+    assert_eq!(splash.target_kind, Some("Brute"));
+    assert_close(splash.raw, 20.0, "splash raw");
+    assert_close(splash.dealt, 15.0, "splash dealt");
+    assert_close(splash.overkill, 0.0, "splash overkill");
+}
+
+#[test]
+fn chain_lightning_writes_damage_dealt_per_hop() {
+    let mut app = test_app();
+    insert_pile(&mut app, 0);
+    app.add_systems(Update, chain_lightning_fire);
+
+    let id = TowerId {
+        kind: "Chain Lightning",
+        serial: 1,
+        cell: IVec2::new(1, 1),
+    };
+    let tower = TowerBuilder::new().id(id).spawn(&mut app);
+    app.world_mut().entity_mut(tower).insert((
+        ChainLightning {
+            damage: Damage(20.0),
+            primary_range: Range(90.0),
+            arc_range: 60.0,
+            damage_falloff: 0.7,
+        },
+        ChainCooldown::new(2.0),
+        TargetingMode::Closest,
+    ));
+    let first = EnemyBuilder::new()
+        .health(100.0, 100.0)
+        .named("Shambler")
+        .with_sprite()
+        .at(Vec3::new(30.0, 0.0, 0.0))
+        .spawn(&mut app);
+    // Chain Lightning ignores armor (#104 decides whether it should).
+    let second = EnemyBuilder::new()
+        .health(10.0, 100.0)
+        .armor(5.0)
+        .named("Brute")
+        .with_sprite()
+        .at(Vec3::new(70.0, 0.0, 0.0))
+        .spawn(&mut app);
+
+    app.update();
+
+    let records = read_messages::<DamageDealt>(&app);
+    assert_eq!(records.len(), 2, "one record per hop");
+    assert!(records.iter().all(|r| r.source == DamageSource::Tower(id)));
+
+    let hop1 = record_for(&records, first);
+    assert_eq!(hop1.target_kind, Some("Shambler"));
+    assert_close(hop1.raw, 20.0, "first hop raw");
+    assert_close(hop1.dealt, 20.0, "first hop dealt");
+
+    let hop2 = record_for(&records, second);
+    assert_eq!(hop2.target_kind, Some("Brute"));
+    assert_close(hop2.raw, 14.0, "second hop raw: 20 * 0.7 falloff");
+    assert_close(hop2.dealt, 10.0, "second hop dealt: the health left");
+    assert_close(hop2.overkill, 4.0, "second hop overkill");
+}
+
+#[test]
+fn projectile_names_its_tower_after_the_tower_is_sold() {
+    let mut app = firing_app();
+    app.insert_resource(TimeUpdateStrategy::ManualDuration(Duration::from_millis(
+        100,
+    )));
+    let id = TowerId {
+        kind: "Railgun",
+        serial: 3,
+        cell: IVec2::new(9, 4),
+    };
+    let tower = TowerBuilder::turret().id(id).spawn(&mut app);
+    let enemy = EnemyBuilder::new()
+        .health(100.0, 100.0)
+        .with_sprite()
+        .at(Vec3::new(40.0, 0.0, 0.0))
+        .spawn(&mut app);
+
+    fire(&mut app, tower, enemy, 10.0);
+    // Selling a tower despawns it.
+    app.world_mut().despawn(tower);
+
+    let mut records = Vec::new();
+    for _ in 0..10 {
+        app.update();
+        records = read_messages::<DamageDealt>(&app);
+        if !records.is_empty() {
+            break;
+        }
+    }
+    assert_eq!(records.len(), 1, "the projectile should land");
+    assert_eq!(records[0].source, DamageSource::Tower(id));
+    assert_close(hp(&app, enemy), 90.0, "the hit still deals its damage");
+}
+
+// ---------------------------------------------------------------------------
+// check_enemy_death runs after the damage systems
+// ---------------------------------------------------------------------------
+
+#[test]
+fn lethal_projectile_hit_marks_enemy_dying_in_the_same_update() {
+    let mut app = test_app_with_assets();
+    app.init_asset::<CircleMaterial>();
+    insert_pile(&mut app, 1_000);
+    app.init_resource::<ScreenShake>();
+    app.insert_resource(CircleMesh(Handle::default()));
+    app.init_state::<GameState>();
+    app.add_sub_state::<PlayPhase>();
+    app.add_plugins((EnemyPlugin, ProjectilePlugin));
+    // Each update runs exactly one fixed tick (after the first update).
+    app.insert_resource(TimeUpdateStrategy::FixedTimesteps(1));
+
+    set_game_state(&mut app, GameState::Playing);
+    app.world_mut()
+        .resource_mut::<NextState<PlayPhase>>()
+        .set(PlayPhase::Defending);
+    app.update();
+
+    let pos = Vec3::new(100.0, 0.0, 1.0);
+    let enemy = EnemyBuilder::new()
+        .health(5.0, 50.0)
+        .named("Shambler")
+        .with_sprite()
+        .at(pos)
+        .spawn(&mut app);
+    app.world_mut().spawn((
+        Projectile {
+            damage: 10.0,
+            speed: 200.0,
+            target: enemy,
+            source: DamageSource::Tower(TEST_TOWER),
+        },
+        Transform::from_translation(pos),
+    ));
+
+    app.update();
+
+    assert!(
+        app.world().get::<Enemy>(enemy).is_none(),
+        "a lethal hit should mark the enemy dying in the same update"
+    );
+    assert!(app.world().get::<DeathAnimation>(enemy).is_some());
 }
