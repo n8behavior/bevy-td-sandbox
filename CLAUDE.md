@@ -6,11 +6,11 @@ Post-apocalyptic tower defense game. Open-field mazing, scavenging economy, wave
 
 ## Tech Stack
 
-- **Bevy 0.18.1** (2D feature set)
-- **bevy_northstar 0.6.1** (grid-based A* pathfinding)
+- **Bevy 0.20.1** (`2d` + `ui` feature sets, plus `bevy_audio` + `wav`)
+- **bevy_northstar 0.8.0** (grid-based A* pathfinding)
 - **rand 0.10**
 
-## CRITICAL: Bevy 0.18 API Patterns
+## CRITICAL: Bevy 0.20 API Patterns
 
 **DO NOT** use patterns from older Bevy versions. The following are verified from source.
 
@@ -73,6 +73,10 @@ commands.spawn((
 // NOT StateScoped -- that doesn't exist
 ```
 
+`NextState::set()` re-runs the transition (and these despawns) even when the
+target equals the current state. Use `set_if_different()` to skip that
+(the 0.19 name `set_if_neq` no longer exists).
+
 ### Events vs Messages
 
 Both exist with different purposes:
@@ -87,6 +91,11 @@ commands.trigger(EnemyDied { position, loot_value });
 
 // Register observer
 world.add_observer(|trigger: On<EnemyDied>| { /* immediate */ });
+```
+
+**Lifecycle observers** put the component inside the event type:
+```rust
+app.add_observer(|add: On<Add<Tower>>| { /* add.entity */ });  // NOT On<Add, Tower>
 ```
 
 **EntityEvent** -- Observer event targeted at a specific entity:
@@ -121,11 +130,62 @@ timer.elapsed_secs()    // elapsed time as f32
 // NO timer.finished() method -- use is_finished()
 ```
 
-### No TilemapChunk
+### Tilemaps
 
-Bevy 0.18 does NOT have built-in tilemap support. Render grids with individual sprites or a mesh.
+Bevy ships `TilemapChunk` (in `bevy_sprite_render`), but this project renders
+its grid with individual sprites.
 
-## bevy_northstar 0.6.1 API
+### Text
+
+`TextFont::font_size` is a `FontSize`, not an `f32`:
+
+```rust
+TextFont { font_size: FontSize::Px(18.0), ..default() }
+```
+
+`TextFont::default()` is `FontSize::Rem(1.)` (20px at the default `RemSize`).
+
+### UI Buttons
+
+`bevy::ui::Button` and `Interaction` are deprecated. Use the headless widget,
+add `Hovered` yourself, and react to `Activate`:
+
+```rust
+use bevy::picking::hover::Hovered;
+use bevy::ui_widgets::{Activate, ActivateOnPress, Button};
+
+commands.spawn((Button, ActivateOnPress, Hovered::default(), Node::default()));
+app.add_observer(|activate: On<Activate>| { /* activate.entity */ });
+// Styling: read `Hovered::get()` and `Has<bevy::ui::Pressed>`.
+```
+
+Without `ActivateOnPress`, `Activate` fires on release (a completed click).
+
+### Shaders are WESL
+
+Custom shaders are `.wesl` files (naga_oil `#import` is gone):
+
+```wgsl
+import bevy_sprite_render::mesh2d::vertex_output::VertexOutput;
+
+@group(constants::MATERIAL_BIND_GROUP) @binding(0) var<uniform> material: MyMaterial;
+```
+
+### Resources Are Entities
+
+`#[derive(Resource)]` also implements `Component`, so a type can't be both.
+Broad queries (`Query<Entity>`, `Query<()>`, `Query<Option<&T>>`, `EntityRef`)
+also match resource entities. Always add a `With<...>` filter (or
+`Without<IsResource>`).
+
+`Assets::get_mut` returns an `AssetMut` guard: bind it with `if let Some(mut a) = ...`.
+
+### Cargo Features
+
+`2d` no longer implies `ui` or `audio`; this project enables `ui`,
+`bevy_audio` and `wav` explicitly.
+
+## bevy_northstar 0.8 API
 
 ### Grid Setup
 
