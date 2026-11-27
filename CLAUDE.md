@@ -246,6 +246,41 @@ grid.is_path_viable(start, goal) // -> bool
 - `CardinalGrid` = `Grid<CardinalNeighborhood>` (4-dir)
 - `OrdinalGrid` = `Grid<OrdinalNeighborhood>` (8-dir)
 
+## Tuning data
+
+A type's tuning numbers (health, speed, loot, ability values) live in a RON
+file next to its module, not in Rust constants: `src/enemy/<name>/stats.ron`.
+Which components a type has stays in Rust. The machinery is `src/tuning.rs`.
+
+- **Hot reload:** with `just run` from the repository root, save the file and
+  the game picks up the new values (`embedded_watcher`, `native` feature).
+  Web and release builds use the values compiled in.
+- **A reload changes only new spawns.** Code reads `Tuned<T>` when it spawns
+  something; entities already on the field keep their values.
+- **Errors:** a mistyped field is an error (`deny_unknown_fields`), and so is
+  a value that `validate()` rejects. A bad file on reload is logged with its
+  path, line and column, and the old values stay.
+
+To add a file for a new type:
+
+1. Write `stats.ron` next to the module.
+2. Add the struct: `#[derive(Asset, TypePath, Deserialize, Clone, Debug, PartialEq)]`
+   and `#[serde(deny_unknown_fields)]`, and implement `TuningData::validate`
+   (`require_positive` for health, speed, cooldowns and ranges).
+3. In the plugin's `build`: `embedded_tuning!(app, MyStats, "stats.ron");`.
+   It embeds the file and adds `TuningPlugin::<MyStats>`.
+4. Read the values where the type spawns, with a deferred entity command, so
+   wave scaling (an `EnemySpawned` observer) still runs after it:
+   ```rust
+   cmds.queue(|mut entity: EntityWorldMut| {
+       let stats = entity.resource::<Tuned<MyStats>>().0.clone();
+       entity.insert(Health { current: stats.health, max: stats.health });
+   });
+   ```
+5. Test that the file parses (`tuning::parse`) and that a spawn matches it.
+   Tests that load assets use `test_app_with_assets()` (the watcher is off);
+   `enemy_app()` and `spawn_enemy()` in `test_helpers.rs` set up enemies.
+
 ## Build Commands
 
 ```bash

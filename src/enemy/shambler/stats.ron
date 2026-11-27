@@ -1,0 +1,9 @@
+// Shambler: the basic, slow enemy. Steals scrap.
+//
+// Each spawn reads these values; wave scaling multiplies health and speed.
+// A change applies to Shamblers spawned after it, not to those on the field.
+(
+    health: 50.0, // hit points
+    speed: 40.0, // world units per second (a tile is 20)
+    loot: 10, // scrap dropped on death, and the most it steals
+)

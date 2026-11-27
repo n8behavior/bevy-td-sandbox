@@ -446,6 +446,8 @@ dependencies = [
  "bevy_northstar",
  "getrandom",
  "rand",
+ "ron",
+ "serde",
 ]
 
 [[package]]
