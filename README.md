@@ -144,6 +144,9 @@ Run `just ci` locally before pushing to catch issues early.
 
 ### Release pipeline
 
-`.github/workflows/release.yaml` triggers on version tags (`v*.*.*`) or
-manual dispatch. It builds a WASM web bundle via `bevy build --release web`,
-uploads it as a GitHub release artifact, and optionally pushes to itch.io.
+`.github/workflows/release.yaml` triggers when a GitHub release is
+published, or on manual dispatch (`workflow_dispatch`). It builds a WASM
+web bundle via `bevy build --release web` and keeps it as a workflow
+artifact. For a published release it also uploads the bundle to that
+release and always pushes it to itch.io. A manual run pushes to itch.io
+only when its `upload_to_itch` input is checked (the default).
