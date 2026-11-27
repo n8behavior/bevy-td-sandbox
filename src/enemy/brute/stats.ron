@@ -1,0 +1,14 @@
+// Brute: heavy and slow. Steals scrap and attacks adjacent towers.
+//
+// Each spawn reads these values; wave scaling multiplies health and speed.
+// A change applies to Brutes spawned after it, not to those on the field.
+(
+    health: 150.0, // hit points
+    speed: 25.0, // world units per second (a tile is 20)
+    loot: 30, // scrap dropped on death, and the most it steals
+    attack: (
+        damage: 20.0, // tower hit points per hit
+        cooldown: 1.5, // seconds between hits
+        range: 30.0, // world units: an adjacent cell (20) plus the wander offset (7)
+    ),
+)

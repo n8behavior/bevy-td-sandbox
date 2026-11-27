@@ -6,7 +6,8 @@
 //! (`Regeneration`, `Armor`, `SplitsOnDeath`, `StealsScrap`, `AttacksTowers`).
 //!
 //! Per-enemy markers and bespoke capabilities live in each enemy's own
-//! sub-module (e.g. `enemy::brute::components::BruteAttack`).
+//! sub-module (e.g. the `enemy::boss::Boss` marker), and their tuning
+//! numbers in its `stats.ron`.
 //!
 //! The blueprint registry (`EnemyBlueprint`, `EnemyRegistry`) lets per-type
 //! plugins register themselves so wave/endless code can spawn enemies by

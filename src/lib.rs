@@ -20,6 +20,7 @@ pub mod states;
 pub mod stats;
 pub mod terrain;
 pub mod tower;
+pub mod tuning;
 pub mod ui;
 pub mod wave;
 

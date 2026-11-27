@@ -1,7 +1,8 @@
 //! Enemy module: lifecycle, capability components, and per-type plugins.
 //!
 //! Each enemy type lives in its own subdirectory (`shambler/`, `runner/`,
-//! `brute/`, `boss/`) and registers an `EnemyBlueprint` via
+//! `brute/`, `boss/`), with its tuning numbers in `stats.ron` there (see
+//! `crate::tuning`), and registers an `EnemyBlueprint` via
 //! its plugin during `Startup`. Wave/endless code looks up blueprints by
 //! name (`registry.lookup("Shambler")`) and calls
 //! `spawn::spawn_from_blueprint` — adding a new enemy type is creating a

@@ -4,12 +4,21 @@
 //! construction so that adding or changing a required component propagates
 //! automatically instead of requiring updates at every test spawn site.
 
+use bevy::asset::LoadState;
+use bevy::ecs::system::RunSystemOnce;
 use bevy::prelude::*;
 use bevy_northstar::prelude::*;
 use std::collections::HashSet;
+use std::time::{Duration, Instant};
 
 use crate::common::constants::{CHUNK_SIZE, GridConfig};
-use crate::enemy::components::{Enemy, EnemyState, Health};
+use crate::enemy::boss::BossPlugin;
+use crate::enemy::brute::BrutePlugin;
+use crate::enemy::components::{Enemy, EnemyRegistry, EnemyState, Health, LootValue, MoveSpeed};
+use crate::enemy::runner::RunnerPlugin;
+use crate::enemy::shambler::ShamblerPlugin;
+use crate::enemy::spawn::spawn_from_blueprint;
+use crate::enemy::systems::{scale_health_on_spawn, scale_speed_on_spawn};
 use crate::pile::resources::{EdgeCells, PileScrap, PileState};
 use crate::pile::systems::{compute_pile_cells, pile_radius};
 use crate::states::{GameMode, GameState, PlayPhase};
@@ -17,6 +26,7 @@ use crate::stats::resources::RunStats;
 use crate::tower::components::{
     Damage, ProjectileVisuals, Range, SlowOnHit, TargetingMode, Tower, TowerState, Turret,
 };
+use crate::tuning::{TuningData, TuningFile};
 use crate::wave::resources::WaveManager;
 
 /// Minimal headless App for testing (time ticking, no window/renderer).
@@ -40,6 +50,90 @@ pub fn test_app_with_assets() -> App {
         ..default()
     });
     app
+}
+
+/// Updates `app` until `done` returns true, for work that finishes on
+/// another thread, such as an asset load. Panics after 10 seconds.
+pub fn update_until(app: &mut App, mut done: impl FnMut(&World) -> bool) {
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while Instant::now() < deadline {
+        app.update();
+        if done(app.world()) {
+            return;
+        }
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    panic!("update_until: not done after 10 seconds");
+}
+
+/// Updates `app` until the asset server has loaded the tuning file of `T`.
+/// Panics with the load error if the file fails to load.
+pub fn load_tuning<T: TuningData>(app: &mut App) {
+    update_until(app, |world| {
+        let handle = &world.resource::<TuningFile<T>>().handle;
+        match world.resource::<AssetServer>().load_state(handle) {
+            LoadState::Failed(err) => panic!("{err}"),
+            state => state.is_loaded(),
+        }
+    });
+}
+
+/// Headless app with the four enemy types and wave scaling, for spawn
+/// tests. Built on [`test_app_with_assets`]: each type loads its
+/// `stats.ron` through the asset server.
+pub fn enemy_app() -> App {
+    let mut app = test_app_with_assets();
+    app.init_resource::<EnemyRegistry>()
+        .add_observer(scale_health_on_spawn)
+        .add_observer(scale_speed_on_spawn)
+        .add_plugins((ShamblerPlugin, RunnerPlugin, BrutePlugin, BossPlugin));
+    spawn_test_grid(&mut app, CHUNK_SIZE, CHUNK_SIZE);
+    app.update(); // Startup: each type registers its blueprint.
+    app
+}
+
+/// Spawns one enemy from the blueprint `name` at `wave`, as a wave does,
+/// and runs its commands and spawn observers. Needs [`enemy_app`].
+pub fn spawn_enemy(app: &mut App, name: &'static str, wave: u32) -> Entity {
+    app.world_mut()
+        .run_system_once_with(spawn_enemy_system, (name, wave))
+        .expect("spawn system runs")
+}
+
+fn spawn_enemy_system(
+    In((name, wave)): In<(&'static str, u32)>,
+    mut commands: Commands,
+    registry: Res<EnemyRegistry>,
+    grid: Query<Entity, With<OrdinalGrid>>,
+) -> Entity {
+    let blueprint = registry.lookup(name).expect("blueprint is registered");
+    let grid = grid.single().expect("enemy_app spawns one grid");
+    let config = test_grid_config();
+    spawn_from_blueprint(
+        &mut commands,
+        blueprint,
+        UVec3::ZERO,
+        UVec3::ONE,
+        grid,
+        &config,
+        wave,
+    )
+}
+
+/// Asserts the `Health`, `MoveSpeed` and `LootValue` of an enemy that
+/// spawned at wave 1, where scaling multiplies by 1.
+pub fn assert_base_stats(app: &App, enemy: Entity, health: f32, speed: f32, loot: u32) {
+    let enemy = app.world().entity(enemy);
+    let hp = enemy.get::<Health>().expect("enemy has Health");
+    assert_eq!((hp.current, hp.max), (health, health), "Health");
+    let move_speed = enemy.get::<MoveSpeed>().expect("enemy has MoveSpeed");
+    assert_eq!(
+        (move_speed.base, move_speed.current),
+        (speed, speed),
+        "MoveSpeed"
+    );
+    let loot_value = enemy.get::<LootValue>().expect("enemy has LootValue");
+    assert_eq!(loot_value.0, loot, "LootValue");
 }
 
 /// Deterministic 40x32 grid config (equivalent to an 800x640 window).
