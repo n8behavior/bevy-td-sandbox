@@ -121,19 +121,56 @@ web-release:
 web-serve:
     bevy run web --port 4000
 
-# Cut a release (idempotent — safe to re-run if interrupted)
-release VERSION:
+# Cut a release: BUMP is patch, minor, or major (re-run the same command to resume)
+release BUMP:
     #!/usr/bin/env bash
     set -euo pipefail
-    if gh release view "{{VERSION}}" >/dev/null 2>&1; then
-        echo "Release {{VERSION}} already exists — nothing to do."
-        exit 0
+    bump="{{BUMP}}"
+    case "$bump" in
+        patch|minor|major) ;;
+        *) echo "Usage: just release patch|minor|major"; exit 1 ;;
+    esac
+    # Checked first: an unauthenticated gh would make every release look unpublished
+    if ! gh auth status >/dev/null 2>&1; then
+        echo "FAIL: gh is not logged in (run: gh auth login)"; exit 1
     fi
-    just _release-prep "{{VERSION}}"
-    just _release-ship "{{VERSION}}"
-    just _release-publish "{{VERSION}}"
+    bumped() {  # bumped X.Y.Z patch|minor|major -> X.Y.Z
+        local major minor patch
+        IFS=. read -r major minor patch <<< "$1"
+        case "$2" in
+            major) echo "$((major + 1)).0.0" ;;
+            minor) echo "$major.$((minor + 1)).0" ;;
+            patch) echo "$major.$minor.$((patch + 1))" ;;
+        esac
+    }
+    current="$(grep '^version' Cargo.toml | head -1 | sed 's/.*"\(.*\)"/\1/')"
+    if ! [[ "$current" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+        echo "FAIL: Cargo.toml version '$current' is not X.Y.Z"; exit 1
+    fi
+    if gh release view "v$current" >/dev/null 2>&1; then
+        version="v$(bumped "$current" "$bump")"
+        echo "=== Releasing $version (v$current + $bump) ==="
+    else
+        # Cargo.toml is at a version with no GitHub release: an earlier run was
+        # interrupted after the bump, so finish that release instead of bumping again.
+        previous="$(git tag --list 'v*.*.*' --sort=-v:refname | grep -vxF "v$current" | head -1 || true)"
+        if [ -z "$previous" ]; then
+            echo "FAIL: no earlier release tag to bump from"; exit 1
+        fi
+        expected="v$(bumped "${previous#v}" "$bump")"
+        if [ "$expected" != "v$current" ]; then
+            echo "FAIL: v$current is in progress, but $previous + $bump would be $expected."
+            echo "      Re-run with the bump that started it, or discard the uncommitted bump."
+            exit 1
+        fi
+        version="v$current"
+        echo "=== Resuming $version ($previous + $bump) ==="
+    fi
+    just _release-prep "$version"
+    just _release-ship "$version"
+    just _release-publish "$version"
     echo ""
-    echo "=== {{VERSION}} released ==="
+    echo "=== $version released ==="
 
 # Prep: pre-flight checks, CI, version bump, changelog, editor, cargo fmt
 [private]
@@ -155,9 +192,6 @@ _release-prep VERSION:
     fi
     if [ -n "$(git status --porcelain)" ]; then
         echo "[prep] FAIL: working tree is not clean"; exit 1
-    fi
-    if ! gh auth status >/dev/null 2>&1; then
-        echo "[prep] FAIL: gh is not logged in (run: gh auth login)"; exit 1
     fi
     git fetch -q origin main
     if [ "$(git rev-parse HEAD)" != "$(git rev-parse origin/main)" ]; then
@@ -258,7 +292,7 @@ _release-publish VERSION:
     fi
     echo "[publish] Watching CI run $run_id..."
     if ! gh run watch "$run_id" --exit-status; then
-        echo "[publish] FAIL: CI failed. Fix and re-run: just release $version"; exit 1
+        echo "[publish] FAIL: CI failed. Fix, then re-run the same just release command to finish $version"; exit 1
     fi
     echo "[publish] CI passed. Creating GitHub release..."
     gh release create "$version" \

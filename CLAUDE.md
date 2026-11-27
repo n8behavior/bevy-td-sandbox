@@ -197,7 +197,7 @@ just test            # run all tests (unit, integration, doctests)
 just ci              # full CI check (format + clippy + tests)
 just doc             # browse local API docs
 just web-serve       # local web testing in browser (port 4000)
-just release vX.Y.Z  # flight-check and create GitHub release (see RELEASING.md)
+just release patch   # flight-check and create GitHub release; patch|minor|major (see RELEASING.md)
 ```
 
 ## Zero Warnings Policy

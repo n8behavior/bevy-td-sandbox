@@ -3,8 +3,18 @@
 ## Quick start
 
 ```bash
-just release vX.Y.Z
+just release patch   # 0.4.0 → 0.4.1
+just release minor   # 0.4.0 → 0.5.0
+just release major   # 0.4.0 → 1.0.0
 ```
+
+The new version comes from bumping the `Cargo.toml` version. You can't
+pass a version string.
+
+If a release is interrupted, re-run the same command and it picks up
+where it stopped. While `Cargo.toml` is at a version with no GitHub
+release yet, the command finishes that release instead of bumping again.
+It refuses if the bump you pass doesn't match the one that started it.
 
 This single command handles the entire release:
 
