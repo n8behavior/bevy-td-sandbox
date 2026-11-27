@@ -13,6 +13,7 @@ pub(super) struct SoundAssets {
     pub(super) wave_boss_spawn: Handle<Pitch>,
     pub(super) wave_start: Handle<Pitch>,
     pub(super) game_over: Handle<Pitch>,
+    pub(super) victory: Handle<Pitch>,
 }
 
 impl SoundAssets {
@@ -27,6 +28,7 @@ impl SoundAssets {
             GameSound::WaveBossSpawn => &self.wave_boss_spawn,
             GameSound::WaveStart => &self.wave_start,
             GameSound::GameOver => &self.game_over,
+            GameSound::Victory => &self.victory,
         }
     }
 }

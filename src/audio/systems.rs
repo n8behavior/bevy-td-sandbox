@@ -23,6 +23,7 @@ pub(super) fn init_sound_assets(mut commands: Commands, mut pitches: ResMut<Asse
         wave_boss_spawn: add(GameSound::WaveBossSpawn),
         wave_start: add(GameSound::WaveStart),
         game_over: add(GameSound::GameOver),
+        victory: add(GameSound::Victory),
     });
 }
 
@@ -45,7 +46,7 @@ mod tests {
 
     #[test]
     fn all_variants_covered() {
-        assert_eq!(GameSound::ALL.len(), 9);
+        assert_eq!(GameSound::ALL.len(), 10);
     }
 
     #[test]

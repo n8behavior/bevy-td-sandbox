@@ -75,6 +75,14 @@ pub fn handle_main_menu_input(
     apply_main_menu_keys(&keyboard, &mut next_state, &mut game_mode);
 }
 
+/// Whether the run that just ended was won: only a Classic run can be,
+/// by beating its last wave. Endless runs always end in a loss.
+pub(crate) fn run_won(game_mode: GameMode, wave_mgr: Option<&WaveManager>) -> bool {
+    game_mode == GameMode::Classic && wave_mgr.is_some_and(WaveManager::all_waves_cleared)
+}
+
+/// End-of-run screen, for both outcomes. A win and a loss share the layout
+/// and the stats; only the title and colors differ.
 pub fn setup_game_over(
     mut commands: Commands,
     stats: Option<Res<RunStats>>,
@@ -82,6 +90,20 @@ pub fn setup_game_over(
     wave_mgr: Option<Res<WaveManager>>,
 ) {
     commands.spawn((Camera2d, DespawnOnExit(GameState::GameOver)));
+
+    let (title, title_color, background) = if run_won(*game_mode, wave_mgr.as_deref()) {
+        (
+            "YOU SURVIVED",
+            Color::srgb(0.45, 0.9, 0.35),
+            Color::srgb(0.02, 0.08, 0.03),
+        )
+    } else {
+        (
+            "GAME OVER",
+            Color::srgb(0.9, 0.2, 0.2),
+            Color::srgb(0.1, 0.02, 0.02),
+        )
+    };
 
     commands
         .spawn((
@@ -94,13 +116,13 @@ pub fn setup_game_over(
                 row_gap: Val::Px(12.0),
                 ..default()
             },
-            BackgroundColor(Color::srgb(0.1, 0.02, 0.02)),
+            BackgroundColor(background),
             DespawnOnExit(GameState::GameOver),
         ))
         .with_children(|parent| {
             parent.spawn((
-                Text::new("GAME OVER"),
-                TextColor(Color::srgb(0.9, 0.2, 0.2)),
+                Text::new(title),
+                TextColor(title_color),
                 TextFont {
                     font_size: FontSize::Px(64.0),
                     ..default()
@@ -129,9 +151,11 @@ pub fn setup_game_over(
                         ));
                     }
                     GameMode::Classic => {
-                        let waves = wave_mgr.as_ref().map_or(0, |w| w.current_wave);
+                        let (survived, total) = wave_mgr
+                            .as_ref()
+                            .map_or((0, 0), |w| (w.current_wave, w.waves.len()));
                         parent.spawn((
-                            Text::new(format!("Waves Survived: {} / 20", waves)),
+                            Text::new(format!("Waves Survived: {survived} / {total}")),
                             TextColor(Color::srgb(0.9, 0.6, 0.2)),
                             TextFont {
                                 font_size: FontSize::Px(28.0),
@@ -266,6 +290,42 @@ mod tests {
             next_state,
             NextState::Pending(GameState::MainMenu)
         ));
+    }
+
+    fn wave_manager_at(current_wave: u32) -> WaveManager {
+        WaveManager {
+            current_wave,
+            waves: crate::wave::systems::generate_waves(),
+            ..crate::test_helpers::test_wave_manager()
+        }
+    }
+
+    #[test]
+    fn run_won_when_classic_clears_every_wave() {
+        let total = wave_manager_at(0).waves.len() as u32;
+        assert!(run_won(GameMode::Classic, Some(&wave_manager_at(total))));
+    }
+
+    #[test]
+    fn run_lost_when_classic_ends_before_the_last_wave() {
+        let total = wave_manager_at(0).waves.len() as u32;
+        assert!(!run_won(
+            GameMode::Classic,
+            Some(&wave_manager_at(total - 1))
+        ));
+    }
+
+    #[test]
+    fn endless_run_is_never_won() {
+        // A finished Classic run leaves its WaveManager behind; a later
+        // Endless run must not read it as a win.
+        let total = wave_manager_at(0).waves.len() as u32;
+        assert!(!run_won(GameMode::Endless, Some(&wave_manager_at(total))));
+    }
+
+    #[test]
+    fn run_lost_without_wave_manager() {
+        assert!(!run_won(GameMode::Classic, None));
     }
 
     #[test]

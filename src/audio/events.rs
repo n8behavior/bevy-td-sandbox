@@ -20,6 +20,7 @@ pub enum GameSound {
     WaveBossSpawn,
     WaveStart,
     GameOver,
+    Victory,
 }
 
 impl GameSound {
@@ -34,6 +35,7 @@ impl GameSound {
         GameSound::WaveBossSpawn,
         GameSound::WaveStart,
         GameSound::GameOver,
+        GameSound::Victory,
     ];
 
     /// Pitch frequency in Hz.
@@ -48,6 +50,7 @@ impl GameSound {
             GameSound::WaveBossSpawn => 55.0,
             GameSound::WaveStart => 440.0,
             GameSound::GameOver => 165.0,
+            GameSound::Victory => 660.0,
         }
     }
 
@@ -63,6 +66,7 @@ impl GameSound {
             GameSound::WaveBossSpawn => 500,
             GameSound::WaveStart => 200,
             GameSound::GameOver => 400,
+            GameSound::Victory => 600,
         }
     }
 
@@ -78,6 +82,7 @@ impl GameSound {
             GameSound::WaveBossSpawn => 0.6,
             GameSound::WaveStart => 0.5,
             GameSound::GameOver => 0.6,
+            GameSound::Victory => 0.6,
         }
     }
 }

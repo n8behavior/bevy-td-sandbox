@@ -5,6 +5,9 @@ pub enum GameState {
     #[default]
     MainMenu,
     Playing,
+    /// The run has ended, won or lost. A Classic run is won when its last
+    /// wave is beaten (`WaveManager::all_waves_cleared`); the end screen
+    /// shows the outcome.
     GameOver,
 }
 

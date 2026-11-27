@@ -129,7 +129,12 @@ pub fn check_wave_complete(
     commands.trigger(WaveComplete);
 }
 
-/// Observer: handle wave completion — game over vs next wave.
+/// Observer: handle wave completion — lost, won, or on to the next wave.
+///
+/// An empty pile loses, even on the last wave. Otherwise the wave counts as
+/// beaten; beating the last one wins the run. Both outcomes end on
+/// `GameState::GameOver`, whose screen tells them apart with
+/// [`WaveManager::all_waves_cleared`].
 pub fn on_wave_complete(
     _trigger: On<WaveComplete>,
     mut commands: Commands,
@@ -141,8 +146,13 @@ pub fn on_wave_complete(
     if pile_scrap.amount == 0 {
         commands.trigger(PlaySound(GameSound::GameOver));
         next_state.set(GameState::GameOver);
+        return;
+    }
+    wave_mgr.current_wave += 1;
+    if wave_mgr.all_waves_cleared() {
+        commands.trigger(PlaySound(GameSound::Victory));
+        next_state.set(GameState::GameOver);
     } else {
-        wave_mgr.current_wave += 1;
         next_phase.set(PlayPhase::Building);
     }
 }

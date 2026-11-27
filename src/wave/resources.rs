@@ -9,6 +9,14 @@ pub struct WaveManager {
     pub spawn_queue: Vec<SpawnEntry>,
 }
 
+impl WaveManager {
+    /// Whether the last wave has been beaten: `current_wave` has advanced
+    /// past it. A Classic run that gets here is won.
+    pub fn all_waves_cleared(&self) -> bool {
+        self.current_wave as usize >= self.waves.len()
+    }
+}
+
 /// A single enemy to spawn (flattened from `WaveEnemy` × count).
 ///
 /// Carries only the blueprint name. Wave-difficulty scaling is applied

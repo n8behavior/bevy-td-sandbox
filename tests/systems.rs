@@ -27,7 +27,9 @@ use bevy_td_sandbox::tower::systems::slow_aura;
 use bevy_td_sandbox::ui::hud::*;
 use bevy_td_sandbox::ui::tower_menu::{TowerPaletteIndex, highlight_selected_tower};
 use bevy_td_sandbox::wave::resources::{WaveConfig, WaveManager};
-use bevy_td_sandbox::wave::systems::{check_wave_complete, on_wave_complete, spawn_enemies};
+use bevy_td_sandbox::wave::systems::{
+    check_wave_complete, generate_waves, on_wave_complete, spawn_enemies,
+};
 
 // ---------------------------------------------------------------------------
 // update_pile_state
@@ -325,6 +327,12 @@ fn init_pile_spawns_collector_with_constant_range() {
 
 /// Helper: set up a Defending-phase app with check_wave_complete and given scrap.
 fn wave_app(scrap: u32) -> App {
+    wave_app_on_wave(scrap, 0)
+}
+
+/// Like [`wave_app`], defending the 0-indexed `current_wave` of the real
+/// wave lineup, so completion can tell the last wave from the others.
+fn wave_app_on_wave(scrap: u32, current_wave: u32) -> App {
     let mut app = test_app();
     app.init_state::<GameState>();
     app.add_sub_state::<PlayPhase>();
@@ -339,7 +347,11 @@ fn wave_app(scrap: u32) -> App {
     app.update();
 
     app.insert_resource(PileScrap { amount: scrap });
-    app.insert_resource(test_wave_manager());
+    app.insert_resource(WaveManager {
+        current_wave,
+        waves: generate_waves(),
+        ..test_wave_manager()
+    });
 
     app.add_observer(on_wave_complete);
     app.add_systems(
@@ -378,6 +390,38 @@ fn wave_complete_with_empty_pile_triggers_game_over() {
     app.update();
     app.update();
     assert_eq!(game_state(&app), GameState::GameOver);
+}
+
+fn last_wave_index() -> u32 {
+    generate_waves().len() as u32 - 1
+}
+
+/// Regression #76: beating the last wave ends the run as a win, instead of
+/// returning to Building at "Wave 21 / 20" with no wave left to start.
+#[test]
+fn regression_76_last_wave_complete_with_scrap_wins() {
+    let mut app = wave_app_on_wave(100, last_wave_index());
+    app.update();
+    app.update();
+    assert_eq!(game_state(&app), GameState::GameOver);
+    let wave_mgr = app.world().resource::<WaveManager>();
+    assert!(wave_mgr.all_waves_cleared(), "the run should count as won");
+    assert_eq!(wave_mgr.current_wave as usize, wave_mgr.waves.len());
+}
+
+/// An empty pile still loses on the last wave, and the run does not count
+/// as won.
+#[test]
+fn last_wave_complete_with_empty_pile_loses() {
+    let mut app = wave_app_on_wave(0, last_wave_index());
+    app.update();
+    app.update();
+    assert_eq!(game_state(&app), GameState::GameOver);
+    let wave_mgr = app.world().resource::<WaveManager>();
+    assert!(
+        !wave_mgr.all_waves_cleared(),
+        "the run should count as lost"
+    );
 }
 
 /// Alive enemies prevent wave from resolving (regardless of pile state).
@@ -475,24 +519,6 @@ fn on_wave_complete_increments_wave() {
     assert_eq!(
         wave_mgr.current_wave, 1,
         "current_wave should advance from 0 to 1"
-    );
-}
-
-/// Completing the last wave still transitions to Building (game continues until pile runs out).
-#[test]
-fn on_wave_complete_past_final_wave() {
-    let mut app = wave_app(100);
-    app.world_mut().resource_mut::<WaveManager>().current_wave = 19;
-    app.update();
-    app.update();
-    let wave_mgr = app.world().resource::<WaveManager>();
-    assert_eq!(
-        wave_mgr.current_wave, 20,
-        "current_wave should be 20 after completing wave 19"
-    );
-    assert_eq!(
-        *app.world().resource::<State<PlayPhase>>().get(),
-        PlayPhase::Building,
     );
 }
 
