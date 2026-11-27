@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.5.0
+
+- Update CLAUDE.md API reference for Bevy 0.20
+- Update to Bevy 0.20 and bevy_northstar 0.8
+- Update to Bevy 0.19 and bevy_northstar 0.7
+- Update compatible dependencies and CI actions
+- Turn off asset file watching in test apps
+
+
 ## v0.4.1
 
 - Take patch/minor/major for `just release` instead of a version string
