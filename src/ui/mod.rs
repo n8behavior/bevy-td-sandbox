@@ -58,6 +58,11 @@ impl Plugin for UIPlugin {
 // Quit confirmation (desktop only)
 // ---------------------------------------------------------------------------
 
+/// Whether this build can quit with a double ESC. The quit systems below are
+/// desktop only, so screens pass this to their hint text to name the quit
+/// key only where it works.
+pub(crate) const CAN_QUIT: bool = cfg!(not(target_arch = "wasm32"));
+
 #[cfg(not(target_arch = "wasm32"))]
 const QUIT_CONFIRM_SECS: f32 = 2.0;
 
