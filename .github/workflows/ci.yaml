@@ -80,7 +80,7 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           shared-key: ci-test
-          save-if: ${{ github.ref == 'refs/heads/main' }}
+          save-if: ${{ github.ref == 'refs/heads/main' || github.head_ref == 'worktree-issue-100' }}
 
       - name: Install build dependencies
         run: sudo apt-get update; sudo apt-get install --no-install-recommends libasound2-dev libudev-dev libwayland-dev
