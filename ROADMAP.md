@@ -55,30 +55,31 @@ The repo name says sandbox, the brainstorm says creator platform ("easiest and m
 
 The editor creates towers, the stats and advice judge them, and dev mode shows the mechanics. Under this framing the observability work isn't a side quest; it's the core of the testing loop.
 
-## A possible order
+## The waves
 
-1. **The event stream.** Add the source tower to every hit, kill and pickup, and route hits through events ([#55], plus [#77]'s core). Players won't notice it, but everything after this depends on it.
-2. **Dev mode with Show pathing ([#83]).** It speeds up everything after it; the Raider freeze ([#82]) would have taken a glance to diagnose.
-3. **Core feel: [#69] and [#73].** Do these before the editor, since every new tower type makes the "colored rectangles" problem worse.
-4. **Stats, phases 1–2 ([#84]).** The tower-panel stats, then the post-wave summary and end-of-run report.
-5. **The editor track ([#75]).** Start by reconciling the brainstorm with the capability model `main` actually has. Settle the recipe format before building UI.
+Mike approved these on 2026-11-27. Each wave is one release. The [milestones](https://github.com/n8behavior/bevy-td-sandbox/milestones) are the source of truth; this list shows how they started.
+
+1. **Wave 1: Tools to tune (v0.6).** The first part of the event stream ([#55]: credit for every hit, and hits through observers), the dev mode base ([#88]), and enemy stats in data files that reload while the game runs ([#90]). Also fixes: the CI cache ([#100]), GAMEPLAY.md ([#99]), the damage flash ([#101]) and the web quit hint ([#102]).
+2. **Wave 2: Core feel (v0.7).** Pile growth ([#69]), spending during Defending ([#103]), the armor rule ([#104]), readable shapes ([#73]), the second part of the event stream ([#87]), Show pathing ([#89]), tower stats as data ([#91]), and Windows, Mac and Linux builds ([#98]).
+3. **Wave 3: Raiders and tower stats (v0.8).** Raiders ([#82]), diagnostics ([#77]), the tower panel stats ([#93]), and the shared tower rules as data ([#92]).
+
+Later, in this order: the rest of the stats ([#94], [#95], [#96], [#97]), then the next parts of the editor track ([#75]). The trackers [#75], [#83] and [#84] hold the plan of each track.
 
 ## Risk to check early: Lua in the web build
 
 The manual assumes Lua through `mlua` runs "identically on browser and native." The itch.io build targets `wasm32-unknown-unknown`. mlua 0.12.3 supports that target, but only "with a WASI C runtime", and its `docs/wasm32.md` says "The host must provide the matching WASI imports and support Wasm exceptions." So the open question is whether our browser build (Bevy and wasm-bindgen, served on itch.io) can provide those. If it can't, the recipe format would need to be a data format (e.g. RON with Bevy reflection) or a pure-Rust script engine. A quick spike would settle it before more design goes into Lua. The game also ships on Windows, Mac and Linux (see [Decisions](#decisions)), so any format must work on all four platforms.
 
-## Park or close
+## Parked or closed
 
-- **[#79] crates.io:** low value for a game; players use itch.io and developers clone the repo.
-- **[#74] CI Docker image:** CI's 14–18 minutes are mostly compiling, and the image would only save toolchain setup.
-- **[#71] save/load:** matters mostly for long Endless runs, and gets easier once the game's state is described by data.
+- **[#79] crates.io:** closed. Low value for a game: players use itch.io and stores, and developers clone the repo. The license it needs anyway is [#105].
+- **[#74] CI Docker image:** closed. The setup steps take 8–28 s of a 14–18 minute run; compiling is the cost, and [#100] fixes the cache that makes CI recompile everything.
+- **[#71] save/load:** parked in the Backlog. It gets easier once the game's state is described by data.
 
 ## Housekeeping
 
-- GAMEPLAY.md says you start with 200 scrap; the code uses 250 (`STARTING_SCRAP`).
-- GAMEPLAY.md's tower table lists 6 towers and has no Mortar, but `src/tower/mortar` exists.
-- [#75]'s title, "Factor towers & enemies into separate components," is mostly done by [#81]. What's left is config, scripts and the editor.
-- Decide whether to merge, rebase or retire the `editor-brainstorm` branch, and fix the dead brainstorm links in [#55] and [#75].
+- GAMEPLAY.md is out of date in many places, for example 200 starting scrap (the code has 250) and no Mortar: [#99].
+- [#75] now tracks what is left of its old title: data, scripts, the editor and sharing.
+- What to do with the `editor-brainstorm` branch is Q1 of [#75]. The bodies of [#55] and [#75] now link the brainstorm on its branch.
 - Remove the leftover `upgrade-probe` worktree (`.claude/worktrees/upgrade-probe`) from the Bevy 0.20 upgrade.
 
 ## Decisions
@@ -103,3 +104,22 @@ Mike answered the open questions on 2026-11-27.
 [#82]: https://github.com/n8behavior/bevy-td-sandbox/issues/82
 [#83]: https://github.com/n8behavior/bevy-td-sandbox/issues/83
 [#84]: https://github.com/n8behavior/bevy-td-sandbox/issues/84
+[#87]: https://github.com/n8behavior/bevy-td-sandbox/issues/87
+[#88]: https://github.com/n8behavior/bevy-td-sandbox/issues/88
+[#89]: https://github.com/n8behavior/bevy-td-sandbox/issues/89
+[#90]: https://github.com/n8behavior/bevy-td-sandbox/issues/90
+[#91]: https://github.com/n8behavior/bevy-td-sandbox/issues/91
+[#92]: https://github.com/n8behavior/bevy-td-sandbox/issues/92
+[#93]: https://github.com/n8behavior/bevy-td-sandbox/issues/93
+[#94]: https://github.com/n8behavior/bevy-td-sandbox/issues/94
+[#95]: https://github.com/n8behavior/bevy-td-sandbox/issues/95
+[#96]: https://github.com/n8behavior/bevy-td-sandbox/issues/96
+[#97]: https://github.com/n8behavior/bevy-td-sandbox/issues/97
+[#98]: https://github.com/n8behavior/bevy-td-sandbox/issues/98
+[#99]: https://github.com/n8behavior/bevy-td-sandbox/issues/99
+[#100]: https://github.com/n8behavior/bevy-td-sandbox/issues/100
+[#101]: https://github.com/n8behavior/bevy-td-sandbox/issues/101
+[#102]: https://github.com/n8behavior/bevy-td-sandbox/issues/102
+[#103]: https://github.com/n8behavior/bevy-td-sandbox/issues/103
+[#104]: https://github.com/n8behavior/bevy-td-sandbox/issues/104
+[#105]: https://github.com/n8behavior/bevy-td-sandbox/issues/105
