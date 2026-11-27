@@ -47,7 +47,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -72,7 +72,7 @@ jobs:
           zip --recurse-paths '../../../../web.zip' .
 
       - name: Upload package to workflow artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: package-web
           path: web.zip
@@ -96,7 +96,7 @@ jobs:
 
     steps:
       - name: Download web package
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: package-web
           path: tmp
