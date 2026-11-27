@@ -1,7 +1,7 @@
 //! Enemy module: lifecycle, capability components, and per-type plugins.
 //!
 //! Each enemy type lives in its own subdirectory (`shambler/`, `runner/`,
-//! `brute/`, `boss/`, `raider/`) and registers an `EnemyBlueprint` via
+//! `brute/`, `boss/`) and registers an `EnemyBlueprint` via
 //! its plugin during `Startup`. Wave/endless code looks up blueprints by
 //! name (`registry.lookup("Shambler")`) and calls
 //! `spawn::spawn_from_blueprint` — adding a new enemy type is creating a
@@ -17,7 +17,6 @@ pub mod boss;
 pub mod brute;
 pub mod components;
 pub mod events;
-pub mod raider;
 pub mod runner;
 pub mod shambler;
 pub mod spawn;
@@ -43,7 +42,6 @@ impl Plugin for EnemyPlugin {
                 runner::RunnerPlugin,
                 brute::BrutePlugin,
                 boss::BossPlugin,
-                raider::RaiderPlugin,
             ))
             .add_systems(
                 FixedUpdate,
