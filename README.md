@@ -145,6 +145,10 @@ Clippy, Test, and Check web each keep their own
 dependencies. Only runs on `main` save these caches; pull requests
 restore them.
 
+A new push to a pull request cancels that pull request's older run,
+but a run on `main` is never cancelled: it finishes and saves its
+caches, and only the newest merge made meanwhile waits to run after it.
+
 Run `just ci` locally before pushing to catch issues early.
 
 ### Release pipeline
