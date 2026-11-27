@@ -1,5 +1,6 @@
 use crate::states::{GameMode, GameState};
 use crate::stats::resources::RunStats;
+use crate::ui::CAN_QUIT;
 use crate::wave::resources::WaveManager;
 use bevy::prelude::*;
 
@@ -39,16 +40,22 @@ pub fn setup_main_menu(mut commands: Commands) {
                 },
             ));
 
-            #[cfg(not(target_arch = "wasm32"))]
-            parent.spawn((
-                Text::new("ESC ESC: Quit"),
-                TextColor(Color::srgb(0.4, 0.4, 0.35)),
-                TextFont {
-                    font_size: FontSize::Px(16.0),
-                    ..default()
-                },
-            ));
+            if let Some(quit_hint) = main_menu_quit_hint(CAN_QUIT) {
+                parent.spawn((
+                    Text::new(quit_hint),
+                    TextColor(Color::srgb(0.4, 0.4, 0.35)),
+                    TextFont {
+                        font_size: FontSize::Px(16.0),
+                        ..default()
+                    },
+                ));
+            }
         });
+}
+
+/// The main menu's quit hint, or `None` when quitting doesn't exist.
+pub(crate) fn main_menu_quit_hint(can_quit: bool) -> Option<&'static str> {
+    can_quit.then_some("ESC ESC: Quit")
 }
 
 /// Shared main-menu key handling: Space → Classic, E → Endless.
@@ -206,13 +213,8 @@ pub fn setup_game_over(
                 ));
             }
 
-            #[cfg(not(target_arch = "wasm32"))]
-            let hint = "SPACE: restart  |  ESC ESC: Quit";
-            #[cfg(target_arch = "wasm32")]
-            let hint = "SPACE: restart";
-
             parent.spawn((
-                Text::new(hint),
+                Text::new(game_over_hint(CAN_QUIT)),
                 TextColor(Color::srgb(0.6, 0.6, 0.5)),
                 TextFont {
                     font_size: FontSize::Px(24.0),
@@ -220,6 +222,16 @@ pub fn setup_game_over(
                 },
             ));
         });
+}
+
+/// The game-over screen's key hint. It names the quit key only when
+/// quitting exists.
+pub(crate) fn game_over_hint(can_quit: bool) -> &'static str {
+    if can_quit {
+        "SPACE: restart  |  ESC ESC: Quit"
+    } else {
+        "SPACE: restart"
+    }
 }
 
 /// Shared game-over key handling: Space → MainMenu.
@@ -326,6 +338,20 @@ mod tests {
     #[test]
     fn run_lost_without_wave_manager() {
         assert!(!run_won(GameMode::Classic, None));
+    }
+
+    #[test]
+    fn main_menu_names_quit_only_when_quitting_exists() {
+        assert!(main_menu_quit_hint(true).is_some_and(|hint| hint.contains("Quit")));
+        assert_eq!(main_menu_quit_hint(false), None);
+    }
+
+    #[test]
+    fn game_over_hint_names_quit_only_when_quitting_exists() {
+        let with_quit = game_over_hint(true);
+        assert!(with_quit.starts_with("SPACE: restart"));
+        assert!(with_quit.contains("Quit"));
+        assert_eq!(game_over_hint(false), "SPACE: restart");
     }
 
     #[test]
