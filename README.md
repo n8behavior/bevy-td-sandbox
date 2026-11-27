@@ -8,11 +8,26 @@ A post-apocalyptic tower defense game built with Rust and Bevy.
 
 ## Prerequisites
 
-### Rust
+Install [Rust](https://rustup.rs/) and [just](https://github.com/casey/just)
+(`cargo install just`), then bootstrap the clone:
 
-Install via [rustup](https://rustup.rs/).
+```bash
+just setup
+```
+
+`just setup` is safe to re-run. It installs:
+
+- the native libraries listed below, through your package manager. It
+  uses sudo only when a package is missing.
+- the `rustfmt` and `clippy` components and the `wasm32-unknown-unknown` target.
+- the repo's pre-commit hook (fmt + clippy), via `core.hooksPath`.
+- the web tooling: the Bevy CLI and the `wasm-bindgen-cli` version that
+  matches `Cargo.lock`. Re-run `just setup` after a `wasm-bindgen` bump.
 
 ### System Dependencies
+
+`just setup` installs these for you on Ubuntu/Debian, Fedora, and Arch.
+The OpenSSL package is only needed to compile the Bevy CLI for web builds.
 
 **macOS** — Xcode Command Line Tools (`xcode-select --install`).
 
@@ -21,19 +36,19 @@ Install via [rustup](https://rustup.rs/).
 **Linux (Ubuntu/Debian):**
 
 ```bash
-sudo apt-get install -y libwayland-dev libxkbcommon-dev libasound2-dev libudev-dev
+sudo apt-get install -y libwayland-dev libxkbcommon-dev libasound2-dev libudev-dev libssl-dev
 ```
 
 **Linux (Fedora):**
 
 ```bash
-sudo dnf install -y wayland-devel libxkbcommon-devel alsa-lib-devel systemd-devel
+sudo dnf install -y wayland-devel libxkbcommon-devel alsa-lib-devel systemd-devel openssl-devel
 ```
 
 **Linux (Arch):**
 
 ```bash
-sudo pacman -S wayland libxkbcommon alsa-lib systemd
+sudo pacman -S wayland libxkbcommon alsa-lib systemd openssl
 ```
 
 ## Build & Run
@@ -45,8 +60,7 @@ just ci        # full local CI check (format + clippy + tests)
 ```
 
 All dev workflows are in the [`justfile`](justfile). Run `just` to see
-all available recipes. Install [just](https://github.com/casey/just) with
-`cargo install just`.
+all available recipes.
 
 <details>
 <summary>Raw cargo commands (without just)</summary>

@@ -1,6 +1,82 @@
+# Bevy CLI release for web builds (the binary CI's binstall resolves to)
+bevy_cli_tag := "cli-v0.1.0-alpha.2"
+
 # List available recipes
 default:
     @just --list
+
+# Bootstrap a fresh clone: system libs, Rust components, git hooks, web tooling (safe to re-run)
+setup: _setup-system _setup-rust _setup-hooks _setup-web
+    @echo "[setup] Done. Try: just run"
+
+# Native libraries for Bevy (plus OpenSSL headers for building the Bevy CLI); sudo only if something is missing
+[private]
+_setup-system:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    case "$(uname -s)" in
+        Linux) ;;
+        Darwin)
+            if xcode-select -p >/dev/null 2>&1; then
+                echo "[system] Xcode Command Line Tools present."; exit 0
+            fi
+            echo "[system] Install Xcode Command Line Tools first: xcode-select --install"; exit 1 ;;
+        *)
+            echo "[system] Skipping: see README Prerequisites for this platform."; exit 0 ;;
+    esac
+    . /etc/os-release
+    missing=()
+    case " $ID ${ID_LIKE:-} " in
+        *" debian "*|*" ubuntu "*)
+            command -v cc >/dev/null || missing+=(build-essential)
+            command -v pkg-config >/dev/null || missing+=(pkgconf)
+            for p in libwayland-dev libxkbcommon-dev libasound2-dev libudev-dev libssl-dev; do
+                dpkg-query -W -f='${Status}' "$p" 2>/dev/null | grep -q 'ok installed' || missing+=("$p")
+            done
+            install() { sudo apt-get update && sudo apt-get install -y "$@"; } ;;
+        *" fedora "*)
+            command -v cc >/dev/null || missing+=(gcc)
+            command -v pkg-config >/dev/null || missing+=(pkgconf-pkg-config)
+            for p in wayland-devel libxkbcommon-devel alsa-lib-devel systemd-devel openssl-devel; do
+                rpm -q "$p" >/dev/null 2>&1 || missing+=("$p")
+            done
+            install() { sudo dnf install -y "$@"; } ;;
+        *" arch "*)
+            mapfile -t missing < <(pacman -T base-devel pkgconf wayland libxkbcommon alsa-lib systemd openssl || true)
+            install() { sudo pacman -S --needed --noconfirm "$@"; } ;;
+        *)
+            echo "[system] Unrecognized distro '$ID': install the README Prerequisites by hand."; exit 1 ;;
+    esac
+    if [ ${#missing[@]} -eq 0 ]; then
+        echo "[system] Native build dependencies present."
+        exit 0
+    fi
+    echo "[system] Installing: ${missing[*]}"
+    install "${missing[@]}"
+
+# Toolchain components CI uses (fmt, clippy, wasm target)
+[private]
+_setup-rust:
+    @command -v rustup >/dev/null || { echo "[rust] rustup not found: install it from https://rustup.rs, then re-run just setup"; exit 1; }
+    rustup component add rustfmt clippy
+    rustup target add wasm32-unknown-unknown
+
+# Use the repo's pre-commit hook (fmt + clippy)
+[private]
+_setup-hooks:
+    git config core.hooksPath .githooks
+
+# Bevy CLI plus the wasm-bindgen-cli that matches Cargo.lock (cargo skips anything already installed)
+[private]
+_setup-web:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    wb_version="$(grep -A1 '^name = "wasm-bindgen"$' Cargo.lock | sed -n 's/^version = "\(.*\)"$/\1/p' || true)"
+    if [ -z "$wb_version" ]; then
+        echo "[web] Could not find wasm-bindgen in Cargo.lock"; exit 1
+    fi
+    cargo install --locked wasm-bindgen-cli --version "$wb_version"
+    cargo install --locked --git https://github.com/TheBevyFlock/bevy_cli --tag {{bevy_cli_tag}} bevy_cli
 
 # Run the game (dynamic linking for fast recompiles)
 run *ARGS:

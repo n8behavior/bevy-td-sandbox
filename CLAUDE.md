@@ -189,6 +189,7 @@ grid.is_path_viable(start, goal) // -> bool
 ## Build Commands
 
 ```bash
+just setup           # bootstrap a fresh clone (system libs, toolchain, git hooks, web tools)
 just run             # run the game (dynamic linking for fast recompiles)
 just check           # fast compile check
 just clippy          # lint check (MUST pass with zero warnings before every commit)
