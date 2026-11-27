@@ -140,6 +140,11 @@ every push to `main` and on pull requests. Four parallel jobs:
 | **Test**      | `cargo test --workspace` (unit, integration, doctests)   |
 | **Check web** | `cargo check --no-default-features --target wasm32-unknown-unknown` |
 
+Clippy, Test, and Check web each keep their own
+[rust-cache](https://github.com/Swatinem/rust-cache) of compiled
+dependencies. Only runs on `main` save these caches; pull requests
+restore them.
+
 Run `just ci` locally before pushing to catch issues early.
 
 ### Release pipeline
