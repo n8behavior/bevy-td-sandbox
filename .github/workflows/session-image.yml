@@ -1,0 +1,105 @@
+name: Session image
+
+# The session image of riff for this repository (#106). On each change of
+# deploy/session/ or of this workflow, it builds deploy/session/Dockerfile,
+# pushes it as ghcr.io/n8behavior/bevy-td-sandbox-session:<sha>, checks the
+# tools of a session in it, and writes the riff.toml line with its digest
+# in the summary of the run. Then it runs `just ci` in the image, as a
+# worker does in its container. Pin only an image built on main: see
+# "Pin the image of the project" in the book of riff.
+on:
+  push:
+    branches: [main]
+    paths:
+      - deploy/session/**
+      - .github/workflows/session-image.yml
+  pull_request:
+    branches: [main]
+    paths:
+      - deploy/session/**
+      - .github/workflows/session-image.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref || github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+  image:
+    name: Build and check
+    # A pull request from a fork cannot write the packages, so it cannot
+    # push the image.
+    if: >-
+      github.event_name == 'push' ||
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Name the image
+        run: echo "IMAGE=ghcr.io/${GITHUB_REPOSITORY,,}-session" >> "$GITHUB_ENV"
+
+      - name: Log in to ghcr.io
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Build and push the image
+        id: build
+        uses: docker/build-push-action@v7
+        with:
+          context: deploy/session
+          push: true
+          tags: ${{ env.IMAGE }}:${{ github.sha }}
+          labels: org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+          provenance: false
+
+      # As a session runs: a user that is not root, with its own
+      # CARGO_HOME, and the toolchain of the image read only.
+      - name: Check the tools of a session in the image
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          docker run --rm --user "$(id -u):$(id -g)" -e HOME=/tmp -e CARGO_HOME=/tmp/cargo \
+            "$IMAGE@$DIGEST" bash -euo pipefail -c '
+              cargo --version
+              cargo fmt --version
+              cargo clippy --version
+              targets=$(rustup target list --installed)
+              echo "$targets"
+              grep -qx wasm32-unknown-unknown <<<"$targets"
+              just --version
+              claude --version
+            '
+
+      - name: Write the riff.toml line
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          {
+            echo "Pin the image in \`riff.toml\`, from a run on main:"
+            echo
+            echo '```toml'
+            echo '[session]'
+            echo "image = \"$IMAGE@$DIGEST\""
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Run just ci in the image
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          docker run --rm --user "$(id -u):$(id -g)" -e HOME=/tmp -e CARGO_HOME=/tmp/cargo \
+            -v "$PWD:/work" -w /work "$IMAGE@$DIGEST" just ci

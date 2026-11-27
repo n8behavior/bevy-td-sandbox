@@ -150,3 +150,15 @@ web bundle via `bevy build --release web` and keeps it as a workflow
 artifact. For a published release it also uploads the bundle to that
 release and always pushes it to itch.io. A manual run pushes to itch.io
 only when its `upload_to_itch` input is checked (the default).
+
+### Session image
+
+`deploy/session/Dockerfile` is the container image of the riff sessions of
+this repository: `riff-base` with a pinned Rust (`rustfmt`, `clippy`, the
+`wasm32-unknown-unknown` target), the system libraries of Bevy and `just`, so
+a session can run `just ci`. `.github/workflows/session-image.yml` builds it
+on each change of `deploy/session/`, pushes it to
+`ghcr.io/n8behavior/bevy-td-sandbox-session`, runs `just ci` in it, and
+writes the `riff.toml` line with its digest in the run summary. `riff.toml`
+pins a digest built on `main`. To take a newer stable Rust, raise
+`RUST_VERSION` in the Dockerfile, then pin the new digest.
