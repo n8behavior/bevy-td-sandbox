@@ -83,6 +83,8 @@ pub struct DeathAnimation {
 pub struct CellJitter(pub Vec2);
 
 /// Brief white flash on damage; restores `original_color` when finished.
+/// Start one with `systems::start_damage_flash`, which keeps
+/// `original_color` when hits overlap.
 #[derive(Component)]
 pub struct DamageFlash {
     pub timer: Timer,

@@ -1093,6 +1093,71 @@ fn radioactive_no_damage_off_grid() {
 }
 
 // ---------------------------------------------------------------------------
+// start_damage_flash / animate_damage_flash
+// ---------------------------------------------------------------------------
+
+fn sprite_color(app: &App, entity: Entity) -> Color {
+    app.world().get::<Sprite>(entity).unwrap().color
+}
+
+/// A second hit during a running flash must not take the flash's white as
+/// the color to restore, or the enemy stays white.
+#[test]
+fn regression_101_second_hit_during_flash_restores_enemy_color() {
+    use bevy::time::TimeUpdateStrategy;
+    use bevy_td_sandbox::enemy::systems::{animate_damage_flash, start_damage_flash};
+    use std::time::Duration;
+
+    let mut app = test_app();
+    let step = Duration::from_millis(50);
+    app.insert_resource(TimeUpdateStrategy::ManualDuration(step));
+    app.add_systems(Update, animate_damage_flash);
+    // The first update only starts the clock: its delta is zero.
+    app.update();
+
+    let color = Color::srgb(0.2, 0.6, 0.3);
+    let enemy = app
+        .world_mut()
+        .spawn((Enemy, Sprite::from_color(color, Vec2::splat(10.0))))
+        .id();
+
+    start_damage_flash(app.world_mut().entity_mut(enemy));
+    app.update();
+    assert_eq!(
+        sprite_color(&app, enemy),
+        Color::WHITE,
+        "the first hit flashes white"
+    );
+
+    // The second hit lands 0.05 s after the first, while the enemy is white.
+    start_damage_flash(app.world_mut().entity_mut(enemy));
+    let flash = app.world().get::<DamageFlash>(enemy).unwrap();
+    assert_eq!(
+        flash.original_color, color,
+        "the second hit keeps the color to restore"
+    );
+    assert_eq!(
+        flash.timer.elapsed(),
+        Duration::ZERO,
+        "the second hit restarts the timer"
+    );
+
+    // 0.2 s more: past the end of both 0.1 s timers.
+    for _ in 0..4 {
+        app.update();
+    }
+    assert!(
+        app.world().get::<DamageFlash>(enemy).is_none(),
+        "the flash should have ended"
+    );
+    assert_eq!(
+        sprite_color(&app, enemy),
+        color,
+        "the enemy should have its own color back"
+    );
+}
+
+// ---------------------------------------------------------------------------
 // apply_screen_shake
 // ---------------------------------------------------------------------------
 

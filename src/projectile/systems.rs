@@ -3,7 +3,8 @@ use bevy::prelude::*;
 use bevy::sprite_render::MeshMaterial2d;
 
 use crate::camera::components::ScreenShake;
-use crate::enemy::components::{AoEBurst, Armor, DamageFlash, Enemy, Health};
+use crate::enemy::components::{AoEBurst, Armor, Enemy, Health};
+use crate::enemy::systems::start_damage_flash;
 use crate::particles::systems::spawn_impact_particles;
 use crate::shader::{CircleMaterial, CircleMesh};
 use crate::states::PlayPhase;
@@ -17,9 +18,6 @@ use super::components::*;
 /// Distance at which a projectile snaps to its target and registers a hit.
 /// Shared by `projectile_movement` (snap) and `projectile_hit_detection`.
 const HIT_DISTANCE: f32 = 5.0;
-
-/// Duration of the white damage-flash effect on hit enemies.
-const DAMAGE_FLASH_SECS: f32 = 0.1;
 
 /// Duration of the expanding AoE burst visual.
 const AOE_BURST_SECS: f32 = 0.3;
@@ -110,7 +108,7 @@ struct PendingHit {
 pub fn projectile_hit_detection(
     mut commands: Commands,
     projectiles: Query<(Entity, &Projectile, &Transform, Option<&AoEPayload>)>,
-    mut enemies: Query<(Entity, &mut Health, &Transform, &Sprite, Option<&Armor>), With<Enemy>>,
+    mut enemies: Query<(Entity, &mut Health, &Transform, Option<&Armor>), With<Enemy>>,
     mut shake: ResMut<ScreenShake>,
     circle_mesh: Res<CircleMesh>,
     mut circle_mats: ResMut<Assets<CircleMaterial>>,
@@ -118,7 +116,7 @@ pub fn projectile_hit_detection(
     let mut hits: Vec<PendingHit> = Vec::new();
 
     for (proj_entity, proj, proj_tf, aoe) in &projectiles {
-        let Ok((_, _, target_tf, _, target_armor)) = enemies.get(proj.target) else {
+        let Ok((_, _, target_tf, target_armor)) = enemies.get(proj.target) else {
             commands.entity(proj_entity).despawn();
             continue;
         };
@@ -141,13 +139,10 @@ pub fn projectile_hit_detection(
     for hit in hits {
         commands.entity(hit.proj_entity).despawn();
 
-        if let Ok((_, mut health, _, sprite, _)) = enemies.get_mut(hit.target) {
+        if let Ok((_, mut health, _, _)) = enemies.get_mut(hit.target) {
             apply_damage(&mut health, hit.damage, hit.armor);
             // Flash white on damage.
-            commands.entity(hit.target).insert(DamageFlash {
-                timer: Timer::from_seconds(DAMAGE_FLASH_SECS, TimerMode::Once),
-                original_color: sprite.color,
-            });
+            commands.entity(hit.target).queue(start_damage_flash);
         }
 
         spawn_impact_particles(
@@ -184,21 +179,18 @@ pub fn projectile_hit_detection(
 
             let aoe_targets: Vec<(Entity, f32, Option<f32>)> = enemies
                 .iter()
-                .filter(|(e, _, _, _, _)| *e != hit.target)
-                .filter_map(|(e, _, tf, _, armor)| {
+                .filter(|(e, _, _, _)| *e != hit.target)
+                .filter_map(|(e, _, tf, armor)| {
                     let dist = tf.translation.distance(hit.hit_pos);
                     (dist <= radius).then_some((e, dist, armor.map(|a| a.reduction)))
                 })
                 .collect();
 
             for (aoe_entity, dist, aoe_armor) in aoe_targets {
-                if let Ok((_, mut health, _, sprite, _)) = enemies.get_mut(aoe_entity) {
+                if let Ok((_, mut health, _, _)) = enemies.get_mut(aoe_entity) {
                     let falloff = aoe_falloff(dist, radius);
                     apply_damage(&mut health, aoe_damage * falloff, aoe_armor);
-                    commands.entity(aoe_entity).insert(DamageFlash {
-                        timer: Timer::from_seconds(DAMAGE_FLASH_SECS, TimerMode::Once),
-                        original_color: sprite.color,
-                    });
+                    commands.entity(aoe_entity).queue(start_damage_flash);
                 }
             }
         }

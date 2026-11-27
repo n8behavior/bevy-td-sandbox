@@ -5,7 +5,8 @@ use std::time::Duration;
 use bevy::prelude::*;
 
 use crate::common::constants::GridConfig;
-use crate::enemy::components::{DamageFlash, Enemy, Health};
+use crate::enemy::components::{Enemy, Health};
+use crate::enemy::systems::start_damage_flash;
 use crate::grid::systems::grid_to_world_cfg;
 use crate::pile::resources::PileState;
 
@@ -40,7 +41,7 @@ pub fn chain_lightning_fire(
         ),
         With<Tower>,
     >,
-    mut enemies: Query<(Entity, &mut Health, &Transform, &Sprite), With<Enemy>>,
+    mut enemies: Query<(Entity, &mut Health, &Transform), With<Enemy>>,
     time: Res<Time>,
     pile_state: Res<PileState>,
     config: Res<GridConfig>,
@@ -66,7 +67,7 @@ pub fn chain_lightning_fire(
         let Some(first_target) = best_target_from(
             enemies
                 .iter()
-                .map(|(e, h, tf, _)| (e, tf.translation.truncate(), h.current)),
+                .map(|(e, h, tf)| (e, tf.translation.truncate(), h.current)),
             tower_pos,
             chain.primary_range.0,
             mode,
@@ -85,7 +86,7 @@ pub fn chain_lightning_fire(
         let mut hit_set = vec![first_target];
         let mut current_damage = chain.damage.0 * eff;
 
-        if let Ok((_, _, tf, _)) = enemies.get(first_target) {
+        if let Ok((_, _, tf)) = enemies.get(first_target) {
             let pos = tf.translation.truncate();
             chain_targets.push((first_target, pos, current_damage));
 
@@ -99,7 +100,7 @@ pub fn chain_lightning_fire(
 
                 // Find nearest unhit enemy within arc range.
                 let mut best: Option<(Entity, Vec2, f32)> = None;
-                for (e, _, tf, _) in enemies.iter() {
+                for (e, _, tf) in enemies.iter() {
                     if hit_set.contains(&e) {
                         continue;
                     }
@@ -124,12 +125,9 @@ pub fn chain_lightning_fire(
         let mut prev_pos = tower_pos;
 
         for &(entity, pos, damage) in &chain_targets {
-            if let Ok((_, mut health, _, sprite)) = enemies.get_mut(entity) {
+            if let Ok((_, mut health, _)) = enemies.get_mut(entity) {
                 health.current -= damage;
-                commands.entity(entity).insert(DamageFlash {
-                    timer: Timer::from_seconds(0.1, TimerMode::Once),
-                    original_color: sprite.color,
-                });
+                commands.entity(entity).queue(start_damage_flash);
             }
 
             spawn_lightning_arc(&mut commands, prev_pos, pos, arc_color);
