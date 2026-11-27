@@ -1,6 +1,6 @@
-# Roadmap (draft)
+# Roadmap
 
-**Status:** a draft for discussion, written 2026-11-27 after v0.5.0. Nothing here is agreed yet. The [open questions](#open-questions) at the end decide which direction it takes.
+**Status:** written 2026-11-27 after v0.5.0. The direction is decided: see [Decisions](#decisions) at the end. The plan itself lives in the [waves](https://github.com/n8behavior/bevy-td-sandbox/milestones), one GitHub milestone per wave, and each wave is one release. This file keeps the reasoning behind them.
 
 ## Where things stand
 
@@ -65,7 +65,7 @@ The editor creates towers, the stats and advice judge them, and dev mode shows t
 
 ## Risk to check early: Lua in the web build
 
-The manual assumes Lua through `mlua` runs "identically on browser and native." The itch.io build targets `wasm32-unknown-unknown`, and `mlua` probably doesn't support that target. If so, Lua won't run in the web build, and the recipe format would need to be a data format (e.g. RON with Bevy reflection) or a pure-Rust script engine. A quick spike would settle it before more design goes into Lua.
+The manual assumes Lua through `mlua` runs "identically on browser and native." The itch.io build targets `wasm32-unknown-unknown`. mlua 0.12.3 supports that target, but only "with a WASI C runtime", and its `docs/wasm32.md` says "The host must provide the matching WASI imports and support Wasm exceptions." So the open question is whether our browser build (Bevy and wasm-bindgen, served on itch.io) can provide those. If it can't, the recipe format would need to be a data format (e.g. RON with Bevy reflection) or a pure-Rust script engine. A quick spike would settle it before more design goes into Lua. The game also ships on Windows, Mac and Linux (see [Decisions](#decisions)), so any format must work on all four platforms.
 
 ## Park or close
 
@@ -76,16 +76,19 @@ The manual assumes Lua through `mlua` runs "identically on browser and native." 
 ## Housekeeping
 
 - GAMEPLAY.md says you start with 200 scrap; the code uses 250 (`STARTING_SCRAP`).
+- GAMEPLAY.md's tower table lists 6 towers and has no Mortar, but `src/tower/mortar` exists.
 - [#75]'s title, "Factor towers & enemies into separate components," is mostly done by [#81]. What's left is config, scripts and the editor.
 - Decide whether to merge, rebase or retire the `editor-brainstorm` branch, and fix the dead brainstorm links in [#55] and [#75].
 - Remove the leftover `upgrade-probe` worktree (`.claude/worktrees/upgrade-probe`) from the Bevy 0.20 upgrade.
 
-## Open questions
+## Decisions
 
-1. Who is this primarily for: itch.io players, tower creators and modders, or a Bevy craft sandbox for the author?
-2. Is the web build the main platform? That affects screen-size and input decisions, and the Lua question above.
-3. What would the next release mean? For example, v0.6 = "observable": the event stream, dev mode, and the first phase of stats.
-4. How much appetite is there for the editor and Lua track, compared with polishing the core game?
+Mike answered the open questions on 2026-11-27.
+
+1. **Who is this primarily for?** Players. It will release on itch.io and other online stores. It will ship with an editor for modders, so it is also for players who want to mod the game. But first and foremost it must be a fun game to play, with no modding needed out of the box.
+2. **Is the web build the main platform?** No. It will ship on Windows, Mac, Linux and web. No current plans for mobile, but not off the table.
+3. **What would the next release mean?** Not decided yet. We work it out from this roadmap and other goals as they come. Each wave in riff is one release.
+4. **The editor and Lua track versus polishing the core game?** The core game is the priority: make it fun, then make it pretty. Visuals and sound stay at just enough to work through the core mechanics. The editor matters as a way to design and test towers and enemies with different abilities, and to buff or nerf them quickly, always in service of improving the core game.
 
 [#55]: https://github.com/n8behavior/bevy-td-sandbox/issues/55
 [#69]: https://github.com/n8behavior/bevy-td-sandbox/issues/69
