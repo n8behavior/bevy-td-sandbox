@@ -275,6 +275,27 @@ _release-publish VERSION:
         echo "[publish] Release $version already exists — skipping."
         exit 0
     fi
+    # watch_run RUN_ID [LOG]: succeeds only if the run concluded with success.
+    # gh run watch also exits non-zero on GitHub API errors (an HTTP 502 cut the
+    # v0.5.0 CI watch short while the run was still green), so the verdict comes
+    # from the run itself and a lost watch is resumed.
+    watch_run() {
+        local id="$1" log="${2:-}" state
+        while true; do
+            if [ -n "$log" ]; then
+                gh run watch "$id" > "$log" 2>&1 || true
+            else
+                gh run watch "$id" || true
+            fi
+            state="$(gh run view "$id" --json status,conclusion -q '.status + " " + .conclusion' 2>/dev/null || true)"
+            case "$state" in
+                "completed success") return 0 ;;
+                completed*) return 1 ;;
+            esac
+            echo "[publish] Lost the watch on run $id (${state:-no status}); retrying in 10s..."
+            sleep 10
+        done
+    }
     echo "[publish] Waiting for CI..."
     tag_sha="$(git rev-parse "$version^{commit}")"
     # Wait for a non-cancelled CI run to appear
@@ -291,7 +312,7 @@ _release-publish VERSION:
         echo "[publish] FAIL: CI run not found after 120s"; exit 1
     fi
     echo "[publish] Watching CI run $run_id..."
-    if ! gh run watch "$run_id" --exit-status; then
+    if ! watch_run "$run_id"; then
         echo "[publish] FAIL: CI failed. Fix, then re-run the same just release command to finish $version"; exit 1
     fi
     echo "[publish] CI passed. Creating GitHub release..."
@@ -299,11 +320,14 @@ _release-publish VERSION:
         --title "$version" \
         --notes "See [CHANGELOG.md](https://github.com/n8behavior/bevy-td-sandbox/blob/main/CHANGELOG.md) for details."
     echo "[publish] Release created — waiting for deploy..."
-    # Watch the Release workflow triggered by the GH release
+    # Watch the Release workflow run for this tag; matching headBranch keeps it
+    # from picking up the previous release's (already finished) deploy run
     deploy_id=""
     elapsed=0
     while [ -z "$deploy_id" ] && [ $elapsed -lt 120 ]; do
-        deploy_id="$(gh run list --workflow Release --json databaseId,event,headBranch -q '.[] | select(.event=="release") | .databaseId' 2>/dev/null | head -1 || echo "")"
+        deploy_id="$(gh run list --workflow Release --json databaseId,event,headBranch \
+            -q ".[] | select(.event == \"release\" and .headBranch == \"$version\") | .databaseId" \
+            2>/dev/null | head -1 || echo "")"
         [ -z "$deploy_id" ] && sleep 2 && elapsed=$((elapsed + 2))
     done
     if [ -z "$deploy_id" ]; then
@@ -311,7 +335,7 @@ _release-publish VERSION:
         exit 0
     fi
     echo "[publish] Watching deploy run $deploy_id..."
-    if ! gh run watch "$deploy_id" --exit-status > /tmp/release-deploy-watch.log 2>&1; then
+    if ! watch_run "$deploy_id" /tmp/release-deploy-watch.log; then
         echo "[publish] FAIL: Deploy failed. See /tmp/release-deploy-watch.log for details."
         tail -20 /tmp/release-deploy-watch.log
         exit 1
