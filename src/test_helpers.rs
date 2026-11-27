@@ -28,9 +28,17 @@ pub fn test_app() -> App {
 }
 
 /// Minimal headless App with asset support (for testing materials, meshes, etc.).
+///
+/// File watching is off. Under the default `native` feature, every test app
+/// would otherwise start an embedded-asset watcher over the whole crate
+/// directory, `target/` included. Run in parallel, those exhaust the inotify
+/// watch limit and the tests panic with `MaxFilesWatch`.
 pub fn test_app_with_assets() -> App {
     let mut app = test_app();
-    app.add_plugins(bevy::asset::AssetPlugin::default());
+    app.add_plugins(bevy::asset::AssetPlugin {
+        watch_for_changes_override: Some(false),
+        ..default()
+    });
     app
 }
 
