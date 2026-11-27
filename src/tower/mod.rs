@@ -269,6 +269,7 @@ impl Plugin for TowerPlugin {
             .add_message::<upgrade::UpgradeApplied<upgrade::Primary>>()
             .add_message::<upgrade::UpgradeApplied<upgrade::Magnet>>()
             .add_observer(systems::default_fire_observer)
+            .add_observer(targeting::on_targeting_button_activate)
             .add_observer(despawn_range_ring_on_rubble)
             .add_observer(despawn_aura_visual_on_rubble)
             .add_observer(despawn_magnet_aura_on_rubble)
@@ -295,7 +296,6 @@ impl Plugin for TowerPlugin {
                     placement::tint_placing_tower,
                     placement::confirm_tower_placement,
                     placement::sell_tower,
-                    targeting::handle_targeting_button,
                     upgrade::inspect_tower,
                     upgrade::apply_track_upgrade::<upgrade::Primary>,
                     upgrade::scale_turret_on_tier,

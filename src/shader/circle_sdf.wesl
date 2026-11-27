@@ -1,4 +1,4 @@
-#import bevy_sprite::mesh2d_vertex_output::VertexOutput
+import bevy_sprite_render::mesh2d::vertex_output::VertexOutput;
 
 struct CircleMaterial {
     color: vec4<f32>,
@@ -11,7 +11,7 @@ struct CircleMaterial {
     time: f32,
 };
 
-@group(2) @binding(0) var<uniform> material: CircleMaterial;
+@group(constants::MATERIAL_BIND_GROUP) @binding(0) var<uniform> material: CircleMaterial;
 
 @fragment
 fn fragment(mesh: VertexOutput) -> @location(0) vec4<f32> {

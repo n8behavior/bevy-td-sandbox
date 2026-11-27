@@ -1,8 +1,10 @@
 use std::marker::PhantomData;
 use std::time::Duration;
 
+use bevy::picking::hover::Hovered;
 use bevy::prelude::*;
 use bevy::sprite_render::MeshMaterial2d;
+use bevy::ui_widgets::{ActivateOnPress, Button};
 
 use crate::audio::{GameSound, PlaySound};
 use crate::common::constants::{GridConfig, TILE_SIZE};
@@ -1063,6 +1065,8 @@ fn spawn_targeting_buttons_world(
         let btn = world
             .spawn((
                 Button,
+                ActivateOnPress,
+                Hovered::default(),
                 Node {
                     width: Val::Px(28.0),
                     height: Val::Px(22.0),

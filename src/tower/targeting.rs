@@ -1,4 +1,6 @@
+use bevy::picking::hover::Hovered;
 use bevy::prelude::*;
+use bevy::ui_widgets::Activate;
 
 use super::components::*;
 
@@ -70,43 +72,45 @@ const BUTTON_INACTIVE: Color = Color::srgba(0.2, 0.2, 0.2, 0.7);
 const BUTTON_HOVER: Color = Color::srgba(0.5, 0.5, 0.2, 0.8);
 
 /// Background color for a targeting button based on hover/active state.
-pub fn targeting_button_color(interaction: &Interaction, is_active: bool) -> Color {
-    match interaction {
-        Interaction::Hovered if !is_active => BUTTON_HOVER,
-        _ if is_active => BUTTON_ACTIVE,
-        _ => BUTTON_INACTIVE,
+pub fn targeting_button_color(hovered: bool, is_active: bool) -> Color {
+    if is_active {
+        BUTTON_ACTIVE
+    } else if hovered {
+        BUTTON_HOVER
+    } else {
+        BUTTON_INACTIVE
     }
 }
 
-/// Click handler: when the user clicks a `TargetingButton`, apply its mode to
-/// the bound tower entity.
-pub fn handle_targeting_button(
-    buttons: Query<(&Interaction, &TargetingButton), Changed<Interaction>>,
+/// Observer: when a `TargetingButton` is activated, apply its mode to the
+/// bound tower entity. The buttons carry `ActivateOnPress`, so this fires on
+/// press, during input handling, before `Update` runs.
+pub fn on_targeting_button_activate(
+    activate: On<Activate>,
+    buttons: Query<&TargetingButton>,
     mut towers: Query<&mut TargetingMode, With<Tower>>,
 ) {
-    for (interaction, button) in &buttons {
-        if *interaction != Interaction::Pressed {
-            continue;
-        }
-        if let Ok(mut mode) = towers.get_mut(button.tower) {
-            *mode = button.mode;
-        }
+    let Ok(button) = buttons.get(activate.entity) else {
+        return;
+    };
+    if let Ok(mut mode) = towers.get_mut(button.tower) {
+        *mode = button.mode;
     }
 }
 
-/// Refresh button background colors on hover/state changes. Runs after
-/// `handle_targeting_button` so newly-pressed buttons reflect the new active
-/// mode immediately.
+/// Refresh button background colors on hover/state changes. A pressed
+/// button's mode is already applied by `on_targeting_button_activate`, so it
+/// shows as active on the same frame.
 pub fn refresh_targeting_button_colors(
-    mut buttons: Query<(&Interaction, &TargetingButton, &mut BackgroundColor)>,
+    mut buttons: Query<(&Hovered, &TargetingButton, &mut BackgroundColor)>,
     towers: Query<&TargetingMode, With<Tower>>,
 ) {
-    for (interaction, button, mut bg) in &mut buttons {
+    for (hovered, button, mut bg) in &mut buttons {
         let is_active = towers
             .get(button.tower)
             .map(|m| *m == button.mode)
             .unwrap_or(false);
-        *bg = BackgroundColor(targeting_button_color(interaction, is_active));
+        *bg = BackgroundColor(targeting_button_color(hovered.get(), is_active));
     }
 }
 
@@ -114,29 +118,42 @@ pub fn refresh_targeting_button_colors(
 mod tests {
     use super::*;
 
+    use crate::test_helpers::test_app;
+
     #[test]
-    fn active_color_when_pressed_active() {
-        let c = targeting_button_color(&Interaction::None, true);
-        assert_eq!(c, BUTTON_ACTIVE);
+    fn active_color_when_active() {
+        assert_eq!(targeting_button_color(false, true), BUTTON_ACTIVE);
     }
 
     #[test]
     fn hover_color_only_when_inactive() {
-        assert_eq!(
-            targeting_button_color(&Interaction::Hovered, false),
-            BUTTON_HOVER,
-        );
-        assert_eq!(
-            targeting_button_color(&Interaction::Hovered, true),
-            BUTTON_ACTIVE,
-        );
+        assert_eq!(targeting_button_color(true, false), BUTTON_HOVER);
+        assert_eq!(targeting_button_color(true, true), BUTTON_ACTIVE);
     }
 
     #[test]
-    fn inactive_color_when_no_interaction() {
+    fn inactive_color_when_not_hovered() {
+        assert_eq!(targeting_button_color(false, false), BUTTON_INACTIVE);
+    }
+
+    #[test]
+    fn activating_button_sets_tower_mode() {
+        let mut app = test_app();
+        app.add_observer(on_targeting_button_activate);
+        let tower = app.world_mut().spawn((Tower, TargetingMode::Closest)).id();
+        let button = app
+            .world_mut()
+            .spawn(TargetingButton {
+                tower,
+                mode: TargetingMode::FurthestAlongPath,
+            })
+            .id();
+
+        app.world_mut().trigger(Activate { entity: button });
+
         assert_eq!(
-            targeting_button_color(&Interaction::None, false),
-            BUTTON_INACTIVE,
+            *app.world().get::<TargetingMode>(tower).unwrap(),
+            TargetingMode::FurthestAlongPath
         );
     }
 }

@@ -1,7 +1,7 @@
 //! GPU-driven SDF circle rendering for range rings and aura effects.
 //!
 //! [`CircleMaterial`] is a [`Material2d`] asset whose fragment shader
-//! (`circle_sdf.wgsl`) evaluates a signed-distance field per pixel to draw
+//! (`circle_sdf.wesl`) evaluates a signed-distance field per pixel to draw
 //! soft-edged circles with optional radial fade and ripple animation.
 //! `tick_circle_materials` advances `time` each frame for materials with
 //! positive `ripple_speed`. [`CircleMesh`] provides a shared unit-circle
@@ -72,11 +72,11 @@ impl CircleMaterial {
 // ANCHOR_END: constructors
 
 // ANCHOR: material2d_impl
-/// Loads the `circle_sdf.wgsl` embedded fragment shader and enables alpha
+/// Loads the `circle_sdf.wesl` embedded fragment shader and enables alpha
 /// blending so the SDF edge falloff composites correctly against the scene.
 impl Material2d for CircleMaterial {
     fn fragment_shader() -> ShaderRef {
-        "embedded://bevy_td_sandbox/shader/circle_sdf.wgsl".into()
+        "embedded://bevy_td_sandbox/shader/circle_sdf.wesl".into()
     }
 
     fn alpha_mode(&self) -> AlphaMode2d {
@@ -150,7 +150,7 @@ pub struct ShaderPlugin;
 
 impl Plugin for ShaderPlugin {
     fn build(&self, app: &mut App) {
-        embedded_asset!(app, "circle_sdf.wgsl");
+        embedded_asset!(app, "circle_sdf.wesl");
         app.add_plugins(Material2dPlugin::<CircleMaterial>::default())
             .add_systems(Startup, setup_circle_mesh)
             .add_systems(Update, tick_circle_materials);
