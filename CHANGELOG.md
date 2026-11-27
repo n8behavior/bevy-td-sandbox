@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.4.1
+
+- Take patch/minor/major for `just release` instead of a version string
+- Add release pre-flight checks and keep Cargo.lock in step
+- Add `just setup` to bootstrap a fresh clone
+- Refactor enemies into self-contained modules (parallel to issue #81)
+
+
 ## v0.4.0
 
 - Step 10: Mortar acceptance scaffold (issue #81 acceptance)
