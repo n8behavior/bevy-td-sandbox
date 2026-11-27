@@ -42,6 +42,9 @@ const CELL_JITTER_RANGE: f32 = 7.0;
 /// Duration of the shrink+fade death animation (seconds).
 const DEATH_ANIM_SECS: f32 = 0.3;
 
+/// Duration of the white damage flash on a hit enemy (seconds).
+const DAMAGE_FLASH_SECS: f32 = 0.1;
+
 /// Per-wave health multiplier growth: `1.0 + (wave - 1) * RATE`.
 const HEALTH_SCALING_PER_WAVE: f32 = 0.15;
 
@@ -445,6 +448,26 @@ pub fn animate_death(
             commands.entity(entity).despawn();
         }
     }
+}
+
+/// Start an enemy's white damage flash. Every hit goes through here:
+/// `commands.entity(enemy).queue(start_damage_flash)`.
+///
+/// A hit during a running flash restarts its timer and keeps the color it
+/// will restore. Copying the sprite's color then would copy the flash's
+/// white, and the enemy would stay white (#101).
+pub fn start_damage_flash(mut entity: EntityWorldMut) {
+    if let Some(mut flash) = entity.get_mut::<DamageFlash>() {
+        flash.timer.reset();
+        return;
+    }
+    let Some(original_color) = entity.get::<Sprite>().map(|sprite| sprite.color) else {
+        return;
+    };
+    entity.insert(DamageFlash {
+        timer: Timer::from_seconds(DAMAGE_FLASH_SECS, TimerMode::Once),
+        original_color,
+    });
 }
 
 /// Flash enemies white on damage, restore color when done.
