@@ -70,7 +70,7 @@ pub fn setup_tower_palette(
                 Text::new(format!("TOWERS (1-{})", registry.blueprints.len())),
                 TextColor(LABEL_COLOR),
                 TextFont {
-                    font_size: 15.0,
+                    font_size: FontSize::Px(15.0),
                     ..default()
                 },
             ));
@@ -106,7 +106,7 @@ pub fn setup_tower_palette(
                             )),
                             TextColor(blueprint.ui_color),
                             TextFont {
-                                font_size: 14.0,
+                                font_size: FontSize::Px(14.0),
                                 ..default()
                             },
                         ));
@@ -117,7 +117,7 @@ pub fn setup_tower_palette(
                 Text::new(format_targeting_legend()),
                 TextColor(HINT_COLOR),
                 TextFont {
-                    font_size: 12.0,
+                    font_size: FontSize::Px(12.0),
                     ..default()
                 },
             ));
@@ -131,7 +131,7 @@ pub fn setup_tower_palette(
                 Text::new(hints),
                 TextColor(HINT_COLOR),
                 TextFont {
-                    font_size: 12.0,
+                    font_size: FontSize::Px(12.0),
                     ..default()
                 },
             ));
@@ -236,7 +236,7 @@ pub fn update_wave_preview(
                 )),
                 TextColor(LABEL_COLOR),
                 TextFont {
-                    font_size: 15.0,
+                    font_size: FontSize::Px(15.0),
                     ..default()
                 },
             ));
@@ -244,7 +244,7 @@ pub fn update_wave_preview(
                 Text::new(format_defend_status(alive, queued)),
                 TextColor(STAT_COLOR),
                 TextFont {
-                    font_size: 13.0,
+                    font_size: FontSize::Px(13.0),
                     ..default()
                 },
             ));
@@ -258,7 +258,7 @@ pub fn update_wave_preview(
                 Text::new("ALL WAVES COMPLETE!"),
                 TextColor(LABEL_COLOR),
                 TextFont {
-                    font_size: 15.0,
+                    font_size: FontSize::Px(15.0),
                     ..default()
                 },
             ));
@@ -277,7 +277,7 @@ pub fn update_wave_preview(
             )),
             TextColor(LABEL_COLOR),
             TextFont {
-                font_size: 15.0,
+                font_size: FontSize::Px(15.0),
                 ..default()
             },
         ));
@@ -294,7 +294,7 @@ pub fn update_wave_preview(
                 Text::new(format!(" {:>2}x {label}", we.count)),
                 TextColor(color),
                 TextFont {
-                    font_size: 13.0,
+                    font_size: FontSize::Px(13.0),
                     ..default()
                 },
             ));
@@ -304,7 +304,7 @@ pub fn update_wave_preview(
             Text::new(format!("\nSpawn interval: {:.1}s", wave.spawn_interval)),
             TextColor(STAT_COLOR),
             TextFont {
-                font_size: 11.0,
+                font_size: FontSize::Px(11.0),
                 ..default()
             },
         ));
@@ -313,7 +313,7 @@ pub fn update_wave_preview(
             Text::new("[ENTER to start]"),
             TextColor(HINT_COLOR),
             TextFont {
-                font_size: 12.0,
+                font_size: FontSize::Px(12.0),
                 ..default()
             },
         ));

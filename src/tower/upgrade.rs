@@ -185,7 +185,7 @@ pub fn apply_track_upgrade<K: UpgradeKind>(
     commands.spawn((
         Text2d::new(K::float_text(new_tier)),
         TextFont {
-            font_size: 14.0,
+            font_size: FontSize::Px(14.0),
             ..default()
         },
         TextColor(K::FLOAT_COLOR),
@@ -706,7 +706,7 @@ pub fn apply_repair(
     commands.spawn((
         Text2d::new("Repaired!"),
         TextFont {
-            font_size: 14.0,
+            font_size: FontSize::Px(14.0),
             ..default()
         },
         TextColor(Color::srgb(0.3, 0.9, 0.3)),
@@ -995,7 +995,7 @@ fn spawn_text_line(
         Text::new(text.into()),
         TextColor(color),
         TextFont {
-            font_size,
+            font_size: FontSize::Px(font_size),
             ..default()
         },
     ));
@@ -1029,7 +1029,7 @@ fn spawn_text_line_world(
             Text::new(text.into()),
             TextColor(color),
             TextFont {
-                font_size,
+                font_size: FontSize::Px(font_size),
                 ..default()
             },
         ))
@@ -1079,7 +1079,7 @@ fn spawn_targeting_buttons_world(
                 Text::new(mode.label()),
                 TextColor(Color::WHITE),
                 TextFont {
-                    font_size: 13.0,
+                    font_size: FontSize::Px(13.0),
                     ..default()
                 },
             ))

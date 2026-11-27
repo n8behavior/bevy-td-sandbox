@@ -25,7 +25,7 @@ pub fn setup_main_menu(mut commands: Commands) {
                 Text::new("SCRAP DEFENCE"),
                 TextColor(Color::srgb(0.9, 0.7, 0.2)),
                 TextFont {
-                    font_size: 64.0,
+                    font_size: FontSize::Px(64.0),
                     ..default()
                 },
             ));
@@ -34,7 +34,7 @@ pub fn setup_main_menu(mut commands: Commands) {
                 Text::new("[SPACE] Classic Mode  |  [E] Endless Mode"),
                 TextColor(Color::srgb(0.6, 0.6, 0.5)),
                 TextFont {
-                    font_size: 24.0,
+                    font_size: FontSize::Px(24.0),
                     ..default()
                 },
             ));
@@ -44,7 +44,7 @@ pub fn setup_main_menu(mut commands: Commands) {
                 Text::new("ESC ESC: Quit"),
                 TextColor(Color::srgb(0.4, 0.4, 0.35)),
                 TextFont {
-                    font_size: 16.0,
+                    font_size: FontSize::Px(16.0),
                     ..default()
                 },
             ));
@@ -102,14 +102,14 @@ pub fn setup_game_over(
                 Text::new("GAME OVER"),
                 TextColor(Color::srgb(0.9, 0.2, 0.2)),
                 TextFont {
-                    font_size: 64.0,
+                    font_size: FontSize::Px(64.0),
                     ..default()
                 },
             ));
 
             let stat_color = Color::srgb(0.75, 0.7, 0.55);
             let stat_font = TextFont {
-                font_size: 18.0,
+                font_size: FontSize::Px(18.0),
                 ..default()
             };
 
@@ -123,7 +123,7 @@ pub fn setup_game_over(
                             Text::new(format!("Survival Time: {:02}:{:02}", mins, secs)),
                             TextColor(Color::srgb(0.9, 0.6, 0.2)),
                             TextFont {
-                                font_size: 28.0,
+                                font_size: FontSize::Px(28.0),
                                 ..default()
                             },
                         ));
@@ -134,7 +134,7 @@ pub fn setup_game_over(
                             Text::new(format!("Waves Survived: {} / 20", waves)),
                             TextColor(Color::srgb(0.9, 0.6, 0.2)),
                             TextFont {
-                                font_size: 28.0,
+                                font_size: FontSize::Px(28.0),
                                 ..default()
                             },
                         ));
@@ -191,7 +191,7 @@ pub fn setup_game_over(
                 Text::new(hint),
                 TextColor(Color::srgb(0.6, 0.6, 0.5)),
                 TextFont {
-                    font_size: 24.0,
+                    font_size: FontSize::Px(24.0),
                     ..default()
                 },
             ));

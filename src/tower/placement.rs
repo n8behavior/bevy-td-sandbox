@@ -443,7 +443,7 @@ pub fn sell_tower(
     commands.spawn((
         Text2d::new(format!("+{refund}")),
         TextFont {
-            font_size: 14.0,
+            font_size: FontSize::Px(14.0),
             ..default()
         },
         TextColor(Color::srgb(0.9, 0.8, 0.2)),

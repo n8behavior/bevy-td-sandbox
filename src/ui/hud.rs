@@ -105,7 +105,7 @@ pub fn setup_hud(mut commands: Commands) {
                 Text::new(format!("Pile: {}", STARTING_SCRAP)),
                 TextColor(Color::srgb(0.9, 0.8, 0.2)),
                 TextFont {
-                    font_size: 18.0,
+                    font_size: FontSize::Px(18.0),
                     ..default()
                 },
                 ScrapText,
@@ -114,7 +114,7 @@ pub fn setup_hud(mut commands: Commands) {
                 Text::new("Ground: 0"),
                 TextColor(Color::srgb(0.7, 0.6, 0.2)),
                 TextFont {
-                    font_size: 18.0,
+                    font_size: FontSize::Px(18.0),
                     ..default()
                 },
                 GroundScrapText,
@@ -123,7 +123,7 @@ pub fn setup_hud(mut commands: Commands) {
                 Text::new("Stolen: 0"),
                 TextColor(Color::srgb(0.9, 0.3, 0.3)),
                 TextFont {
-                    font_size: 18.0,
+                    font_size: FontSize::Px(18.0),
                     ..default()
                 },
                 StolenScrapText,
@@ -132,7 +132,7 @@ pub fn setup_hud(mut commands: Commands) {
                 Text::new("BUILDING"),
                 TextColor(Color::srgb(0.3, 0.9, 0.3)),
                 TextFont {
-                    font_size: 18.0,
+                    font_size: FontSize::Px(18.0),
                     ..default()
                 },
                 PhaseText,
@@ -141,7 +141,7 @@ pub fn setup_hud(mut commands: Commands) {
                 Text::new("Wave: 1 / 20"),
                 TextColor(Color::WHITE),
                 TextFont {
-                    font_size: 18.0,
+                    font_size: FontSize::Px(18.0),
                     ..default()
                 },
                 WaveText,

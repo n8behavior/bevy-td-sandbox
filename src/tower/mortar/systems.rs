@@ -102,7 +102,7 @@ fn spawn_panel_text(world: &mut World, panel: Entity, text: String, color: Color
             Text::new(text),
             TextColor(color),
             TextFont {
-                font_size,
+                font_size: FontSize::Px(font_size),
                 ..default()
             },
         ))

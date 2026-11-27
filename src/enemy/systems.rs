@@ -481,7 +481,7 @@ pub fn animate_aoe_burst(
         let t = burst.timer.fraction();
         let size = burst.max_radius * t;
         tf.scale = Vec3::splat(size);
-        if let Some(mat) = materials.get_mut(mat_handle.id()) {
+        if let Some(mut mat) = materials.get_mut(mat_handle.id()) {
             mat.color = mat.color.with_alpha(0.4 * (1.0 - t));
         }
         if burst.timer.is_finished() {

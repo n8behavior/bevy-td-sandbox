@@ -16,7 +16,7 @@ pub fn spawn_targeting_label(
             TargetingModeLabel,
             Text2d::new(mode.label()),
             TextFont {
-                font_size: 10.0,
+                font_size: FontSize::Px(10.0),
                 ..default()
             },
             TextColor(Color::srgba(1.0, 1.0, 1.0, 0.8)),

@@ -176,7 +176,7 @@ fn setup_quit_banner(mut commands: Commands) {
                         Text::new("Press ESC again to quit"),
                         TextColor(Color::srgb(0.9, 0.7, 0.2)),
                         TextFont {
-                            font_size: 18.0,
+                            font_size: FontSize::Px(18.0),
                             ..default()
                         },
                     ));
