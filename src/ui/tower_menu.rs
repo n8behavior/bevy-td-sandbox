@@ -2,6 +2,7 @@ use crate::enemy::components::{Enemy, EnemyRegistry};
 use crate::states::{GameMode, GameState, PlayPhase};
 use crate::tower::components::{TargetingMode, TowerRegistry};
 use crate::tower::placement::SelectedTower;
+use crate::ui::CAN_QUIT;
 use crate::ui::hud::{HudPanel, HudState};
 use crate::wave::resources::WaveManager;
 use bevy::prelude::*;
@@ -26,7 +27,7 @@ pub enum PanelAnchor {
 }
 
 /// Pixel offset below the top HUD bar (`hud::setup_hud` height = 40).
-const TOP_HUD_HEIGHT_PX: f32 = 40.0;
+pub const TOP_HUD_HEIGHT_PX: f32 = 40.0;
 
 /// Builds the common component bundle for an anchored UI panel.
 pub fn panel_node(anchor: PanelAnchor) -> (Node, BackgroundColor, DespawnOnExit<GameState>) {
@@ -122,13 +123,8 @@ pub fn setup_tower_palette(
                 },
             ));
 
-            let hints = if *game_mode == GameMode::Endless {
-                "\nTab: Toggle HUD\nESC: Deselect\nESC ESC: Quit"
-            } else {
-                "\nENTER: Start Wave\nTab: Toggle HUD\nESC: Deselect\nESC ESC: Quit"
-            };
             parent.spawn((
-                Text::new(hints),
+                Text::new(format_palette_hints(*game_mode, CAN_QUIT)),
                 TextColor(HINT_COLOR),
                 TextFont {
                     font_size: FontSize::Px(12.0),
@@ -177,6 +173,22 @@ pub(crate) fn format_targeting_legend() -> String {
         TargetingMode::LowestHp.label(),
         TargetingMode::FurthestAlongPath.label(),
     )
+}
+
+/// Formats the key hints at the foot of the tower palette.
+///
+/// Only Classic starts its waves by hand, and the quit key is named only
+/// when quitting exists.
+pub(crate) fn format_palette_hints(game_mode: GameMode, can_quit: bool) -> String {
+    let mut hints = String::new();
+    if game_mode == GameMode::Classic {
+        hints.push_str("\nENTER: Start Wave");
+    }
+    hints.push_str("\nTab: Toggle HUD\nESC: Deselect");
+    if can_quit {
+        hints.push_str("\nESC ESC: Quit");
+    }
+    hints
 }
 
 /// Formats the condensed enemy status shown during the Defending phase.
@@ -338,6 +350,32 @@ mod tests {
         assert!(legend.contains("High HP"));
         assert!(legend.contains("Low HP"));
         assert!(legend.contains("Furthest"));
+    }
+
+    #[test]
+    fn palette_hints_name_quit_only_when_quitting_exists() {
+        for mode in [GameMode::Classic, GameMode::Endless] {
+            for can_quit in [true, false] {
+                let hints = format_palette_hints(mode, can_quit);
+                assert_eq!(
+                    hints.contains("Quit"),
+                    can_quit,
+                    "{mode:?}, can_quit = {can_quit}: {hints:?}",
+                );
+                assert!(hints.contains("Tab: Toggle HUD"));
+                assert!(hints.contains("ESC: Deselect"));
+            }
+        }
+    }
+
+    #[test]
+    fn palette_hints_offer_start_wave_only_in_classic() {
+        for can_quit in [true, false] {
+            assert!(
+                format_palette_hints(GameMode::Classic, can_quit).contains("ENTER: Start Wave")
+            );
+            assert!(!format_palette_hints(GameMode::Endless, can_quit).contains("ENTER"));
+        }
     }
 
     #[test]

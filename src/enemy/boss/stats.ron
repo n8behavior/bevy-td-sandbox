@@ -1,0 +1,13 @@
+// Boss: the apex enemy. Regenerates, has armor, and splits into Shamblers
+// when it dies. Steals scrap.
+//
+// Each spawn reads these values; wave scaling multiplies health and speed.
+// A change applies to Bosses spawned after it, not to those on the field.
+(
+    health: 350.0, // hit points
+    speed: 20.0, // world units per second (a tile is 20)
+    loot: 150, // scrap dropped on death, and the most it steals
+    regen_rate: 5.0, // hit points regained per second
+    armor_reduction: 5.0, // damage taken off each hit (a hit still deals at least 1)
+    split_count: 3, // Shamblers spawned where it dies
+)

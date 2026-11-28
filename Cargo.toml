@@ -7,6 +7,9 @@ edition = "2024"
 bevy = { version = "0.20", default-features = false, features = ["2d", "ui", "bevy_audio", "wav"] }
 bevy_northstar = "0.8"
 rand = "0.10"
+# Tuning data files (src/tuning.rs). Bevy already depends on both.
+ron = "0.12"
+serde = { version = "1", features = ["derive"] }
 
 # getrandom 0.3 (pulled in by rand) needs the wasm_js backend on WASM.
 # You must also pass `--cfg getrandom_backend="wasm_js"` in RUSTFLAGS for web builds.
@@ -16,11 +19,14 @@ getrandom = { version = "0.4", features = ["wasm_js"] }
 [features]
 default = ["native"]
 native = [
-    "web",
+    "dev",
     "bevy/file_watcher",
     "bevy/embedded_watcher",
 ]
-web = [
+# Dev mode (`src/dev/`). A plain `cargo build --release` keeps the default
+# features, so it includes dev mode: build a release with
+# `--no-default-features`, or with `bevy build --release`.
+dev = [
     "bevy/bevy_dev_tools",
     "bevy/bevy_ui_debug",
     "bevy/track_location",
@@ -34,7 +40,7 @@ default-features = false
 default-features = false
 
 [package.metadata.bevy_cli.web.dev]
-features = ["web"]
+features = ["dev"]
 
 [lints.clippy]
 too_many_arguments = "allow"

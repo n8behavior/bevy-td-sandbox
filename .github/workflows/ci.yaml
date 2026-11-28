@@ -6,9 +6,12 @@ on:
   pull_request:
     branches: [main]
 
+# A new push to a pull request cancels its older run. A run on `main`
+# always finishes, so it tests that merge and saves the caches; a newer
+# merge waits as the pending run (and replaces an older pending one).
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref || github.run_id }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   RUSTFLAGS: -Dwarnings
@@ -47,10 +50,12 @@ jobs:
           toolchain: ${{ env.toolchain }}
           components: clippy
 
+      # Each job keeps its own key: Clippy and Test build different
+      # artifacts, and a shared key lets only the first job save.
       - name: Restore Rust cache
         uses: Swatinem/rust-cache@v2
         with:
-          shared-key: ci
+          shared-key: ci-clippy
           save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Install build dependencies
@@ -62,7 +67,9 @@ jobs:
   test:
     name: Test
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # A run without the cache compiles every dependency (up to 18 min),
+    # then saves the cache.
+    timeout-minutes: 30
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
@@ -75,7 +82,7 @@ jobs:
       - name: Restore Rust cache
         uses: Swatinem/rust-cache@v2
         with:
-          shared-key: ci
+          shared-key: ci-test
           save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Install build dependencies
