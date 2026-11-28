@@ -14,27 +14,39 @@ use std::time::{Duration, Instant};
 use crate::common::constants::{CHUNK_SIZE, GridConfig};
 use crate::enemy::boss::BossPlugin;
 use crate::enemy::brute::BrutePlugin;
-use crate::enemy::components::{Enemy, EnemyRegistry, EnemyState, Health, LootValue, MoveSpeed};
+use crate::enemy::components::{
+    Armor, Enemy, EnemyName, EnemyRegistry, EnemyState, Health, LootValue, MoveSpeed,
+};
 use crate::enemy::runner::RunnerPlugin;
 use crate::enemy::shambler::ShamblerPlugin;
 use crate::enemy::spawn::spawn_from_blueprint;
 use crate::enemy::systems::{scale_health_on_spawn, scale_speed_on_spawn};
 use crate::pile::resources::{EdgeCells, PileScrap, PileState};
 use crate::pile::systems::{compute_pile_cells, pile_radius};
+use crate::records::RecordsPlugin;
 use crate::states::{GameMode, GameState, PlayPhase};
 use crate::stats::resources::RunStats;
 use crate::tower::components::{
-    Damage, ProjectileVisuals, Range, SlowOnHit, TargetingMode, Tower, TowerState, Turret,
+    Damage, ProjectileVisuals, Range, SlowOnHit, TargetingMode, Tower, TowerId, TowerState, Turret,
 };
 use crate::tuning::{TuningData, TuningFile};
 use crate::wave::resources::WaveManager;
 
 /// Minimal headless App for testing (time ticking, no window/renderer).
+/// Registers the gameplay record messages, which damage systems write.
 pub fn test_app() -> App {
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
     app.add_plugins(bevy::state::app::StatesPlugin);
+    app.add_plugins(RecordsPlugin);
     app
+}
+
+/// Every message of type `M` still in the app's buffers (written in this
+/// update or the one before), oldest first.
+pub fn read_messages<M: Message + Clone>(app: &App) -> Vec<M> {
+    let messages = app.world().resource::<Messages<M>>();
+    messages.get_cursor().read(messages).cloned().collect()
 }
 
 /// Minimal headless App with asset support (for testing materials, meshes, etc.).
@@ -249,14 +261,15 @@ pub fn spawn_test_grid(app: &mut App, width: u32, height: u32) -> Entity {
 
 /// Builder for tower entities in tests.
 ///
-/// Spawns with `Tower`, `TowerState::Active`, and `Transform`. Optional
-/// components — `SlowOnHit` (aura) and `Turret` (firing) — are added via
-/// method chaining.
+/// Spawns with `Tower`, `TowerState::Active`, `TowerId`, and `Transform`.
+/// Optional components — `SlowOnHit` (aura) and `Turret` (firing) — are
+/// added via method chaining.
 ///
 /// # Defaults
 /// - `pos`: `Vec3::ZERO`
 /// - `damage`: `0.0`
 /// - `range`: `100.0`
+/// - `id`: "TestTower #1 (0, 0)"
 ///
 /// # Examples
 /// ```ignore
@@ -272,6 +285,7 @@ pub struct TowerBuilder {
     aim_tolerance: Option<f32>,
     projectile_visuals: Option<ProjectileVisuals>,
     targeting: Option<TargetingMode>,
+    id: TowerId,
 }
 
 impl Default for TowerBuilder {
@@ -292,6 +306,11 @@ impl TowerBuilder {
             aim_tolerance: None,
             projectile_visuals: None,
             targeting: None,
+            id: TowerId {
+                kind: "TestTower",
+                serial: 1,
+                cell: IVec2::ZERO,
+            },
         }
     }
 
@@ -353,11 +372,18 @@ impl TowerBuilder {
         self
     }
 
+    /// Override the `TowerId`.
+    pub fn id(mut self, id: TowerId) -> Self {
+        self.id = id;
+        self
+    }
+
     /// Spawn the tower entity and return its [`Entity`].
     pub fn spawn(self, app: &mut App) -> Entity {
         let mut entity = app.world_mut().spawn((
             Tower,
             TowerState::Active,
+            self.id,
             Transform::from_translation(self.pos),
         ));
         if let Some((factor, duration)) = self.slow {
@@ -412,6 +438,9 @@ pub struct EnemyBuilder {
     pathfind_goal: Option<UVec3>,
     next_pos: Option<UVec3>,
     path: Option<(Vec<UVec3>, u32)>,
+    name: Option<&'static str>,
+    armor: Option<f32>,
+    sprite: bool,
 }
 
 impl Default for EnemyBuilder {
@@ -431,6 +460,9 @@ impl EnemyBuilder {
             pathfind_goal: None,
             next_pos: None,
             path: None,
+            name: None,
+            armor: None,
+            sprite: false,
         }
     }
 
@@ -476,6 +508,24 @@ impl EnemyBuilder {
         self
     }
 
+    /// Add `EnemyName` (the blueprint name that damage records copy).
+    pub fn named(mut self, name: &'static str) -> Self {
+        self.name = Some(name);
+        self
+    }
+
+    /// Add `Armor` with the given flat reduction.
+    pub fn armor(mut self, reduction: f32) -> Self {
+        self.armor = Some(reduction);
+        self
+    }
+
+    /// Add a white `Sprite` (projectile hits and Chain Lightning flash it).
+    pub fn with_sprite(mut self) -> Self {
+        self.sprite = true;
+        self
+    }
+
     /// Spawn the enemy entity and return its [`Entity`].
     pub fn spawn(self, app: &mut App) -> Entity {
         let mut entity = app.world_mut().spawn((Enemy, EnemyState::Approaching));
@@ -499,6 +549,15 @@ impl EnemyBuilder {
         }
         if let Some((waypoints, cost)) = self.path {
             entity.insert(Path::new(waypoints, cost));
+        }
+        if let Some(name) = self.name {
+            entity.insert(EnemyName(name));
+        }
+        if let Some(reduction) = self.armor {
+            entity.insert(Armor { reduction });
+        }
+        if self.sprite {
+            entity.insert(Sprite::from_color(Color::WHITE, Vec2::splat(10.0)));
         }
         entity.id()
     }

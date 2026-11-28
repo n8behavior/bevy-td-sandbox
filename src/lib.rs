@@ -17,6 +17,7 @@ pub mod particles;
 pub mod pathfinding;
 pub mod pile;
 pub mod projectile;
+pub mod records;
 pub mod shader;
 pub mod states;
 pub mod stats;
@@ -38,6 +39,7 @@ use particles::ParticlesPlugin;
 use pathfinding::PathfindingPlugin;
 use pile::PilePlugin;
 use projectile::ProjectilePlugin;
+use records::RecordsPlugin;
 use shader::ShaderPlugin;
 use states::{GameMode, GameState};
 use stats::StatsPlugin;
@@ -87,7 +89,7 @@ pub fn run() {
         StatsPlugin,
         UIPlugin,
     ))
-    .add_plugins(ParticlesPlugin);
+    .add_plugins((RecordsPlugin, ParticlesPlugin));
     #[cfg(feature = "dev")]
     app.add_plugins(dev::DevPlugin);
     app.run();

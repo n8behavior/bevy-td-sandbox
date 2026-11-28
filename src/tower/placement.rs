@@ -264,6 +264,7 @@ pub fn confirm_tower_placement(
     mut selected: ResMut<SelectedTower>,
     registry: Res<TowerRegistry>,
     config: Res<GridConfig>,
+    mut serials: ResMut<TowerSerials>,
     mut stats: Option<ResMut<RunStats>>,
 ) {
     if !mouse.just_pressed(MouseButton::Left) {
@@ -324,6 +325,11 @@ pub fn confirm_tower_placement(
     }
     commands.entity(entity).insert((
         GridCell { coord: grid_pos },
+        TowerId {
+            kind: blueprint.name,
+            serial: serials.next(blueprint.name),
+            cell: grid_pos,
+        },
         TowerCost(blueprint.cost),
         Sprite::from_color(blueprint.color, Vec2::splat(TILE_SIZE - 2.0)),
         Transform::from_translation(snap_pos.extend(0.5)).with_scale(Vec3::ZERO),
@@ -350,6 +356,11 @@ pub fn confirm_tower_placement(
     ));
     (blueprint.spawn_fn)(&mut new_cmds);
     selected.entity = Some(new_cmds.id());
+}
+
+/// Restart `TowerId` serials from 1 when a run starts.
+pub fn reset_tower_serials(mut serials: ResMut<TowerSerials>) {
+    *serials = TowerSerials::default();
 }
 
 // ---------------------------------------------------------------------------

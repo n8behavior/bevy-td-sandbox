@@ -1,3 +1,6 @@
+use std::fmt;
+
+use bevy::platform::collections::HashMap;
 use bevy::prelude::*;
 
 // ---------------------------------------------------------------------------
@@ -103,6 +106,46 @@ pub struct BaseCost(pub u32);
 /// Display name for a placed tower (set by the tower-type plugin).
 #[derive(Component)]
 pub struct TowerName(pub &'static str);
+
+/// Stable name of a placed tower, displayed as "ScrapGun #3 (61, 7)".
+/// Gameplay records copy it, so it still names the tower after the tower is
+/// sold, unlike its `Entity`.
+///
+/// `confirm_tower_placement` inserts it once, so placement previews have
+/// none.
+#[derive(Component, Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct TowerId {
+    /// Blueprint name, e.g. "ScrapGun".
+    pub kind: &'static str,
+    /// Counts per kind from 1, in placement order. Never reused within a run.
+    pub serial: u32,
+    /// Grid cell the tower was placed on.
+    pub cell: IVec2,
+}
+
+impl fmt::Display for TowerId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "{} #{} ({}, {})",
+            self.kind, self.serial, self.cell.x, self.cell.y
+        )
+    }
+}
+
+/// The last `TowerId::serial` handed out for each tower kind. Reset when a
+/// run starts.
+#[derive(Resource, Default)]
+pub struct TowerSerials(HashMap<&'static str, u32>);
+
+impl TowerSerials {
+    /// Take the next serial for `kind`: 1 for its first tower in the run.
+    pub fn next(&mut self, kind: &'static str) -> u32 {
+        let serial = self.0.entry(kind).or_insert(0);
+        *serial += 1;
+        *serial
+    }
+}
 
 /// Marker for the selection ring child spawned on the inspected tower.
 #[derive(Component)]
@@ -474,6 +517,25 @@ mod tests {
             max: 100.0,
         };
         assert_eq!(under.fraction(), 0.0);
+    }
+
+    #[test]
+    fn tower_id_display() {
+        let id = TowerId {
+            kind: "ScrapGun",
+            serial: 3,
+            cell: IVec2::new(61, 7),
+        };
+        assert_eq!(id.to_string(), "ScrapGun #3 (61, 7)");
+    }
+
+    #[test]
+    fn tower_serials_count_per_kind() {
+        let mut serials = TowerSerials::default();
+        assert_eq!(serials.next("ScrapGun"), 1);
+        assert_eq!(serials.next("ScrapGun"), 2);
+        assert_eq!(serials.next("Railgun"), 1);
+        assert_eq!(serials.next("ScrapGun"), 3);
     }
 
     #[test]

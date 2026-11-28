@@ -3,7 +3,8 @@
 use bevy::prelude::*;
 
 use super::components::{Mortar, RELOAD_MULT, ReloadKind, ReloadSecs, Reloading};
-use crate::tower::components::{AoEOnHit, ProjectileVisuals, Turret, TurretPhase};
+use crate::records::DamageSource;
+use crate::tower::components::{AoEOnHit, ProjectileVisuals, TowerId, Turret, TurretPhase};
 use crate::tower::events::TowerWantsToFire;
 use crate::tower::upgrade::{
     PanelSection, PanelSections, UpgradeApplied, UpgradeKind, UpgradeTrack,
@@ -58,17 +59,19 @@ pub fn mortar_fire_observer(
             &ProjectileVisuals,
             Option<&AoEOnHit>,
             &ReloadSecs,
+            &TowerId,
         ),
         With<Mortar>,
     >,
 ) {
-    let Ok((tower_tf, visuals, aoe, reload_secs)) = mortars.get(trigger.entity) else {
+    let Ok((tower_tf, visuals, aoe, reload_secs, id)) = mortars.get(trigger.entity) else {
         return;
     };
     crate::tower::systems::spawn_projectile(
         &mut commands,
         visuals,
         tower_tf,
+        DamageSource::Tower(*id),
         trigger.damage,
         trigger.target,
         aoe,

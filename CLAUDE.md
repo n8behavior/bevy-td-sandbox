@@ -281,6 +281,22 @@ To add a file for a new type:
    Tests that load assets use `test_app_with_assets()` (the watcher is off);
    `enemy_app()` and `spawn_enemy()` in `test_helpers.rs` set up enemies.
 
+## Gameplay Records
+
+Gameplay facts follow "Events vs Messages" above:
+
+- **Triggers** are `Event`s / `EntityEvent`s with observers, for what must
+  happen now. Example: `ProjectileHit`, with one observer per effect (damage,
+  splash, particles, burst). Observer order is arbitrary, so an observer
+  never depends on another one's effect.
+- **Records** are `Message`s in `src/records/` (`DamageDealt`), registered by
+  `RecordsPlugin`. Stats, diagnostics and dev views read them in batches. A
+  record copies the stable names it needs (`TowerId`, `EnemyName`), so a
+  reader never looks up an entity that may be gone.
+- All enemy damage goes through `enemy::damage::damage_enemy`, which lowers
+  `Health` and writes `DamageDealt`. A system that damages enemies joins
+  `EnemyDamageSystems`. `check_enemy_death` runs after that set.
+
 ## Build Commands
 
 ```bash

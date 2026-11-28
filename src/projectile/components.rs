@@ -1,13 +1,18 @@
 use bevy::prelude::*;
 
+use crate::records::DamageSource;
+
 #[derive(Component)]
 pub struct Projectile {
     pub damage: f32,
     pub speed: f32,
     pub target: Entity,
+    /// Who fired it, copied at spawn: a projectile that lands after its
+    /// tower is sold still names the tower.
+    pub source: DamageSource,
 }
 
-#[derive(Component)]
+#[derive(Component, Clone, Copy, Debug)]
 pub struct AoEPayload {
     pub radius: f32,
     pub damage: f32,
