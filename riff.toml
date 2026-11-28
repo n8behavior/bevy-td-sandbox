@@ -1,2 +1,2 @@
 [session]
-image = "ghcr.io/como-technologies/riff-base@sha256:2799cd2e7c6e23ab4b9b576ad1331e7315044378a490317624c93d3d984ad5b1"
+image = "ghcr.io/n8behavior/bevy-td-sandbox-session@sha256:8bb9b7a175bc4e24c5714bfc12c1f1e957e3eb30c1a8bfd861099419a0159e5e"
