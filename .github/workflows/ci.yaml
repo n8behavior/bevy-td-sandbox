@@ -6,9 +6,12 @@ on:
   pull_request:
     branches: [main]
 
+# A new push to a pull request cancels its older run. A run on `main`
+# always finishes, so it tests that merge and saves the caches; a newer
+# merge waits as the pending run (and replaces an older pending one).
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref || github.run_id }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   RUSTFLAGS: -Dwarnings
