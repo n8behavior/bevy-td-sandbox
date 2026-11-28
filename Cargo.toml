@@ -19,11 +19,14 @@ getrandom = { version = "0.4", features = ["wasm_js"] }
 [features]
 default = ["native"]
 native = [
-    "web",
+    "dev",
     "bevy/file_watcher",
     "bevy/embedded_watcher",
 ]
-web = [
+# Dev mode (`src/dev/`). A plain `cargo build --release` keeps the default
+# features, so it includes dev mode: build a release with
+# `--no-default-features`, or with `bevy build --release`.
+dev = [
     "bevy/bevy_dev_tools",
     "bevy/bevy_ui_debug",
     "bevy/track_location",
@@ -37,7 +40,7 @@ default-features = false
 default-features = false
 
 [package.metadata.bevy_cli.web.dev]
-features = ["web"]
+features = ["dev"]
 
 [lints.clippy]
 too_many_arguments = "allow"

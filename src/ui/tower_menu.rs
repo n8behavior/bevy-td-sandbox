@@ -27,7 +27,7 @@ pub enum PanelAnchor {
 }
 
 /// Pixel offset below the top HUD bar (`hud::setup_hud` height = 40).
-const TOP_HUD_HEIGHT_PX: f32 = 40.0;
+pub const TOP_HUD_HEIGHT_PX: f32 = 40.0;
 
 /// Builds the common component bundle for an anchored UI panel.
 pub fn panel_node(anchor: PanelAnchor) -> (Node, BackgroundColor, DespawnOnExit<GameState>) {

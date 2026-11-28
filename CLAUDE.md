@@ -295,6 +295,15 @@ just web-serve       # local web testing in browser (port 4000)
 just release patch   # flight-check and create GitHub release; patch|minor|major (see RELEASING.md)
 ```
 
+## Dev Mode
+
+- Dev code goes in `src/dev/`, behind `#[cfg(feature = "dev")]`. Only
+  `src/lib.rs` refers to it; dev features hook into the game from inside
+  `src/dev/`, and report their state through `DevToggles`.
+- Dev keys are F-keys only (`F1`–`F10`, `F12`), never a gameplay key. Add
+  each one as a row of `DEV_KEYS` in `src/dev/keys.rs`.
+- The `no_dev_key_is_a_gameplay_key` test enforces it.
+
 ## Zero Warnings Policy
 
 **Both `cargo check` and `cargo clippy` must produce zero warnings before every commit.**

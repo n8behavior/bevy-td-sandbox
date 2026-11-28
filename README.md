@@ -81,16 +81,31 @@ cargo doc --open       # local API docs
 
 ### Feature flags
 
-| Feature    | Contents                                     | When active               |
-|------------|----------------------------------------------|---------------------------|
-| `native`   | `web` + file/embedded watchers (hot reload) | **Default** — desktop dev |
-| `web`      | Dev tools, UI debug, location tracking       | Web dev builds            |
-| `dynamic`  | `bevy/dynamic_linking` (shared lib linking)  | Opt-in via `just run`     |
-| *(none)*   | Bare dependencies, static linking            | Release, web release      |
+| Feature    | Contents                                                           | When active                |
+|------------|--------------------------------------------------------------------|----------------------------|
+| `native`   | `dev` + file/embedded watchers (hot reload)                        | **Default** — desktop dev  |
+| `dev`      | [Dev mode](#dev-mode), Bevy dev tools, UI debug, location tracking | Desktop and web dev builds |
+| `dynamic`  | `bevy/dynamic_linking` (shared lib linking)                        | Opt-in via `just run`      |
+| *(none)*   | Bare dependencies, static linking                                  | Release, web release       |
 
 `just run` automatically adds `-F dynamic` for fast incremental
 recompiles. `just test` uses the defaults (no dynamic linking) so
 doctests work correctly.
+
+A plain `cargo build --release` keeps the default features, so it
+includes dev mode. Build a native release with `--no-default-features`,
+or through `bevy build --release`, which turns them off.
+
+### Dev mode
+
+Builds with the `dev` feature show a small "DEV" label in the top-left
+corner, with one line for each dev toggle that is on. Dev keys are
+F-keys (`F1`–`F10` and `F12`; `F11` is fullscreen), so none is a
+gameplay key. On a Mac keyboard, hold Fn.
+
+| Key  | Name     | What it does                                      |
+|------|----------|---------------------------------------------------|
+| `F1` | Dev keys | Show or hide the list of dev keys and their state |
 
 ### Build profiles
 

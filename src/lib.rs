@@ -7,6 +7,8 @@ use bevy_northstar::prelude::*;
 pub mod audio;
 pub mod camera;
 pub mod common;
+#[cfg(feature = "dev")]
+pub mod dev;
 pub mod economy;
 pub mod endless;
 pub mod enemy;
@@ -45,46 +47,48 @@ use ui::UIPlugin;
 use wave::WavePlugin;
 
 pub fn run() {
-    App::new()
-        .add_plugins(
-            DefaultPlugins
-                .set(WindowPlugin {
-                    primary_window: Some(Window {
-                        title: "Scrap Defence".into(),
-                        #[cfg(not(target_arch = "wasm32"))]
-                        mode: WindowMode::BorderlessFullscreen(MonitorSelection::Current),
-                        fit_canvas_to_parent: true,
-                        ..default()
-                    }),
+    let mut app = App::new();
+    app.add_plugins(
+        DefaultPlugins
+            .set(WindowPlugin {
+                primary_window: Some(Window {
+                    title: "Scrap Defence".into(),
+                    #[cfg(not(target_arch = "wasm32"))]
+                    mode: WindowMode::BorderlessFullscreen(MonitorSelection::Current),
+                    fit_canvas_to_parent: true,
                     ..default()
-                })
-                .set(AssetPlugin {
-                    meta_check: AssetMetaCheck::Never,
-                    ..default()
-                })
-                .set(ImagePlugin::default_nearest()),
-        )
-        .add_plugins(NorthstarPlugin::<OrdinalNeighborhood>::default())
-        .init_resource::<GameMode>()
-        .init_state::<GameState>()
-        .add_sub_state::<states::PlayPhase>()
-        .add_plugins((
-            ShaderPlugin,
-            GameAudioPlugin,
-            CameraPlugin,
-            GridPlugin,
-            PilePlugin,
-            TerrainPlugin,
-            PathfindingPlugin,
-            TowerPlugin,
-            EnemyPlugin,
-            ProjectilePlugin,
-            WavePlugin,
-            EndlessPlugin,
-            EconomyPlugin,
-            StatsPlugin,
-            UIPlugin,
-        ))
-        .add_plugins(ParticlesPlugin)
-        .run();
+                }),
+                ..default()
+            })
+            .set(AssetPlugin {
+                meta_check: AssetMetaCheck::Never,
+                ..default()
+            })
+            .set(ImagePlugin::default_nearest()),
+    )
+    .add_plugins(NorthstarPlugin::<OrdinalNeighborhood>::default())
+    .init_resource::<GameMode>()
+    .init_state::<GameState>()
+    .add_sub_state::<states::PlayPhase>()
+    .add_plugins((
+        ShaderPlugin,
+        GameAudioPlugin,
+        CameraPlugin,
+        GridPlugin,
+        PilePlugin,
+        TerrainPlugin,
+        PathfindingPlugin,
+        TowerPlugin,
+        EnemyPlugin,
+        ProjectilePlugin,
+        WavePlugin,
+        EndlessPlugin,
+        EconomyPlugin,
+        StatsPlugin,
+        UIPlugin,
+    ))
+    .add_plugins(ParticlesPlugin);
+    #[cfg(feature = "dev")]
+    app.add_plugins(dev::DevPlugin);
+    app.run();
 }
