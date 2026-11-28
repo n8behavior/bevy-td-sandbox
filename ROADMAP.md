@@ -59,8 +59,8 @@ The editor creates towers, the stats and advice judge them, and dev mode shows t
 
 Mike approved these on 2026-11-27. Each wave is one release. The [milestones](https://github.com/n8behavior/bevy-td-sandbox/milestones) are the source of truth; this list shows how they started.
 
-1. **Wave 1: Tools to tune (v0.6).** The first part of the event stream ([#55]: credit for every hit, and hits through observers), the dev mode base ([#88]), and enemy stats in data files that reload while the game runs ([#90]). Also fixes: the CI cache ([#100]), GAMEPLAY.md ([#99]), the damage flash ([#101]) and the web quit hint ([#102]).
-2. **Wave 2: Core feel (v0.7).** Pile growth ([#69]), spending during Defending ([#103]), the armor rule ([#104]), readable shapes ([#73]), the second part of the event stream ([#87]), Show pathing ([#89]), tower stats as data ([#91]), and Windows, Mac and Linux builds ([#98]).
+1. **Wave 1: Tools to tune (v0.6).** The first part of the event stream ([#55]: credit for every hit, and hits through observers), the dev mode base ([#88]), and enemy stats in data files that reload while the game runs ([#90]). Also fixes: the CI cache ([#100]), GAMEPLAY.md ([#99]), the damage flash ([#101]), the web quit hint ([#102]), CI runs on `main` that cancelled each other ([#116]), and a session image with Rust, so riff workers can build and test ([#106], whose last check moved to Wave 2).
+2. **Wave 2: Core feel (v0.7).** Pile growth ([#69]), spending during Defending ([#103]), the armor rule ([#104]), readable shapes ([#73]), the second part of the event stream ([#87]), Show pathing ([#89]), tower stats as data ([#91]), Windows, Mac and Linux builds ([#98]), and the AoE blast of a damaged tower ([#114]).
 3. **Wave 3: Raiders and tower stats (v0.8).** Raiders ([#82]), diagnostics ([#77]), the tower panel stats ([#93]), and the shared tower rules as data ([#92]).
 
 Later, in this order: the rest of the stats ([#94], [#95], [#96], [#97]), then the next parts of the editor track ([#75]). The trackers [#75], [#83] and [#84] hold the plan of each track.
@@ -123,3 +123,6 @@ Mike answered the open questions on 2026-11-27.
 [#103]: https://github.com/n8behavior/bevy-td-sandbox/issues/103
 [#104]: https://github.com/n8behavior/bevy-td-sandbox/issues/104
 [#105]: https://github.com/n8behavior/bevy-td-sandbox/issues/105
+[#106]: https://github.com/n8behavior/bevy-td-sandbox/issues/106
+[#114]: https://github.com/n8behavior/bevy-td-sandbox/issues/114
+[#116]: https://github.com/n8behavior/bevy-td-sandbox/issues/116
